@@ -17,7 +17,7 @@ class UAudioComponent;
 //DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMusicCueTrigger,const FMusicData&, OnMusicCueTrigger);
 
 UCLASS(Blueprintable)
-class PROJECT_CIRCLE_API APcMusicManager : public AInfo
+class PROJECT_CIRCLE_API APcMusicManager : public AActor
 {
     GENERATED_BODY()
 
@@ -43,7 +43,6 @@ public:
     /**
      * Music Mapping Data
      */
-    
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Music")
     TArray<FMusicData> LoadedMusicData;
 
@@ -64,6 +63,8 @@ public:
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Music")
     float CurrentMusicProgress;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Music")
+    int32 CurrentMusicProgressMS;
 
     /**
      * Internal stuff 

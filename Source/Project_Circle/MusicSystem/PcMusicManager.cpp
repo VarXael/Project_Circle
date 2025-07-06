@@ -18,12 +18,10 @@ APcMusicManager::APcMusicManager()
 {
 	// Enable this actor to call Tick() every frame.
 	PrimaryActorTick.bCanEverTick = true;
-	MusicAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MusicAudioComponent"));
+	
+	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootSceneComponent"));
 
-	if (RootComponent == nullptr)
-	{
-		RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootSceneComponent"));
-	}
+	MusicAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MusicAudioComponent"));
 	MusicAudioComponent->SetupAttachment(RootComponent);
 	MusicAudioComponent->bAutoActivate = false;
 }
@@ -73,10 +71,10 @@ void APcMusicManager::OnMetaSoundCurrentTimeChanged(FName OutputName, const FMet
 		{
 			CurrentMusicProgress = static_cast<float>(RetrievedTimeStruct.GetSeconds()); 
           
-			int32 CurrentTimeMS = static_cast<int32>(CurrentMusicProgress * 1000.0f); 
-			MusicTick(CurrentTimeMS);
+			CurrentMusicProgressMS = static_cast<int32>(CurrentMusicProgress * 1000.0f);
+			MusicTick(CurrentMusicProgressMS);
 
-			ProcessMusicEvents(CurrentTimeMS);
+			ProcessMusicEvents(CurrentMusicProgressMS);
 		}
 	}
 }
