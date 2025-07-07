@@ -7,18 +7,17 @@
 #include "MusicData.h"
 #include "MusicAnalysisSubsystem.generated.h"
 
-// The enum to classify the musical context of a section.
+// ... (enums and structs are unchanged) ...
 UENUM(BlueprintType)
 enum class EGameplaySectionType : uint8
 {
-    Normal      UMETA(DisplayName = "Normal"),
-    HighEnergy  UMETA(DisplayName = "High Energy"),
-    Buildup     UMETA(DisplayName = "Buildup"),
-    Cooldown    UMETA(DisplayName = "Cooldown"),
-    Break       UMETA(DisplayName = "Break")
+	Normal      UMETA(DisplayName = "Normal"),
+	HighEnergy  UMETA(DisplayName = "High Energy"),
+	Buildup     UMETA(DisplayName = "Buildup"),
+	Cooldown    UMETA(DisplayName = "Cooldown"),
+	Break       UMETA(DisplayName = "Break")
 };
 
-// This struct holds the final, pre-calculated gameplay data for a single, stable rhythmic section.
 USTRUCT(BlueprintType)
 struct FGameplayRhythmSection
 {
@@ -37,7 +36,6 @@ struct FGameplayRhythmSection
     int32 AnchorTimestampMS = 0;
 };
 
-// The primary output of our analysis. It contains everything a consumer needs to know.
 USTRUCT(BlueprintType)
 struct FSongAnalysisResult
 {
@@ -47,7 +45,6 @@ struct FSongAnalysisResult
 	TArray<FGameplayRhythmSection> RhythmSections;
 };
 
-// A temporary struct to hold the full profile of a section for analysis.
 struct FSectionProfileData
 {
 	int32 StartTime;
@@ -57,7 +54,6 @@ struct FSectionProfileData
 	float HybridApsScore;
 };
 
-// Represents a dynamically generated note event like a slider tick or tail.
 struct FQueuedNoteEvent
 {
 	int32 TimestampMS = 0;
@@ -70,25 +66,44 @@ struct FQueuedNoteEvent
 	}
 };
 
-// We can use the HitObjectType flags from osu! and add our own custom ones.
 namespace EQueuedNoteType
 {
-	constexpr int32 SliderTick = 128; // Custom flag not used by osu!
-	constexpr int32 SliderTail = 256;  // Custom flag for repeats/tail
+	constexpr int32 SliderTick = 128;
+	constexpr int32 SliderTail = 256;
 }
 
-// Delegate for the rhythmic beat of the song
+USTRUCT(BlueprintType)
+struct FConfidentHitObject
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	int32 TimestampMS = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	float Confidence = 0.f;
+
+	uint32 CombinedHitSound = 0;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	int32 HitObjectType = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	int32 Repeats = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	int32 SliderEndTimeMS = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis")
+	float SliderTickRate = 1.f;
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBeatTriggered, float, BeatTimestamp);
-
-// Delegate for discrete note events (circles, slider heads, ticks, tails)
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnNoteHit, int32, TimestampMS, int32, NoteType, int32, HitSound);
-
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBPMChanged, float, NewBPM);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMeterChanged, int32, NewMeter);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBreakPeriod, int32, StartTimeMS, int32, EndTimeMS);
 
-// Forward declare internal struct
-struct FQueuedNoteEvent;
 
 UCLASS()
 class PROJECT_CIRCLE_API UMusicAnalysisSubsystem : public UWorldSubsystem
@@ -98,9 +113,16 @@ class PROJECT_CIRCLE_API UMusicAnalysisSubsystem : public UWorldSubsystem
 public:
 	// --- Public API ---
 
+	/**
+	 * Starts a comprehensive analysis using the "King and Council" model.
+	 * @param PrimaryDataTable The "King" - the difficulty that defines the song's structure and timing.
+	 * @param AllSongDataTables The "Council" - ALL difficulties, including the primary one, used for intensity consensus.
+	 * @param DifficultyBias A -1.0 to 1.0 value to give more weight to easier or harder difficulties in the council.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	void StartSongAnalysis(UDataTable* MusicDataTable);
+	void StartSongAnalysis(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias = 0.0f);
 	
+	/** Updates the subsystem with the current music playback time to process events. */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
 	
@@ -111,7 +133,7 @@ public:
 	float GetCurrentBPM() const { return CurrentBPM; }
 	
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
-	bool IsInBreakPeriod() const { return bInBreakPeriod; }
+	bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
 
 	// --- Delegates for gameplay systems to subscribe to ---
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
@@ -133,30 +155,36 @@ public:
 	FOnBreakPeriod OnBreakEnd;
 
 private:
-	// --- Internal State & Data ---
-	bool bAnalysisComplete = false;
-	TArray<FMusicData> LoadedMusicData;
-	FSongAnalysisResult CurrentSongAnalysis;
-	
-	// --- Analysis Logic (moved from PcMusicManager) ---
-	FSongAnalysisResult AnalyzeRhythmSections();
-	bool LoadMusicDataFromTable(UDataTable* MusicDataTable);
+	// --- Analysis Logic ---
+	FSongAnalysisResult AnalyzeRhythmSections(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias);
+	bool LoadCouncilData(const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias);
 
+	// --- Playback Processing Functions ---
+	void ProcessMusicEvents();
+	void UpdateRhythmSection(int32 InCurrentTimeMS);
+	void ProcessBeatTicks(int32 InCurrentTimeMS);
+	void GenerateSliderSubEvents(const FMusicData& SliderData);
+	
+	// --- Core Analysis Data ---
+	FSongAnalysisResult CurrentSongAnalysis;
+	TArray<FConfidentHitObject> ConfidentHitObjects;
+	TArray<FMusicData> MasterAudioBeats;
+	TMap<int32, FMusicData> MasterUninheritedTimingPoints;
+
+	UPROPERTY()
+	TArray<FMusicData> RuntimeEventTimeline;
+	
 	// --- Playback State Tracking ---
+	bool bAnalysisComplete = false;
 	int32 NextEventIndex = 0;
 	int32 LastProcessedMusicProgressMs = -1;
 	int32 NextBeatTimestampMS = 0;
 	int32 CurrentRhythmSectionIndex = 0;
+	int32 CurrentBeatInSession = 0;
 	
 	float CurrentBPM = 0.f;
 	int32 CurrentMeter = 4;
-	bool bInBreakPeriod = false;
+	int32 CurrentBreakEndTimeMS = -1;
 	
 	TArray<FQueuedNoteEvent> NoteEventQueue;
-
-	// --- Playback Processing Functions ---
-	void ProcessMusicEvents(int32 InCurrentTimeMS);
-	void UpdateRhythmSection(int32 InCurrentTimeMS);
-	void ProcessBeatTicks(int32 InCurrentTimeMS);
-	void GenerateSliderSubEvents(const FMusicData& SliderData);
 };

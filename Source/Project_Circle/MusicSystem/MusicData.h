@@ -1,4 +1,4 @@
-﻿// MusicData.h
+﻿// This struct definition should be in your "MusicData.h" file.
 
 #pragma once
 
@@ -9,80 +9,60 @@
 UENUM(BlueprintType)
 enum class EGameplayEntryType : uint8
 {
-	TimingPoint UMETA(DisplayName = "TimingPoint"),
-	HitObject   UMETA(DisplayName = "HitObject"),
+	HitObject   UMETA(DisplayName = "Hit Object"),
+	TimingPoint UMETA(DisplayName = "Timing Point"),
 	Break       UMETA(DisplayName = "Break"),
-	AudioBeat   UMETA(DisplayName = "AudioBeat")
+	AudioBeat   UMETA(DisplayName = "Audio Beat")
 };
 
-USTRUCT(BlueprintType, Blueprintable)
-struct PROJECT_CIRCLE_API FMusicData : public FTableRowBase
+
+USTRUCT(BlueprintType)
+struct FMusicData : public FTableRowBase
 {
 	GENERATED_BODY()
 
 public:
-	// --- Common Fields ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData")
-	EGameplayEntryType EntryType;
+	// --- Common Data (All Types) ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data")
+	int32 TimestampMS = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData")
-	int32 TimestampMS;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data")
+	EGameplayEntryType EntryType = EGameplayEntryType::HitObject;
 
-	// --- Timing Point ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|TimingPoint")
-	float BeatLength;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|TimingPoint")
-	int32 Meter;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|TimingPoint")
-	int32 Uninherited;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|TimingPoint")
-	int32 Effects;
+	// --- Hit Object Data ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object", meta=(EditCondition="EntryType == EGameplayEntryType::HitObject"))
+	int32 HitObjectType = 0;
 
-	// --- Hit Object ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	int32 HitObjectType;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	int32 HitSound;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	int32 SliderEndTimeMS;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	float PixelLength;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	int32 Repeats;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|HitObject")
-	float SliderVelocity;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object", meta=(EditCondition="EntryType == EGameplayEntryType::HitObject"))
+	int32 HitSound = 0;
 
-	// --- Break ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|Break")
-	int32 BreakEndTimeMS;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object", meta=(EditCondition="EntryType == EGameplayEntryType::HitObject"))
+	int32 SliderEndTimeMS = 0;
 
-	// --- Audio Beat ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|AudioBeat")
-	float AudioBeatStrength;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|AudioBeat")
-	float AudioBeatCentroid;
-		
-	// --- NEW: Global Difficulty Setting ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GameplayData|Difficulty")
-	float SliderTickRate;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object", meta=(EditCondition="EntryType == EGameplayEntryType::HitObject"))
+	int32 Repeats = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object", meta=(EditCondition="EntryType == EGameplayEntryType::HitObject"))
+	float SliderTickRate = 1.f;
+	
+	// --- Break Period Data ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Break", meta=(EditCondition="EntryType == EGameplayEntryType::Break"))
+	int32 BreakEndTimeMS = 0;
 
-	// Constructor
-	FMusicData()
-		: EntryType(EGameplayEntryType::HitObject)
-		, TimestampMS(0)
-		, BeatLength(0.0f)
-		, Meter(4)
-		, Uninherited(0)
-		, Effects(0)
-		, HitObjectType(0)
-		, HitSound(0)
-		, SliderEndTimeMS(0)
-		, PixelLength(0.0f)
-		, Repeats(0)
-		, SliderVelocity(0.0f)
-		, BreakEndTimeMS(0)
-		, AudioBeatStrength(0.0f)
-		, AudioBeatCentroid(0.0f)
-		, SliderTickRate(1.0f) // Default value
-	{}
+	// --- Timing Point Data ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point", meta=(EditCondition="EntryType == EGameplayEntryType::TimingPoint"))
+	int32 Uninherited = 0; // 1 for uninherited (red), 0 for inherited (green)
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point", meta=(EditCondition="EntryType == EGameplayEntryType::TimingPoint"))
+	float BeatLength = 500.f; // For uninherited, this is ms per beat. For inherited, it's a -100/velocity multiplier.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point", meta=(EditCondition="EntryType == EGameplayEntryType::TimingPoint"))
+	int32 Meter = 4; // e.g., 4 for 4/4 time signature
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point", meta=(EditCondition="EntryType == EGameplayEntryType::TimingPoint"))
+	int32 Effects = 0; // Bitmask for kiai time, etc.
+	
+	// --- Audio Beat Data (if you do separate audio analysis) ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Audio", meta=(EditCondition="EntryType == EGameplayEntryType::AudioBeat"))
+	float AudioBeatStrength = 0.f;
 };

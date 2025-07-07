@@ -35,9 +35,9 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 
-void APcMusicManager::StartMusicPlayback()
+void APcMusicManager::StartMusicPlayback(float DifficultyBias)
 {
-	if (!MainMusicMetaSound || !SongWaveAsset || !DataTableMusicInfo)
+	if (!MainMusicMetaSound || !SongWaveAsset)
 	{
 		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets to start playback."));
 		return;
@@ -47,8 +47,8 @@ void APcMusicManager::StartMusicPlayback()
 	if (!World) return;
 	
 	if (UMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UMusicAnalysisSubsystem>())
-	{
-		MusicSubsystem->StartSongAnalysis(DataTableMusicInfo);
+	{ 
+		MusicSubsystem->StartSongAnalysis(PrimaryDataTableMusicInfo,DataTableMusicInfo, DifficultyBias);
 	}
 	
 	MusicAudioComponent->Stop();

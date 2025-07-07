@@ -31,11 +31,14 @@ public:
      
 	/** The DataTable containing the comprehensive data parsed from the .osu file. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	UDataTable* DataTableMusicInfo;
+	UDataTable* PrimaryDataTableMusicInfo;
+	/** The DataTable containing the comprehensive data parsed from the .osu file. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
+	TArray<UDataTable*> DataTableMusicInfo;
      
 	/** Begins the analysis in the subsystem and starts music playback. */
 	UFUNCTION(BlueprintCallable, Category = "Music")
-	void StartMusicPlayback();
+	void StartMusicPlayback(float DifficultyBias);
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Music")
 	float CurrentSongProgressInSeconds;
