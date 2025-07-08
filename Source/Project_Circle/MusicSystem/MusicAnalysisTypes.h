@@ -45,7 +45,7 @@ enum class EGameplaySectionType : uint8
 };
 
 USTRUCT(BlueprintType)
-struct FGameplayRhythmSection : public FTableRowBase
+struct FRhythmSectionProfile : public FTableRowBase
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") int32 StartTimeMS = 0;
@@ -58,7 +58,7 @@ USTRUCT(BlueprintType)
 struct FSongAnalysisResult // Kept for now as it's used inside UAnalyzedSongData
 {
 	GENERATED_BODY()
-	UPROPERTY(BlueprintReadOnly, Category = "Song Analysis") TArray<FGameplayRhythmSection> RhythmSections;
+	UPROPERTY(BlueprintReadOnly, Category = "Song Analysis") TArray<FRhythmSectionProfile> RhythmSections;
 };
 
 struct FQueuedNoteEvent { int32 TimestampMS; int32 NoteType; int32 OriginalHitSound; bool operator<(const FQueuedNoteEvent& Other) const { return TimestampMS < Other.TimestampMS; } };

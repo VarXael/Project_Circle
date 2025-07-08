@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "MusicAnalysisTypes.h"
 #include "MusicData.h"
-#include "AnalyzedSongData.generated.h"
+#include "URhythmAnalysisProfile.generated.h"
 
 /**
  * A data object that holds the complete, processed rhythmic profile of a song.
@@ -11,7 +11,7 @@
  * necessary data for the MusicAnalysisSubsystem to drive gameplay.
  */
 UCLASS(BlueprintType)
-class PROJECT_CIRCLE_API UAnalyzedSongData : public UObject
+class PROJECT_CIRCLE_API UURhythmAnalysisProfile : public UObject
 {
 	GENERATED_BODY()
 
@@ -21,11 +21,11 @@ public:
 	 * This is the primary entry point for all analysis, for both runtime and editor tools.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	static UAnalyzedSongData* RunSongAnalysis(UObject* Outer, USongConfigurationData* SongConfig);
+	static UURhythmAnalysisProfile* RunSongAnalysis(UObject* Outer, USongConfigurationData* SongConfig);
 
 	// --- Public Data Accessors ---
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Analyzed Song Data")
-	const TArray<FGameplayRhythmSection>& GetRhythmSections() const { return Result.RhythmSections; }
+	const TArray<FRhythmSectionProfile>& GetRhythmSections() const { return Result.RhythmSections; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Analyzed Song Data")
 	const TArray<FMusicData>& GetRuntimeEventTimeline() const { return RuntimeEventTimeline; }

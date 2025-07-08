@@ -12,7 +12,7 @@
 
 #define LOCTEXT_NAMESPACE "RhythmDataGenerator"
 
-void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongConfig, const TArray<FGameplayRhythmSection>& SectionsToExport)
+void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongConfig, const TArray<FRhythmSectionProfile>& SectionsToExport)
 {
 	// --- 1. VALIDATION ---
 	if (!SongConfig)
@@ -47,7 +47,7 @@ void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongC
 
 	// --- 3. CREATE THE DATATABLE ASSET WITH A DIALOG ---
 	UDataTableFactory* DataTableFactory = NewObject<UDataTableFactory>();
-	DataTableFactory->Struct = FGameplayRhythmSection::StaticStruct();
+	DataTableFactory->Struct = FRhythmSectionProfile::StaticStruct();
 
 	// This will open the "Save Asset" dialog, pre-filled with our smart path.
 	// The user can accept it, or choose a new location and name.
@@ -69,7 +69,7 @@ void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongC
 	// --- 4. POPULATE THE DATATABLE ---
 	for (int32 i = 0; i < SectionsToExport.Num(); ++i)
 	{
-		const FGameplayRhythmSection& Section = SectionsToExport[i];
+		const FRhythmSectionProfile& Section = SectionsToExport[i];
 		const FName RowName = FName(*FString::Printf(TEXT("Section_%03d"), i)); // Use %03d for nice padding (001, 002...)
 		NewDataTable->AddRow(RowName, Section);
 	}

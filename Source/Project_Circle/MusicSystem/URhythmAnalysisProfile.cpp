@@ -1,4 +1,4 @@
-﻿#include "AnalyzedSongData.h"
+﻿#include "URhythmAnalysisProfile.h"
 #include "SongConfigurationData.h" // Needed for ApplyOverrides
 #include "Engine/DataTable.h"
 #include "Algo/Sort.h"
@@ -84,7 +84,7 @@ namespace MusicAnalysisHelpers
 
 // --- UAnalyzedSongData Implementation ---
 
-UAnalyzedSongData* UAnalyzedSongData::RunSongAnalysis(UObject* Outer, USongConfigurationData* SongConfig)
+UURhythmAnalysisProfile* UURhythmAnalysisProfile::RunSongAnalysis(UObject* Outer, USongConfigurationData* SongConfig)
 {
 	// --- 1. Input Validation ---
 	if (!Outer || !SongConfig)
@@ -140,7 +140,7 @@ UAnalyzedSongData* UAnalyzedSongData::RunSongAnalysis(UObject* Outer, USongConfi
 	}
 
 	// --- 3. Create Object and Run Private Analysis ---
-	UAnalyzedSongData* NewAnalysis = NewObject<UAnalyzedSongData>(Outer);
+	UURhythmAnalysisProfile* NewAnalysis = NewObject<UURhythmAnalysisProfile>(Outer);
 	NewAnalysis->AnalyzeRhythmSections(Parameters);
 
 	if (NewAnalysis->Result.RhythmSections.Num() == 0)
@@ -155,7 +155,7 @@ UAnalyzedSongData* UAnalyzedSongData::RunSongAnalysis(UObject* Outer, USongConfi
 }
 
 // MODIFIED: The function now takes the single parameter struct.
-void UAnalyzedSongData::AnalyzeRhythmSections(const FSongAnalysisParameters& Parameters)
+void UURhythmAnalysisProfile::AnalyzeRhythmSections(const FSongAnalysisParameters& Parameters)
 {
 	// --- STEP 1: Structural Analysis ---
 	TArray<const FMusicData*> StructuralHitObjects;
@@ -393,7 +393,7 @@ void UAnalyzedSongData::AnalyzeRhythmSections(const FSongAnalysisParameters& Par
 	UE_LOG(LogTemp, Warning, TEXT("--- DEEP RHYTHM ANALYSIS (NORMALIZED) ---"));
 	UE_LOG(LogTemp, Warning, TEXT("Score Range: Min=%.3f, Max=%.3f"), MinScore, MaxScore);
 
-	TArray<FGameplayRhythmSection> TempSections;
+	TArray<FRhythmSectionProfile> TempSections;
 	for (int32 i = 0; i < ProfileList.Num(); ++i)
 	{
 		FSectionProfileData& Profile = ProfileList[i];
@@ -421,7 +421,7 @@ void UAnalyzedSongData::AnalyzeRhythmSections(const FSongAnalysisParameters& Par
 		       ),
 		       i, Profile.StartTime, Profile.HybridApsScore, NormalizedScore, *BeatDivision, GameplayBeatLength);
 
-		FGameplayRhythmSection FinalSection;
+		FRhythmSectionProfile FinalSection;
 		FinalSection.StartTimeMS = Profile.StartTime;
 		FinalSection.BeatLengthMS = GameplayBeatLength;
 		FinalSection.BPM = (GameplayBeatLength > 0) ? 60000.0f / GameplayBeatLength : 0.f;
@@ -446,8 +446,8 @@ void UAnalyzedSongData::AnalyzeRhythmSections(const FSongAnalysisParameters& Par
 	Result.RhythmSections.Add(TempSections[0]);
 	for (int32 i = 1; i < TempSections.Num(); ++i)
 	{
-		FGameplayRhythmSection& Current = TempSections[i];
-		FGameplayRhythmSection& Last = Result.RhythmSections.Last();
+		FRhythmSectionProfile& Current = TempSections[i];
+		FRhythmSectionProfile& Last = Result.RhythmSections.Last();
 
 		float BaseBeatForLast = 500;
 		for (const FMusicData& TP : StructuralUninheritedTPs)
@@ -482,7 +482,7 @@ void UAnalyzedSongData::AnalyzeRhythmSections(const FSongAnalysisParameters& Par
 
 
 // GatherCouncilData is UNCHANGED logic-wise.
-bool UAnalyzedSongData::GatherCouncilData(const TArray<UDataTable*>& WeightedAnalysisMaps, float DifficultyBias,
+bool UURhythmAnalysisProfile::GatherCouncilData(const TArray<UDataTable*>& WeightedAnalysisMaps, float DifficultyBias,
                                           TArray<FConfidentHitObject>& OutConfidentHitObjects)
 {
 	MasterUninheritedTimingPoints.Empty();
@@ -537,14 +537,14 @@ bool UAnalyzedSongData::GatherCouncilData(const TArray<UDataTable*>& WeightedAna
 }
 
 // ApplyOverrides is UNCHANGED logic-wise.
-void UAnalyzedSongData::ApplyOverrides(USongConfigurationData* SongConfig)
+void UURhythmAnalysisProfile::ApplyOverrides(USongConfigurationData* SongConfig)
 {
 	if (!SongConfig)
 	{
 		return;
 	}
 
-	for (FGameplayRhythmSection& Section : Result.RhythmSections)
+	for (FRhythmSectionProfile& Section : Result.RhythmSections)
 	{
 		if (const FSectionOverride* Override = SongConfig->SectionOverrides.Find(Section.StartTimeMS))
 		{

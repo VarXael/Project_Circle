@@ -1,14 +1,11 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "MetasoundGeneratorHandle.h"
 #include "GameFramework/Actor.h"
-#include "MetasoundOutput.h" // Needed for FOnMetasoundOutputValueChanged
+#include "MetasoundOutput.h"
 #include "PcMusicManager.generated.h"
 
-class USongConfigurationData;
 class UMetaSoundSource;
 class USoundWave;
 class UDataTable;
@@ -22,21 +19,25 @@ class PROJECT_CIRCLE_API APcMusicManager : public AActor
 public:
 	APcMusicManager();
 
-	/** The Metasound Source to use for playback. */
+	// --- Sound Assets ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
 	TObjectPtr<UMetaSoundSource> MainMusicMetaSound;
 
-	/** The song's audio file, to be fed into the Metasound. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
 	TObjectPtr<USoundWave> SongWaveAsset;
+
+	// --- Gameplay Data ---
+	/** The DataTable containing the hand-tuned rhythm sections (FRhythmSectionProfile). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music|Gameplay Data")
+	TObjectPtr<UDataTable> TunedRhythmProfile;
 	
-	/** The configuration asset for the song to be played. This holds all data and overrides. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	TObjectPtr<USongConfigurationData> SongToPlay;
-	
-	/** Begins the analysis in the subsystem and starts music playback. */
+	/** The DataTable containing the notes for the difficulty being played (FMusicData). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music|Gameplay Data")
+	TObjectPtr<UDataTable> NoteEventMap;
+     
+	/** Begins music playback using the assigned DataTables. */
 	UFUNCTION(BlueprintCallable, Category = "Music")
-	void StartMusicPlayback(float DifficultyBias);
+	void StartMusicPlayback();
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Music")
 	float CurrentSongProgressInSeconds;
@@ -46,24 +47,17 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void Tick(float DeltaTime) override;
 
-	/** The audio component that will play the Metasound. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UAudioComponent> MusicAudioComponent;
 	
 private:
-	/** 
-	 * The delegate that binds to the Metasound's 'CurrentTime' output. 
-	 * This is the high-precision clock for our system.
-	 */
 	UPROPERTY()
 	FOnMetasoundOutputValueChanged OnMetasoundOutputValueChanged;
 
-	/**
-	 * This UFUNCTION is called by the Metasound system whenever the time value changes.
-	 * It reports the new time to the UMusicAnalysisSubsystem.
-	 */
 	UFUNCTION()
 	void OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output);
+
+public:
+	virtual void Tick(float DeltaSeconds) override;
 };

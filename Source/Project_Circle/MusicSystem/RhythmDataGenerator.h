@@ -26,5 +26,5 @@ public:
 	 * @param SectionsToExport The array of section data to populate the DataTable with.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Rhythm Data Generator")
-	void GenerateRhythmDataTable(USongConfigurationData* SongConfig, const TArray<FGameplayRhythmSection>& SectionsToExport);
+	void GenerateRhythmDataTable(USongConfigurationData* SongConfig, const TArray<FRhythmSectionProfile>& SectionsToExport);
 };

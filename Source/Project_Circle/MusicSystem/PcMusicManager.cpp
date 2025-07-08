@@ -33,21 +33,21 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 
-void APcMusicManager::StartMusicPlayback(float DifficultyBias)
+void APcMusicManager::StartMusicPlayback()
 {
-	if (!MainMusicMetaSound || !SongWaveAsset || !SongToPlay)
+	if (!MainMusicMetaSound || !SongWaveAsset || !TunedRhythmProfile || !NoteEventMap)
 	{
-		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets to start playback (MetaSound, Wave, or Song Config)."));
+		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets. Check sound assets, TunedRhythmProfile, and NoteEventMap."));
 		return;
 	}
 
-
 	UWorld* World = GetWorld();
-	if (!World) return;
+	if (!World)
+		return;
 	
 	if (UMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UMusicAnalysisSubsystem>())
 	{ 
-		MusicSubsystem->StartSongPlayback(SongToPlay);
+		MusicSubsystem->InitializePlayback(TunedRhythmProfile, NoteEventMap);
 	}
 	
 	MusicAudioComponent->Stop();
@@ -68,7 +68,6 @@ void APcMusicManager::StartMusicPlayback(float DifficultyBias)
 	
 	MusicAudioComponent->Play();
 }
-
 void APcMusicManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output)
 {
 	if (Output.IsValid() && Output.IsType<Metasound::FTime>())

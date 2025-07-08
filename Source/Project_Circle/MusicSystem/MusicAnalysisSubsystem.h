@@ -1,15 +1,12 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "MusicAnalysisTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "MusicAnalysisTypes.h"
 #include "MusicData.h"
 #include "MusicAnalysisSubsystem.generated.h"
 
-class USongConfigurationData;
-class UAnalyzedSongData;
+// Forward Declarations
 class UDataTable;
 
 // --- Delegates ---
@@ -27,10 +24,15 @@ class PROJECT_CIRCLE_API UMusicAnalysisSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	// --- Public API ---
+	/**
+	 * Initializes the subsystem for playback using pre-processed, hand-tuned data from DataTables.
+	 * @param RhythmProfileData The DataTable containing the FRhythmSectionProfile rows.
+	 * @param NoteEventData The DataTable containing the FMusicData for the specific difficulty being played.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	void StartSongPlayback(USongConfigurationData* SongConfig);
+	void InitializePlayback(UDataTable* RhythmProfileData, UDataTable* NoteEventData);
 	
+	/** Updates the subsystem with the current music time, triggering events. */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
 	
@@ -38,7 +40,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Music Analysis") float GetCurrentBPM() const { return CurrentBPM; }
 	UFUNCTION(BlueprintPure, Category = "Music Analysis") bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
 
-	// --- Delegates for gameplay systems to subscribe to ---
+	// --- Delegates ---
 	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBeatTriggered OnBeatTriggered;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnNoteHit OnNoteHit;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBPMChanged OnBPMChanged;
@@ -48,23 +50,25 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnSongEnd OnSongEnd;
 
 private:
-	// --- Playback Processing Functions ---
 	void ProcessMusicEvents();
 	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ProcessBeatTicks(int32 InCurrentTimeMS);
 	void GenerateSliderSubEvents(const FMusicData& SliderData);
-	void ResetPlaybackState();
+	void ResetState();
 	
-	// --- Core Data Reference ---
-	UPROPERTY()
-	TObjectPtr<UAnalyzedSongData> CurrentAnalyzedSong;
+	// --- Core Playback Data ---
+	// In MusicAnalysisSubsystem.h
+	TArray<FRhythmSectionProfile> RhythmProfileRows;
+	TArray<FMusicData> RuntimeEventRows;
+	TMap<int32, float> MasterBeatLengths; // For slider tick calculations
 	
 	// --- Playback State Tracking ---
 	bool bIsReadyForPlayback = false;
 	int32 NextEventIndex = 0;
 	int32 LastProcessedMusicProgressMs = -1;
+	int32 AbsoluteSongEndTimeMS = -1;
 	int32 NextBeatTimestampMS = 0;
-	int32 CurrentRhythmSectionIndex = 0;
+	int32 CurrentSectionIndex = 0;
 	int32 CurrentBeatInSession = 0;
 	float CurrentBPM = 0.f;
 	int32 CurrentMeter = 4;
