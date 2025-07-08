@@ -35,20 +35,19 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcMusicManager::StartMusicPlayback(float DifficultyBias)
 {
-	if (!MainMusicMetaSound || !SongWaveAsset)
+	if (!MainMusicMetaSound || !SongWaveAsset || !SongToPlay)
 	{
-		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets to start playback."));
+		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets to start playback (MetaSound, Wave, or Song Config)."));
 		return;
 	}
+
 
 	UWorld* World = GetWorld();
 	if (!World) return;
 	
-	// The Initiator's simple, clear role: tell the subsystem what to play.
 	if (UMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UMusicAnalysisSubsystem>())
 	{ 
-		// Call the new, cleaner function. The subsystem handles the rest.
-		MusicSubsystem->StartSongPlayback(PrimaryDataTableMusicInfo, DataTableMusicInfo, DifficultyBias);
+		MusicSubsystem->StartSongPlayback(SongToPlay);
 	}
 	
 	MusicAudioComponent->Stop();

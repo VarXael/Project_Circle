@@ -1,24 +1,19 @@
 ﻿#include "MusicAnalysisSubsystem.h"
-#include "AnalyzedSongData.h" // The new data object
+#include "AnalyzedSongData.h"
 #include "Algo/Sort.h"
 
-// --- Main Subsystem Functions ---
-
-void UMusicAnalysisSubsystem::StartSongPlayback(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias)
+void UMusicAnalysisSubsystem::StartSongPlayback(USongConfigurationData* SongConfig)
 {
-	// The subsystem's main job is now to create the analysis object and reset its own state.
-	CurrentAnalyzedSong = UAnalyzedSongData::CreateAnalyzedSongData(this, PrimaryDataTable, AllSongDataTables, DifficultyBias);
+	CurrentAnalyzedSong = UAnalyzedSongData::RunSongAnalysis(this, SongConfig);
 	
 	if (CurrentAnalyzedSong)
 	{
 		ResetPlaybackState();
 		bIsReadyForPlayback = true;
-		UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: Song analysis complete. Ready for playback."));
 	}
 	else
 	{
 		bIsReadyForPlayback = false;
-		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: Failed to analyze song. Playback will not start."));
 	}
 }
 

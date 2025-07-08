@@ -8,6 +8,7 @@
 #include "MetasoundOutput.h" // Needed for FOnMetasoundOutputValueChanged
 #include "PcMusicManager.generated.h"
 
+class USongConfigurationData;
 class UMetaSoundSource;
 class USoundWave;
 class UDataTable;
@@ -28,14 +29,11 @@ public:
 	/** The song's audio file, to be fed into the Metasound. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
 	TObjectPtr<USoundWave> SongWaveAsset;
-     
-	/** The DataTable containing the comprehensive data parsed from the .osu file. */
+	
+	/** The configuration asset for the song to be played. This holds all data and overrides. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	UDataTable* PrimaryDataTableMusicInfo;
-	/** The DataTable containing the comprehensive data parsed from the .osu file. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	TArray<UDataTable*> DataTableMusicInfo;
-     
+	TObjectPtr<USongConfigurationData> SongToPlay;
+	
 	/** Begins the analysis in the subsystem and starts music playback. */
 	UFUNCTION(BlueprintCallable, Category = "Music")
 	void StartMusicPlayback(float DifficultyBias);

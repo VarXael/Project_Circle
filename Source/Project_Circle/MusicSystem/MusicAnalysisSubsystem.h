@@ -3,57 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MusicAnalysisTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "MusicData.h"
 #include "MusicAnalysisSubsystem.generated.h"
 
-// --- Forward Declarations ---
+class USongConfigurationData;
 class UAnalyzedSongData;
 class UDataTable;
-
-// --- Enums and Structs (These are unchanged but needed for compilation) ---
-UENUM(BlueprintType)
-enum class EGameplaySectionType : uint8
-{
-	Normal      UMETA(DisplayName = "Normal"),
-	HighEnergy  UMETA(DisplayName = "High Energy"),
-	Buildup     UMETA(DisplayName = "Buildup"),
-	Cooldown    UMETA(DisplayName = "Cooldown"),
-	Break       UMETA(DisplayName = "Break")
-};
-
-USTRUCT(BlueprintType)
-struct FGameplayRhythmSection
-{
-    GENERATED_BODY()
-    UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") int32 StartTimeMS = 0;
-    UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") float BPM = 120.f;
-    UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") float BeatLengthMS = 500.f;
-    UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") int32 AnchorTimestampMS = 0;
-};
-
-USTRUCT(BlueprintType)
-struct FSongAnalysisResult // Kept for now as it's used inside UAnalyzedSongData
-{
-	GENERATED_BODY()
-	UPROPERTY(BlueprintReadOnly, Category = "Song Analysis") TArray<FGameplayRhythmSection> RhythmSections;
-};
-
-struct FQueuedNoteEvent { int32 TimestampMS; int32 NoteType; int32 OriginalHitSound; bool operator<(const FQueuedNoteEvent& Other) const { return TimestampMS < Other.TimestampMS; } };
-namespace EQueuedNoteType { constexpr int32 SliderTick = 128; constexpr int32 SliderTail = 256; }
-
-USTRUCT(BlueprintType)
-struct FConfidentHitObject
-{
-	GENERATED_BODY()
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 TimestampMS = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") float Confidence = 0.f;
-	uint32 CombinedHitSound = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 HitObjectType = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 Repeats = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 SliderEndTimeMS = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") float SliderTickRate = 1.f;
-};
 
 // --- Delegates ---
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBeatTriggered, float, BeatTimestamp);
@@ -72,7 +29,7 @@ class PROJECT_CIRCLE_API UMusicAnalysisSubsystem : public UWorldSubsystem
 public:
 	// --- Public API ---
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	void StartSongPlayback(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias = 0.0f);
+	void StartSongPlayback(USongConfigurationData* SongConfig);
 	
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
