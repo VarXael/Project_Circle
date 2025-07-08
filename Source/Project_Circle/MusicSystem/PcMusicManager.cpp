@@ -6,8 +6,6 @@
 #include "MetasoundOutput.h"
 #include "MetasoundOutputSubsystem.h"
 #include "Sound/SoundWave.h"
-
-// THIS IS THE FIX: Include the full definition of UMetaSoundSource
 #include "MetasoundSource.h" 
 
 APcMusicManager::APcMusicManager()
@@ -46,9 +44,11 @@ void APcMusicManager::StartMusicPlayback(float DifficultyBias)
 	UWorld* World = GetWorld();
 	if (!World) return;
 	
+	// The Initiator's simple, clear role: tell the subsystem what to play.
 	if (UMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UMusicAnalysisSubsystem>())
 	{ 
-		MusicSubsystem->StartSongAnalysis(PrimaryDataTableMusicInfo,DataTableMusicInfo, DifficultyBias);
+		// Call the new, cleaner function. The subsystem handles the rest.
+		MusicSubsystem->StartSongPlayback(PrimaryDataTableMusicInfo, DataTableMusicInfo, DifficultyBias);
 	}
 	
 	MusicAudioComponent->Stop();
@@ -57,8 +57,8 @@ void APcMusicManager::StartMusicPlayback(float DifficultyBias)
 		OnMetasoundOutputValueChanged.Unbind();
 	}
 
-	MusicAudioComponent->SetSound(MainMusicMetaSound.Get()); 
-	MusicAudioComponent->SetWaveParameter(FName("Song"), SongWaveAsset.Get());
+	MusicAudioComponent->SetSound(MainMusicMetaSound); 
+	MusicAudioComponent->SetWaveParameter(FName("Song"), SongWaveAsset);
 
 	OnMetasoundOutputValueChanged.BindUFunction(this, FName("OnMetaSoundTimeChanged"));
 

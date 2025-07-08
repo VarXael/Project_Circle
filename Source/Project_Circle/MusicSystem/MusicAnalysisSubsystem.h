@@ -7,7 +7,11 @@
 #include "MusicData.h"
 #include "MusicAnalysisSubsystem.generated.h"
 
-// --- Enums and Structs ---
+// --- Forward Declarations ---
+class UAnalyzedSongData;
+class UDataTable;
+
+// --- Enums and Structs (These are unchanged but needed for compilation) ---
 UENUM(BlueprintType)
 enum class EGameplaySectionType : uint8
 {
@@ -29,13 +33,12 @@ struct FGameplayRhythmSection
 };
 
 USTRUCT(BlueprintType)
-struct FSongAnalysisResult
+struct FSongAnalysisResult // Kept for now as it's used inside UAnalyzedSongData
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly, Category = "Song Analysis") TArray<FGameplayRhythmSection> RhythmSections;
 };
 
-struct FSectionProfileData { int32 StartTime; int32 EndTime; float BaseBeatLength; int32 AnchorTimestamp; float HybridApsScore; };
 struct FQueuedNoteEvent { int32 TimestampMS; int32 NoteType; int32 OriginalHitSound; bool operator<(const FQueuedNoteEvent& Other) const { return TimestampMS < Other.TimestampMS; } };
 namespace EQueuedNoteType { constexpr int32 SliderTick = 128; constexpr int32 SliderTail = 256; }
 
@@ -69,12 +72,12 @@ class PROJECT_CIRCLE_API UMusicAnalysisSubsystem : public UWorldSubsystem
 public:
 	// --- Public API ---
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	void StartSongAnalysis(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias = 0.0f);
+	void StartSongPlayback(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias = 0.0f);
 	
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
 	
-	UFUNCTION(BlueprintPure, Category = "Music Analysis") bool IsAnalysisComplete() const { return bAnalysisComplete; }
+	UFUNCTION(BlueprintPure, Category = "Music Analysis") bool IsReadyForPlayback() const { return bIsReadyForPlayback; }
 	UFUNCTION(BlueprintPure, Category = "Music Analysis") float GetCurrentBPM() const { return CurrentBPM; }
 	UFUNCTION(BlueprintPure, Category = "Music Analysis") bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
 
@@ -88,29 +91,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnSongEnd OnSongEnd;
 
 private:
-	// --- Analysis Logic ---
-	FSongAnalysisResult AnalyzeRhythmSections(UDataTable* PrimaryDataTable, const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias);
-	bool LoadCouncilData(const TArray<UDataTable*>& AllSongDataTables, float DifficultyBias);
-
 	// --- Playback Processing Functions ---
 	void ProcessMusicEvents();
 	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ProcessBeatTicks(int32 InCurrentTimeMS);
 	void GenerateSliderSubEvents(const FMusicData& SliderData);
+	void ResetPlaybackState();
 	
-	// --- Core Analysis Data ---
-	FSongAnalysisResult CurrentSongAnalysis;
-	TArray<FConfidentHitObject> ConfidentHitObjects;
-	TArray<FMusicData> MasterAudioBeats;
-	TMap<int32, FMusicData> MasterUninheritedTimingPoints;
-
-	UPROPERTY() TArray<FMusicData> RuntimeEventTimeline;
+	// --- Core Data Reference ---
+	UPROPERTY()
+	TObjectPtr<UAnalyzedSongData> CurrentAnalyzedSong;
 	
 	// --- Playback State Tracking ---
-	bool bAnalysisComplete = false;
+	bool bIsReadyForPlayback = false;
 	int32 NextEventIndex = 0;
 	int32 LastProcessedMusicProgressMs = -1;
-	int32 AbsoluteSongEndTimeMS = -1;
 	int32 NextBeatTimestampMS = 0;
 	int32 CurrentRhythmSectionIndex = 0;
 	int32 CurrentBeatInSession = 0;
