@@ -18,9 +18,6 @@ struct FSectionOverride
 	float OverriddenBeatLengthMS = 500.f;
 };
 
-/**
- * A self-contained Data Asset that holds all information needed to play and analyze a song.
- */
 UCLASS(BlueprintType)
 class PROJECT_CIRCLE_API USongConfigurationData : public UDataAsset
 {
@@ -50,4 +47,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis", meta=(DisplayName="Structural Base Map (Optional Override)"))
 	TObjectPtr<UDataTable> StructuralAnalysisBaseMapOverride;
+
+#if WITH_EDITOR
+	/**
+	 * Runs the full song analysis and generates the Rhythm Profile and Note Data DataTables.
+	 * This will prompt to save two new assets.
+	 */
+	UFUNCTION(CallInEditor, Category = "Rhythm Generation")
+	void GenerateRhythmAssets();
+#endif
 };
