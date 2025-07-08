@@ -15,7 +15,7 @@
 void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongConfig, const TArray<FRhythmSectionProfile>& SectionsToExport)
 {
 	// --- 1. VALIDATION ---
-	if (!SongConfig || !SongConfig->GameplayMap) // Also check for GameplayMap
+	if (!SongConfig || !SongConfig->GameplayMap)
 	{
 		UE_LOG(LogTemp, Error, TEXT("RhythmDataGenerator: Cannot generate. Missing SongConfig or its GameplayMap."));
 		return;
@@ -26,52 +26,76 @@ void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongC
 		return;
 	}
 
-	// --- 2. PREPARE SAVE PATH ---
-	const FString SourceAssetPath = SongConfig->GetPathName();
-	FString DefaultSavePath = FPackageName::GetLongPackagePath(SourceAssetPath) + TEXT("/");
-	FString DefaultSaveName = FString::Printf(TEXT("DT_%s_RhythmProfile"), *SongConfig->GetName()); // More specific name
-
 	FAssetToolsModule& AssetToolsModule = FModuleManager::Get().LoadModuleChecked<FAssetToolsModule>("AssetTools");
+	const FString SourceAssetPath = SongConfig->GetPathName();
+	FString DefaultSavePath = FPackageName::GetLongPackagePath(SourceAssetPath);
 
-	// --- 3. CREATE THE RHYTHM DATATABLE ASSET ---
-	UDataTableFactory* DataTableFactory = NewObject<UDataTableFactory>();
-	DataTableFactory->Struct = FRhythmSectionProfile::StaticStruct();
+	// --- 2. CREATE THE RHYTHM DATATABLE (First Dialog) ---
+	UDataTableFactory* RhythmDataTableFactory = NewObject<UDataTableFactory>();
+	RhythmDataTableFactory->Struct = FRhythmSectionProfile::StaticStruct();
 
+	FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_RhythmProfile_"));
+
+	// *** CORRECTED CALL #1 ***
+	// We provide the Default Name and Default Path as separate arguments.
 	UObject* NewRhythmAsset = AssetToolsModule.Get().CreateAssetWithDialog(
-		UDataTable::StaticClass(),
-		DataTableFactory,
-		FName(*DefaultSavePath)
+		RhythmDefaultSaveName,      // Argument 1: Default Asset Name
+		DefaultSavePath,            // Argument 2: Default Package Path
+		UDataTable::StaticClass(),  // Argument 3: Asset Class
+		RhythmDataTableFactory      // Argument 4: Factory
 	);
-
+	
 	UDataTable* NewRhythmTable = Cast<UDataTable>(NewRhythmAsset);
-
+	//todo you can actually take the name of the song from the music data struct and add it here: DT_NoteData_NomeOfTheSong
 	if (!NewRhythmTable)
 	{
 		UE_LOG(LogTemp, Log, TEXT("RhythmDataGenerator: Rhythm Profile creation was cancelled by the user."));
 		return;
 	}
 
-	// --- 4. POPULATE THE RHYTHM DATATABLE ---
+	// --- 3. POPULATE THE RHYTHM DATATABLE ---
 	for (const FRhythmSectionProfile& Section : SectionsToExport)
 	{
 		const FName RowName = FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS));
-		NewRhythmTable->AddRow(RowName, Section); // No need for a copy, AddRow handles const reference
+		NewRhythmTable->AddRow(RowName, Section);
 	}
-
 	NewRhythmTable->MarkPackageDirty();
 	FAssetRegistryModule::AssetCreated(NewRhythmTable);
 
-	// --- 5. DUPLICATE THE NOTE DATA TABLE (The New Logic) ---
-	FString NoteDataSaveName = FString::Printf(TEXT("DT_%s_NoteData"), *SongConfig->GetName());
-	FString NoteDataSavePath = FPackageName::GetLongPackagePath(NewRhythmTable->GetPathName()); // Save it in the same folder
+	// --- 4. CREATE THE NOTE DATA TABLE (Second Dialog) ---
+	UDataTable* NewNoteTable = nullptr;
+	UDataTable* SourceNoteTable = SongConfig->GameplayMap;
+
+	UDataTableFactory* NoteDataTableFactory = NewObject<UDataTableFactory>();
+	NoteDataTableFactory->Struct = SourceNoteTable->GetRowStruct();
+	//todo you can actually take the name of the song from the music data struct and add it here: DT_NoteData_NomeOfTheSong
+	FString NoteDefaultSaveName = FString::Printf(TEXT("DT_NoteData"));
+
+	// *** CORRECTED CALL #2 ***
+	UObject* NewNoteAsset = AssetToolsModule.Get().CreateAssetWithDialog(
+		NoteDefaultSaveName,        // Argument 1: Default Asset Name
+		DefaultSavePath,            // Argument 2: Default Package Path
+		UDataTable::StaticClass(),  // Argument 3: Asset Class
+		NoteDataTableFactory        // Argument 4: Factory
+	);
+
+	NewNoteTable = Cast<UDataTable>(NewNoteAsset);
 	
-	UObject* NewNoteAsset = AssetToolsModule.Get().DuplicateAsset(NoteDataSaveName, NoteDataSavePath, SongConfig->GameplayMap);
-	UDataTable* NewNoteTable = Cast<UDataTable>(NewNoteAsset);
-	
-	if(NewNoteTable)
+	if (NewNoteTable)
 	{
+		// --- 5. POPULATE THE NEW NOTE DATA TABLE (Manually Copying Rows) ---
+		const TMap<FName, uint8*>& RowMap = SourceNoteTable->GetRowMap();
+		for (auto RowIt = RowMap.CreateConstIterator(); RowIt; ++RowIt)
+		{
+			NewNoteTable->AddRow(RowIt.Key(), *reinterpret_cast<FTableRowBase*>(RowIt.Value()));
+		}
+
 		NewNoteTable->MarkPackageDirty();
 		FAssetRegistryModule::AssetCreated(NewNoteTable);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("RhythmDataGenerator: Note Data Table creation was cancelled by the user."));
 	}
 
 	// --- 6. FINALIZE AND NOTIFY ---
@@ -79,7 +103,6 @@ void URhythmDataGenerator::GenerateRhythmDataTable(USongConfigurationData* SongC
 	Info.ExpireDuration = 5.0f;
 	FSlateNotificationManager::Get().AddNotification(Info);
 
-	// Highlight BOTH new assets in the Content Browser.
 	if (GEditor)
 	{
 		TArray<UObject*> ObjectsToSync;
