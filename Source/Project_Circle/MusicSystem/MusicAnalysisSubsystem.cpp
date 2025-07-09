@@ -1,13 +1,24 @@
 ﻿#include "MusicAnalysisSubsystem.h"
+#include "SongConfigurationData.h"
 #include "Engine/DataTable.h"
 
-void UMusicAnalysisSubsystem::InitializePlayback(UDataTable* RhythmProfileData, UDataTable* NoteEventData)
+void UMusicAnalysisSubsystem::InitializePlayback(USongConfigurationData* SongConfig)
 {
 	ResetState();
 
+	if (!SongConfig)
+	{
+		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: Provided SongConfiguration was null. Cannot initialize playback."));
+		return;
+	}
+
+	// Get the generated data tables from the SongConfig asset
+	UDataTable* RhythmProfileData = SongConfig->GeneratedRhythmProfile;
+	UDataTable* NoteEventData = SongConfig->GeneratedNoteData;
+
 	if (!RhythmProfileData || !NoteEventData)
 	{
-		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: Missing Rhythm Profile or Note Event Data. Cannot initialize playback."));
+		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: The provided SongConfiguration is missing its GeneratedRhythmProfile or GeneratedNoteData. Did you generate the assets?"));
 		return;
 	}
 
@@ -36,7 +47,7 @@ void UMusicAnalysisSubsystem::InitializePlayback(UDataTable* RhythmProfileData, 
 
 	if (RhythmProfileRows.Num() == 0 || RuntimeEventRows.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MusicAnalysisSubsystem: One or both of the provided DataTables were empty."));
+		UE_LOG(LogTemp, Warning, TEXT("MusicAnalysisSubsystem: One or both of the generated DataTables were empty."));
 		return;
 	}
 

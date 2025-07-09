@@ -1,4 +1,6 @@
-﻿#pragma once
+﻿// --- START OF FILE PcMusicManager.h ---
+
+#pragma once
 
 #include "CoreMinimal.h"
 #include "MetasoundGeneratorHandle.h"
@@ -10,6 +12,7 @@ class UMetaSoundSource;
 class USoundWave;
 class UDataTable;
 class UAudioComponent;
+class USongConfigurationData;
 
 UCLASS()
 class PROJECT_CIRCLE_API APcMusicManager : public AActor
@@ -27,15 +30,11 @@ public:
 	TObjectPtr<USoundWave> SongWaveAsset;
 
 	// --- Gameplay Data ---
-	/** The DataTable containing the hand-tuned rhythm sections (FRhythmSectionProfile). */
+	/** The master configuration asset for the song to be played. This contains references to the generated data tables. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music|Gameplay Data")
-	TObjectPtr<UDataTable> TunedRhythmProfile;
-	
-	/** The DataTable containing the notes for the difficulty being played (FMusicData). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music|Gameplay Data")
-	TObjectPtr<UDataTable> NoteEventMap;
+	TObjectPtr<USongConfigurationData> SongConfiguration;
      
-	/** Begins music playback using the assigned DataTables. */
+	/** Begins music playback using the assigned Song Configuration asset. */
 	UFUNCTION(BlueprintCallable, Category = "Music")
 	void StartMusicPlayback();
 

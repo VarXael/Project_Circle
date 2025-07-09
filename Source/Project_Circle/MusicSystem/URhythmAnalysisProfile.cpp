@@ -149,8 +149,6 @@ UURhythmAnalysisProfile* UURhythmAnalysisProfile::RunSongAnalysis(UObject* Outer
 		return nullptr;
 	}
 
-	NewAnalysis->ApplyOverrides(SongConfig);
-
 	return NewAnalysis;
 }
 
@@ -534,22 +532,4 @@ bool UURhythmAnalysisProfile::GatherCouncilData(const TArray<UDataTable*>& Weigh
 	});
 
 	return OutConfidentHitObjects.Num() > 0;
-}
-
-// ApplyOverrides is UNCHANGED logic-wise.
-void UURhythmAnalysisProfile::ApplyOverrides(USongConfigurationData* SongConfig)
-{
-	if (!SongConfig)
-	{
-		return;
-	}
-
-	for (FRhythmSectionProfile& Section : Result.RhythmSections)
-	{
-		if (const FSectionOverride* Override = SongConfig->SectionOverrides.Find(Section.StartTimeMS))
-		{
-			Section.BeatLengthMS = Override->OverriddenBeatLengthMS;
-			Section.BPM = (Section.BeatLengthMS > 0) ? 60000.0f / Section.BeatLengthMS : 0.f;
-		}
-	}
 }

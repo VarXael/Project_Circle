@@ -1,7 +1,7 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
+﻿
 #include "PcMusicManager.h"
 #include "MusicAnalysisSubsystem.h"
+#include "SongConfigurationData.h"
 #include "Components/AudioComponent.h"
 #include "MetasoundOutput.h"
 #include "MetasoundOutputSubsystem.h"
@@ -35,9 +35,10 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcMusicManager::StartMusicPlayback()
 {
-	if (!MainMusicMetaSound || !SongWaveAsset || !TunedRhythmProfile || !NoteEventMap)
+	// Updated validation to check for the single SongConfiguration asset
+	if (!MainMusicMetaSound || !SongWaveAsset || !SongConfiguration)
 	{
-		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets. Check sound assets, TunedRhythmProfile, and NoteEventMap."));
+		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets. Check sound assets and the SongConfiguration."));
 		return;
 	}
 
@@ -47,7 +48,8 @@ void APcMusicManager::StartMusicPlayback()
 	
 	if (UMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UMusicAnalysisSubsystem>())
 	{ 
-		MusicSubsystem->InitializePlayback(TunedRhythmProfile, NoteEventMap);
+		// Call the updated InitializePlayback function with the SongConfiguration asset
+		MusicSubsystem->InitializePlayback(SongConfiguration);
 	}
 	
 	MusicAudioComponent->Stop();
@@ -68,6 +70,8 @@ void APcMusicManager::StartMusicPlayback()
 	
 	MusicAudioComponent->Play();
 }
+
+// No changes needed to OnMetaSoundTimeChanged or Tick
 void APcMusicManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output)
 {
 	if (Output.IsValid() && Output.IsType<Metasound::FTime>())

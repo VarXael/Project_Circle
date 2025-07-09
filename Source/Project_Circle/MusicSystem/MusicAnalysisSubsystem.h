@@ -6,10 +6,8 @@
 #include "MusicData.h"
 #include "MusicAnalysisSubsystem.generated.h"
 
-// Forward Declarations
 class UDataTable;
 
-// --- Delegates ---
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBeatTriggered, float, BeatTimestamp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnNoteHit, int32, TimestampMS, int32, NoteType, int32, HitSound);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBPMChanged, float, NewBPM);
@@ -30,7 +28,7 @@ public:
 	 * @param NoteEventData The DataTable containing the FMusicData for the specific difficulty being played.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
-	void InitializePlayback(UDataTable* RhythmProfileData, UDataTable* NoteEventData);
+	void InitializePlayback(USongConfigurationData* SongConfig);
 	
 	/** Updates the subsystem with the current music time, triggering events. */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")

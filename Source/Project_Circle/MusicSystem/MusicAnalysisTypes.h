@@ -48,10 +48,18 @@ USTRUCT(BlueprintType)
 struct FRhythmSectionProfile : public FTableRowBase
 {
 	GENERATED_BODY()
-	UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") int32 StartTimeMS = 0;
-	UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") float BPM = 120.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") float BeatLengthMS = 500.f;
-	UPROPERTY(BlueprintReadOnly, Category = "Rhythm Section") int32 AnchorTimestampMS = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rhythm Section") 
+	int32 StartTimeMS = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") 
+	float BPM = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") 
+	float BeatLengthMS = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") 
+	int32 AnchorTimestampMS = 0;
 };
 
 USTRUCT(BlueprintType)

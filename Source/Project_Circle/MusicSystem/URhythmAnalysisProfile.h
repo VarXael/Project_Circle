@@ -1,4 +1,6 @@
-﻿#pragma once
+﻿// --- START OF FILE URhythmAnalysisProfile.h ---
+
+#pragma once
 
 #include "CoreMinimal.h"
 #include "MusicAnalysisTypes.h"
@@ -44,8 +46,6 @@ private:
 	
 	bool GatherCouncilData(const TArray<UDataTable*>& WeightedAnalysisMaps, float DifficultyBias, TArray<FConfidentHitObject>& OutConfidentHitObjects);
 
-	void ApplyOverrides(USongConfigurationData* SongConfig);
-
 	// --- Stored Analysis Results ---
 	// This struct is defined in MusicAnalysisTypes.h now
 	UPROPERTY()
@@ -60,6 +60,5 @@ private:
 	UPROPERTY()
 	int32 AbsoluteSongEndTimeMS = -1;
 
-	// Friend class declaration allows the subsystem to call the private ApplyOverrides function.
-	friend class UMusicAnalysisSubsystem;
+	// The friend class declaration is no longer needed and has been REMOVED.
 };
