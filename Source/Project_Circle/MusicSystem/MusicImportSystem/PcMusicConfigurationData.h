@@ -8,6 +8,7 @@
 #include "Engine/DataAsset.h"
 #include "PcMusicConfigurationData.generated.h"
 
+class UMetaSoundSource;
 class UDataTable;
 
 // The FSectionOverride struct is no longer needed and has been REMOVED.

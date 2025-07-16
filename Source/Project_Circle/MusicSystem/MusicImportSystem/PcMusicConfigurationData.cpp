@@ -57,7 +57,7 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 		RhythmDataTableFactory->Struct = FPcRhythmSectionProfile::StaticStruct();
 
 		// NAME FOR THE FIRST DIALOG: Based on "RhythmProfile"
-		FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_RhythmProfile"), *this->GetName());
+		FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_RhythmProfile"), *SongName.ToString());
 
 		UObject* NewRhythmAsset = AssetTools.CreateAssetWithDialog(
 			RhythmDefaultSaveName, DefaultSavePath, UDataTable::StaticClass(), RhythmDataTableFactory
@@ -90,7 +90,7 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 	NoteDataTableFactory->Struct = SourceNoteTable->GetRowStruct();
 	
 	// NAME FOR THE SECOND DIALOG: Based on "NoteData"
-	FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_NoteData"), *this->GetName());
+	FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_NoteData"), *SongName.ToString());
 
 	UObject* NewNoteAsset = AssetTools.CreateAssetWithDialog(
 		NoteDefaultSaveName, DefaultSavePath, UDataTable::StaticClass(), NoteDataTableFactory
@@ -117,10 +117,10 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 	// --- Finalize: Mark dirty and Save all new assets ---
 	this->MarkPackageDirty();
 
-	if (GeneratedAssetsToSave.Num() > 0)
-	{
-		PackageTools::SavePackagesForObjects(GeneratedAssetsToSave);
-	}
+	// if (GeneratedAssetsToSave.Num() > 0)
+	// {
+	// 	PackageTools::SavePackagesForObjects(GeneratedAssetsToSave);
+	// }
 	
 	// (Notification and Sync Browser logic...)
 	FNotificationInfo Info(LOCTEXT("RhythmDataAssetsGenerated", "Successfully generated and saved Rhythm and Note data assets. Please save THIS configuration asset!"));
