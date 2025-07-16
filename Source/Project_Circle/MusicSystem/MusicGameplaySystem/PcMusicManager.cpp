@@ -6,6 +6,7 @@
 #include "MetasoundOutputSubsystem.h"
 #include "Sound/SoundWave.h"
 #include "MetasoundSource.h" 
+#include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h"
 
 APcMusicManager::APcMusicManager()
 {
@@ -35,7 +36,7 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void APcMusicManager::StartMusicPlayback()
 {
 	// Updated validation to check for the single SongConfiguration asset
-	if (!MainMusicMetaSound || !SongWaveAsset || !SongConfiguration)
+	if (!SongConfiguration)
 	{
 		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets. Check sound assets and the SongConfiguration."));
 		return;
@@ -57,8 +58,8 @@ void APcMusicManager::StartMusicPlayback()
 		OnMetasoundOutputValueChanged.Unbind();
 	}
 
-	MusicAudioComponent->SetSound(MainMusicMetaSound); 
-	MusicAudioComponent->SetWaveParameter(FName("Song"), SongWaveAsset);
+	MusicAudioComponent->SetSound(SongConfiguration->MainMusicMetaSound); 
+	MusicAudioComponent->SetWaveParameter(FName("Song"), SongConfiguration->SongWaveAsset);
 
 	OnMetasoundOutputValueChanged.BindUFunction(this, FName("OnMetaSoundTimeChanged"));
 

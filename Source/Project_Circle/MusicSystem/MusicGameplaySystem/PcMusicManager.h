@@ -22,13 +22,6 @@ class PROJECT_CIRCLE_API APcMusicManager : public AActor
 public:
 	APcMusicManager();
 
-	// --- Sound Assets ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	TObjectPtr<UMetaSoundSource> MainMusicMetaSound;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music")
-	TObjectPtr<USoundWave> SongWaveAsset;
-
 	// --- Gameplay Data ---
 	/** The master configuration asset for the song to be played. This contains references to the generated data tables. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music|Gameplay Data")
@@ -40,6 +33,7 @@ public:
 
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Music")
 	float CurrentSongProgressInSeconds;
+	
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly, Category = "Music")
 	float CurrentSongProgressInMs;
 
