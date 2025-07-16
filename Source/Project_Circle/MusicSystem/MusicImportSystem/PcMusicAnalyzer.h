@@ -26,7 +26,7 @@ public:
 
 	// --- Public Data Accessors ---
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Analyzed Song Data")
-	const TArray<FPcRhythmSectionProfile>& GetRhythmSections() const { return Result.RhythmSections; }
+	const TArray<FPcMusicGameplayEvents>& GetRhythmSections() const { return Result.RhythmSections; }
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Analyzed Song Data")
 	const TArray<FPcImportedMusicData>& GetRuntimeEventTimeline() const { return RuntimeEventTimeline; }

@@ -1,6 +1,6 @@
 ﻿
-#include "PcMusicManager.h"
-#include "PcMusicAnalysisSubsystem.h"
+#include "PcMusicGameplayManager.h"
+#include "PcMusicGameplaySubsystem.h"
 #include "Components/AudioComponent.h"
 #include "MetasoundOutput.h"
 #include "MetasoundOutputSubsystem.h"
@@ -8,7 +8,7 @@
 #include "MetasoundSource.h" 
 #include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h"
 
-APcMusicManager::APcMusicManager()
+APcMusicGameplayManager::APcMusicGameplayManager()
 {
 	PrimaryActorTick.bCanEverTick = false; 
 	
@@ -18,12 +18,12 @@ APcMusicManager::APcMusicManager()
 	MusicAudioComponent->bAutoActivate = false;
 }
 
-void APcMusicManager::BeginPlay()
+void APcMusicGameplayManager::BeginPlay()
 {
 	Super::BeginPlay();
 }
 
-void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void APcMusicGameplayManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     if (OnMetasoundOutputValueChanged.IsBound())
     {
@@ -33,7 +33,7 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 }
 
 
-void APcMusicManager::StartMusicPlayback()
+void APcMusicGameplayManager::StartMusicPlayback()
 {
 	// Updated validation to check for the single SongConfiguration asset
 	if (!SongConfiguration)
@@ -46,7 +46,7 @@ void APcMusicManager::StartMusicPlayback()
 	if (!World)
 		return;
 	
-	if (UPcMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
+	if (UPcMusicGameplaySubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicGameplaySubsystem>())
 	{ 
 		// Call the updated InitializePlayback function with the SongConfiguration asset
 		MusicSubsystem->InitializePlayback(SongConfiguration);
@@ -72,7 +72,7 @@ void APcMusicManager::StartMusicPlayback()
 }
 
 // No changes needed to OnMetaSoundTimeChanged or Tick
-void APcMusicManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output)
+void APcMusicGameplayManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output)
 {
 	if (Output.IsValid() && Output.IsType<Metasound::FTime>())
 	{
@@ -84,7 +84,7 @@ void APcMusicManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundO
 
 			if (UWorld* World = GetWorld())
 			{
-				if (UPcMusicAnalysisSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
+				if (UPcMusicGameplaySubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicGameplaySubsystem>())
 				{
 					MusicSubsystem->UpdateMusicTime(CurrentSongProgressInSeconds);
 				}
@@ -93,7 +93,7 @@ void APcMusicManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundO
 	}
 }
 
-void APcMusicManager::Tick(float DeltaTime)
+void APcMusicGameplayManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 }

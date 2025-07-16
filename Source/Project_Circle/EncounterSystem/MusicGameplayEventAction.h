@@ -4,13 +4,17 @@
 
 #include "CoreMinimal.h"
 
-#include "EncounterAction.generated.h"
+#include "MusicGameplayEventAction.generated.h"
 
 /**
  * 
  */
 UCLASS(EditInlineNew, Blueprintable, BlueprintType)
-class PROJECT_CIRCLE_API UEncounterAction : public UObject
+class PROJECT_CIRCLE_API UMusicGameplayEventAction : public UObject
 {
 	GENERATED_BODY()
+	
+public:
+	UFUNCTION(BlueprintCallable,BlueprintImplementableEvent)
+	void Execute();
 };

@@ -96,23 +96,23 @@ UPcMusicAnalyzer* UPcMusicAnalyzer::RunSongAnalysis(UObject* Outer, UPcMusicConf
 	FPcSongAnalysisParameters Parameters;
 	Parameters.DifficultyBias = SongConfig->DifficultyBias;
 	Parameters.SourceConfig = SongConfig;
-	Parameters.GameplayMap = SongConfig->GameplayMap;
+	Parameters.GameplayMap = SongConfig->MusicGameplayNotesProfile;
 
 	// Populate the weighted analysis maps
-	Parameters.WeightedAnalysisMaps.Add(SongConfig->GameplayMap);
+	Parameters.WeightedAnalysisMaps.Add(SongConfig->MusicGameplayNotesProfile);
 	for (UDataTable* Table : SongConfig->AdditionalAnalysisMaps)
 	{
-		if (Table && Table != SongConfig->GameplayMap)
+		if (Table && Table != SongConfig->MusicGameplayNotesProfile)
 		{
 			Parameters.WeightedAnalysisMaps.Add(Table);
 		}
 	}
 
 	// Determine the structural base map
-	if (SongConfig->StructuralAnalysisBaseMapOverride && Parameters.WeightedAnalysisMaps.Contains(
-		SongConfig->StructuralAnalysisBaseMapOverride))
+	if (SongConfig->MusicEventsProfile && Parameters.WeightedAnalysisMaps.Contains(
+		SongConfig->MusicEventsProfile))
 	{
-		Parameters.StructuralBaseMap = SongConfig->StructuralAnalysisBaseMapOverride;
+		Parameters.StructuralBaseMap = SongConfig->MusicEventsProfile;
 	}
 	else
 	{
@@ -159,7 +159,12 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	TArray<FPcImportedMusicData> StructuralUninheritedTPs;
 	TArray<const FPcImportedMusicData*> StructuralAllEvents;
 
-	// MODIFIED: Getting the input from the Parameters struct.
+	if (!Parameters.StructuralBaseMap)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Music Analysis CRITICAL FAIL: StructuralBaseMap was not set or could not be determined. Analysis cannot continue."));
+		return; 
+	}
+	
 	Parameters.StructuralBaseMap->ForeachRow<FPcImportedMusicData>("Populating Structural Data",
 	                                                     [&](const FName&, const FPcImportedMusicData& Value)
 	                                                     {
@@ -174,7 +179,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 
 	if (StructuralUninheritedTPs.Num() == 0 || StructuralHitObjects.Num() == 0)
 	{
-		// This block is UNCHANGED logic-wise.
 		UE_LOG(LogTemp, Warning,
 		       TEXT("Structural analysis aborted: The StructuralBaseMap '%s' contains no timing points or hit objects."
 		       ), *Parameters.StructuralBaseMap->GetName());
@@ -188,7 +192,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		return;
 	}
 
-	// The ENTIRE block of code from here...
 	TSet<int32> BoundarySet;
 	BoundarySet.Add(0);
 	for (const FPcImportedMusicData& TP : StructuralUninheritedTPs) BoundarySet.Add(TP.TimestampMS);
@@ -387,7 +390,7 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	UE_LOG(LogTemp, Warning, TEXT("--- DEEP RHYTHM ANALYSIS (NORMALIZED) ---"));
 	UE_LOG(LogTemp, Warning, TEXT("Score Range: Min=%.3f, Max=%.3f"), MinScore, MaxScore);
 
-	TArray<FPcRhythmSectionProfile> TempSections;
+	TArray<FPcMusicGameplayEvents> TempSections;
 	for (int32 i = 0; i < ProfileList.Num(); ++i)
 	{
 		FSectionProfileData& Profile = ProfileList[i];
@@ -415,7 +418,7 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		       ),
 		       i, Profile.StartTime, Profile.HybridApsScore, NormalizedScore, *BeatDivision, GameplayBeatLength);
 
-		FPcRhythmSectionProfile FinalSection;
+		FPcMusicGameplayEvents FinalSection;
 		FinalSection.StartTimeMS = Profile.StartTime;
 		FinalSection.BeatLengthMS = GameplayBeatLength;
 		FinalSection.BPM = (GameplayBeatLength > 0) ? 60000.0f / GameplayBeatLength : 0.f;
@@ -440,8 +443,8 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	Result.RhythmSections.Add(TempSections[0]);
 	for (int32 i = 1; i < TempSections.Num(); ++i)
 	{
-		FPcRhythmSectionProfile& Current = TempSections[i];
-		FPcRhythmSectionProfile& Last = Result.RhythmSections.Last();
+		FPcMusicGameplayEvents& Current = TempSections[i];
+		FPcMusicGameplayEvents& Last = Result.RhythmSections.Last();
 
 		float BaseBeatForLast = 500;
 		for (const FPcImportedMusicData& TP : StructuralUninheritedTPs)

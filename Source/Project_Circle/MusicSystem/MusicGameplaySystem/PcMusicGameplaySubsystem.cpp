@@ -1,8 +1,8 @@
-﻿#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
+﻿#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicGameplaySubsystem.h"
 #include "Engine/DataTable.h"
 #include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h"
 
-void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* SongConfig)
+void UPcMusicGameplaySubsystem::InitializePlayback(UPcMusicConfigurationData* SongConfig)
 {
 	ResetState();
 
@@ -13,8 +13,8 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 	}
 
 	// Get the generated data tables from the SongConfig asset
-	UDataTable* RhythmProfileData = SongConfig->GeneratedRhythmProfile;
-	UDataTable* NoteEventData = SongConfig->GeneratedNoteData;
+	UDataTable* RhythmProfileData = SongConfig->GeneratedMusicEventsProfile;
+	UDataTable* NoteEventData = SongConfig->GeneratedMusicNotesProfile;
 
 	if (!RhythmProfileData || !NoteEventData)
 	{
@@ -22,13 +22,13 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 		return;
 	}
 
-	TArray<FPcRhythmSectionProfile*> TempProfilePtrs;
+	TArray<FPcMusicGameplayEvents*> TempProfilePtrs;
 	TArray<FPcImportedMusicData*> TempEventPtrs;
 	RhythmProfileData->GetAllRows(TEXT("Loading Rhythm Profile"), TempProfilePtrs);
 	NoteEventData->GetAllRows(TEXT("Loading Note Events"), TempEventPtrs);
 
 	RhythmProfileRows.Reserve(TempProfilePtrs.Num());
-	for (const FPcRhythmSectionProfile* Ptr : TempProfilePtrs)
+	for (const FPcMusicGameplayEvents* Ptr : TempProfilePtrs)
 	{
 		if (Ptr)
 		{
@@ -68,7 +68,7 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 	UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: Initialized with %d rhythm sections and %d timeline events. Ready."), RhythmProfileRows.Num(), RuntimeEventRows.Num());
 }
 
-void UPcMusicAnalysisSubsystem::ResetState()
+void UPcMusicGameplaySubsystem::ResetState()
 {
 	bIsReadyForPlayback = false;
 	
@@ -89,7 +89,7 @@ void UPcMusicAnalysisSubsystem::ResetState()
 	CurrentBreakEndTimeMS = -1;
 }
 
-void UPcMusicAnalysisSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
+void UPcMusicGameplaySubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 {
 	if (!bIsReadyForPlayback) return;
 	
@@ -107,7 +107,7 @@ void UPcMusicAnalysisSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 	}
 }
 
-void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
+void UPcMusicGameplaySubsystem::ProcessMusicEvents()
 {
 	const int32 CurrentTimeMs = LastProcessedMusicProgressMs;
 	UpdateRhythmSection(CurrentTimeMs);
@@ -172,7 +172,7 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 	}
 }
 
-void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
+void UPcMusicGameplaySubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 {
 	if (RhythmProfileRows.Num() == 0) return;
 	
@@ -185,7 +185,7 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 	if (NewSectionIndex != CurrentSectionIndex || CurrentBPM == 0.f)
 	{
 		CurrentSectionIndex = NewSectionIndex;
-		const FPcRhythmSectionProfile* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
+		const FPcMusicGameplayEvents* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
 		
 		if (CurrentSection)
 		{
@@ -200,11 +200,11 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 	}
 }
 
-void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
+void UPcMusicGameplaySubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 {
 	if (InCurrentTimeMS < CurrentBreakEndTimeMS || RhythmProfileRows.Num() == 0 || CurrentSectionIndex >= RhythmProfileRows.Num()) return;
 
-	const FPcRhythmSectionProfile* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
+	const FPcMusicGameplayEvents* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
 	
 	if (!CurrentSection) return;
 
@@ -229,7 +229,7 @@ void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 	}
 }
 
-void UPcMusicAnalysisSubsystem::GenerateSliderSubEvents(const FPcImportedMusicData& SliderData)
+void UPcMusicGameplaySubsystem::GenerateSliderSubEvents(const FPcImportedMusicData& SliderData)
 {
 	if (!(SliderData.HitObjectType & 2)) return;
 	

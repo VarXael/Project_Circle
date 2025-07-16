@@ -6,7 +6,7 @@
 #include "MetasoundGeneratorHandle.h"
 #include "GameFramework/Actor.h"
 #include "MetasoundOutput.h"
-#include "PcMusicManager.generated.h"
+#include "PcMusicGameplayManager.generated.h"
 
 class UMetaSoundSource;
 class USoundWave;
@@ -15,12 +15,12 @@ class UAudioComponent;
 class UPcMusicConfigurationData;
 
 UCLASS()
-class PROJECT_CIRCLE_API APcMusicManager : public AActor
+class PROJECT_CIRCLE_API APcMusicGameplayManager : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	APcMusicManager();
+	APcMusicGameplayManager();
 
 	// --- Gameplay Data ---
 	/** The master configuration asset for the song to be played. This contains references to the generated data tables. */

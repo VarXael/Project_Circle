@@ -4,18 +4,18 @@
 
 #include "CoreMinimal.h"
 
-#include "EncounterProxy.generated.h"
+#include "MusicGameplayEventProxy.generated.h"
 
 class UMusicAction;
 
 UCLASS()
-class PROJECT_CIRCLE_API AEncounterProxy : public AActor
+class PROJECT_CIRCLE_API AMusicGameplayEventProxy : public AActor
 {
 	GENERATED_BODY()
 
 public:
 	// Sets default values for this actor's properties
-	AEncounterProxy();
+	AMusicGameplayEventProxy();
 
 protected:
 	// Called when the game starts or when spawned

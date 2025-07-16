@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalysisTypes.h"
-#include "PcMusicAnalysisSubsystem.generated.h"
+#include "PcMusicGameplaySubsystem.generated.h"
 
 class UDataTable;
 
@@ -16,7 +16,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBreakPeriod, int32, StartTimeMS,
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongEnd, float, EndTimeSeconds);
 
 UCLASS()
-class PROJECT_CIRCLE_API UPcMusicAnalysisSubsystem : public UWorldSubsystem
+class PROJECT_CIRCLE_API UPcMusicGameplaySubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
 
@@ -69,7 +69,7 @@ private:
 
 	// --- Core Playback Data ---
 
-	TArray<FPcRhythmSectionProfile> RhythmProfileRows;
+	TArray<FPcMusicGameplayEvents> RhythmProfileRows;
 	TArray<FPcImportedMusicData> RuntimeEventRows;
 	TMap<int32, float> MasterBeatLengths; // For slider tick calculations
 
