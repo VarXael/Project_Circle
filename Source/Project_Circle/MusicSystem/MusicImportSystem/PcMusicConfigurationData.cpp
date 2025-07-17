@@ -3,6 +3,7 @@
 #if WITH_EDITOR
 
 #include "PcMusicAnalyzer.h"
+#include "PcMusicAnalysisTypes.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
 #include "Modules/ModuleManager.h"
@@ -13,10 +14,10 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Misc/PackageName.h"
 #include "Editor.h"
+#include "Sound/SoundWave.h"
 
 #define LOCTEXT_NAMESPACE "PcMusicConfigurationData"
 
-// --- Private Helper Function Declarations ---
 namespace PcMusicConfig_Helpers
 {
 	TArray<FPcMusicGameplayNotes> GenerateSliderSubEvents(const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap);
@@ -44,10 +45,13 @@ namespace PcMusicConfig_Helpers
 	}
 }
 
-// --- The Main Public Function ---
-
 void UPcMusicConfigurationData::GenerateRhythmAssets()
 {
+	if (!this->ImportedMusicDataProfile)
+	{
+		return;
+	}
+
 	UPcMusicAnalyzer* AnalysisProfile = UPcMusicAnalyzer::RunSongAnalysis(this, this);
 	if (!AnalysisProfile) { return; }
 
@@ -72,26 +76,70 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 	}
 }
 
-// --- Private Helper Function Implementations ---
-
 UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(const TArray<FPcMusicGameplayEvents>& SectionsToExport)
 {
-	if (SectionsToExport.Num() == 0) return nullptr;
+	if (SectionsToExport.Num() == 0 || !ImportedMusicDataProfile) return nullptr;
 
 	const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
 	const FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_Events"), *SongName.ToString());
 	
 	UDataTable* NewRhythmTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayEvents>(RhythmDefaultSaveName, DefaultSavePath);
-	if (NewRhythmTable)
+	if (!NewRhythmTable) return nullptr;
+
+	TArray<FPcImportedMusicData*> SourceRows;
+	ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
+
+	TArray<FPcImportedMusicData*> TimingPoints;
+	TArray<FPcImportedMusicData*> BreakPoints;
+	for (FPcImportedMusicData* Row : SourceRows)
 	{
-		for (const FPcMusicGameplayEvents& Section : SectionsToExport)
+		if (Row)
 		{
-			const FName RowName = FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS));
-			NewRhythmTable->AddRow(RowName, Section);
+			if (Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
+			{
+				TimingPoints.Add(Row);
+			}
+			else if (Row->EntryType == EPcGameplayEntryType::Break)
+			{
+				BreakPoints.Add(Row);
+			}
 		}
-		FAssetRegistryModule::AssetCreated(NewRhythmTable);
-		NewRhythmTable->MarkPackageDirty();
 	}
+	
+	TArray<FPcMusicGameplayEvents> EnrichedSections = SectionsToExport;
+
+	for (FPcMusicGameplayEvents& Section : EnrichedSections)
+	{
+		int32 BestTimingPointTime = -1;
+		for (const FPcImportedMusicData* TP : TimingPoints)
+		{
+			if (TP->TimestampMS <= Section.StartTimeMS && TP->TimestampMS > BestTimingPointTime)
+			{
+				Section.Meter = TP->Meter;
+				BestTimingPointTime = TP->TimestampMS;
+			}
+		}
+
+		for (const FPcImportedMusicData* BP : BreakPoints)
+		{
+			if (BP->TimestampMS == Section.StartTimeMS)
+			{
+				Section.bIsBreakSection = true;
+				Section.BreakEndTimeMS = BP->BreakEndTimeMS;
+				break;
+			}
+		}
+	}
+
+	for (const FPcMusicGameplayEvents& Section : EnrichedSections)
+	{
+		const FName RowName = FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS));
+		NewRhythmTable->AddRow(RowName, Section);
+	}
+	
+	FAssetRegistryModule::AssetCreated(NewRhythmTable);
+	NewRhythmTable->MarkPackageDirty();
+	
 	return NewRhythmTable;
 }
 
@@ -108,7 +156,6 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 		TArray<FPcImportedMusicData*> SourceRows;
 		this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
 
-		// --- THE FIX: Pre-process to gather all timing points first ---
 		TMap<int32, float> TimingPointMap;
 		for (const FPcImportedMusicData* Row : SourceRows)
 		{
@@ -130,7 +177,6 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 
 				if (SourceRow->HitObjectType & 2)
 				{
-					// Now we pass the pre-processed map to the helper function
 					AllGameplayNotes.Append(PcMusicConfig_Helpers::GenerateSliderSubEvents(*SourceRow, TimingPointMap));
 				}
 			}
@@ -201,7 +247,6 @@ TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(con
 	return SubEvents;
 }
 
-
 #undef LOCTEXT_NAMESPACE
 
-#endif // WITH_EDITOR
+#endif
