@@ -6,14 +6,18 @@
 #include "PcMusicGameplaySubsystem.generated.h"
 
 class UDataTable;
+class UPcMusicConfigurationData;
+
+// --- DELEGATE DEFINITIONS ---
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBeatTriggered, float, BeatTimestamp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongProgress, float, CurrentSongProgress);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnNoteHit, int32, TimestampMS, int32, NoteType, int32, HitSound);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNoteHit, int32, TimestampMS);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBPMChanged, float, NewBPM);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongEnd, float, EndTimeSeconds);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMeterChanged, int32, NewMeter);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBreakPeriod, int32, StartTimeMS, int32, EndTimeMS);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongEnd, float, EndTimeSeconds);
+
 
 UCLASS()
 class PROJECT_CIRCLE_API UPcMusicGameplaySubsystem : public UWorldSubsystem
@@ -21,15 +25,10 @@ class PROJECT_CIRCLE_API UPcMusicGameplaySubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	/**
-	 * Initializes the subsystem for playback using pre-processed, hand-tuned data from DataTables.
-	 * @param RhythmProfileData The DataTable containing the FRhythmSectionProfile rows.
-	 * @param NoteEventData The DataTable containing the FMusicData for the specific difficulty being played.
-	 */
+	// --- PUBLIC API ---
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void InitializePlayback(UPcMusicConfigurationData* SongConfig);
 
-	/** Updates the subsystem with the current music time, triggering events. */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
 
@@ -38,11 +37,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
 	float GetCurrentBPM() const { return CurrentBPM; }
-
+	
+	// +++ RE-INTRODUCED HELPER FUNCTION +++
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
-	bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
+	bool IsInBreakPeriod() const { return CurrentBreakEndTimeMS != -1; }
 
-	// --- Delegates ---
+	// --- DELEGATES ---
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnBeatTriggered OnBeatTriggered;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
@@ -52,37 +52,35 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnBPMChanged OnBPMChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
+	FOnSongEnd OnSongEnd;
+	
+	// +++ RE-INTRODUCED DELEGATES +++
+	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnMeterChanged OnMeterChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnBreakPeriod OnBreakStart;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnBreakPeriod OnBreakEnd;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnSongEnd OnSongEnd;
 
 private:
+	// --- PRIVATE FUNCTIONS ---
 	void ProcessMusicEvents();
 	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ProcessBeatTicks(int32 InCurrentTimeMS);
-	void GenerateSliderSubEvents(const FPcImportedMusicData& SliderData);
 	void ResetState();
-
-	// --- Core Playback Data ---
-
+	
+	// --- MEMBER VARIABLES ---
 	TArray<FPcMusicGameplayEvents> RhythmProfileRows;
-	TArray<FPcImportedMusicData> RuntimeEventRows;
-	TMap<int32, float> MasterBeatLengths; // For slider tick calculations
+	TArray<FPcMusicGameplayNotes> NoteEventRows;
 
-	// --- Playback State Tracking ---
 	bool bIsReadyForPlayback = false;
-	int32 NextEventIndex = 0;
+	int32 NextNoteIndex = 0;
 	int32 LastProcessedMusicProgressMs = -1;
 	int32 AbsoluteSongEndTimeMS = -1;
-	int32 NextBeatTimestampMS = 0;
 	int32 CurrentSectionIndex = 0;
+	int32 NextBeatTimestampMS = 0;
 	int32 CurrentBeatInSession = 0;
 	float CurrentBPM = 0.f;
 	int32 CurrentMeter = 4;
 	int32 CurrentBreakEndTimeMS = -1;
-	TArray<FPcQueuedNoteEvent> NoteEventQueue;
 };

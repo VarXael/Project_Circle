@@ -46,6 +46,8 @@ enum class EPcGameplaySectionType : uint8
 	Break UMETA(DisplayName = "Break")
 };
 
+// In PcMusicAnalysisTypes.h
+
 USTRUCT(BlueprintType)
 struct FPcMusicGameplayEvents : public FTableRowBase
 {
@@ -63,11 +65,20 @@ struct FPcMusicGameplayEvents : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
 	int32 AnchorTimestampMS = 0;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section", meta = (ClampMin = "1", ClampMax = "16"))
+	int32 Meter = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
+	bool bIsBreakSection = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section", meta = (EditCondition = "bIsBreakSection"))
+	int32 BreakEndTimeMS = 0;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Events")
 	TObjectPtr<UMusicGameplayEventDefinition> MusicGameplayEventDefinition;
-	
 };
 
+// In PcMusicAnalysisTypes.h
 USTRUCT(BlueprintType)
 struct FPcMusicGameplayNotes : public FTableRowBase
 {
@@ -81,7 +92,6 @@ struct FPcMusicGameplayNotes : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Events")
 	TObjectPtr<UMusicGameplayEventDefinition> MusicGameplayEventDefinition;
-	
 };
 
 USTRUCT(BlueprintType)
