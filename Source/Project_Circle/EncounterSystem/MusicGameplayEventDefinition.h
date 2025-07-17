@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "MusicGameplayEventDefinition.generated.h"
-class UMusicGameplayEventAction;
+class UMusicGameplayEventAbility;
 
 /**
  * 
@@ -16,5 +16,5 @@ class PROJECT_CIRCLE_API UMusicGameplayEventDefinition : public UDataAsset
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, Instanced,Category = "Music Gameplay Event Actions")
-	TArray<UMusicGameplayEventAction*> MusicGameplayEventActions;
+	TArray<UMusicGameplayEventAbility*> MusicGameplayEventActions;
 };

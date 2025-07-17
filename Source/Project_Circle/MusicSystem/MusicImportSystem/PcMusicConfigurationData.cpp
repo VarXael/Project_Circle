@@ -2,7 +2,7 @@
 
 #if WITH_EDITOR
 
-#include "PcMusicAnalyzer.h" // Your analysis header
+#include "PcMusicAnalyzer.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
 #include "Modules/ModuleManager.h"
@@ -14,106 +14,193 @@
 #include "Misc/PackageName.h"
 #include "Editor.h"
 
-#define LOCTEXT_NAMESPACE "SongConfigurationData"
+#define LOCTEXT_NAMESPACE "PcMusicConfigurationData"
+
+// --- Private Helper Function Declarations ---
+namespace PcMusicConfig_Helpers
+{
+	TArray<FPcMusicGameplayNotes> GenerateSliderSubEvents(const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap);
+	
+	template<typename T>
+	UDataTable* CreateOrFindDataTable(const FString& AssetName, const FString& SavePath)
+	{
+		FAssetToolsModule& AssetToolsModule = FModuleManager::Get().LoadModuleChecked<FAssetToolsModule>("AssetTools");
+		FString PackageName = SavePath + TEXT("/") + AssetName;
+		UPackage* Package = CreatePackage(*PackageName);
+		
+		UDataTable* DataTable = FindObject<UDataTable>(Package, *AssetName);
+		if (!DataTable)
+		{
+			UDataTableFactory* DataTableFactory = NewObject<UDataTableFactory>();
+			DataTableFactory->Struct = T::StaticStruct();
+			UObject* NewAsset = AssetToolsModule.Get().CreateAsset(AssetName, SavePath, UDataTable::StaticClass(), DataTableFactory);
+			DataTable = Cast<UDataTable>(NewAsset);
+		}
+		if (DataTable)
+		{
+			DataTable->EmptyTable();
+		}
+		return DataTable;
+	}
+}
+
+// --- The Main Public Function ---
 
 void UPcMusicConfigurationData::GenerateRhythmAssets()
 {
-	// --- STEP 1: Run analysis ---
 	UPcMusicAnalyzer* AnalysisProfile = UPcMusicAnalyzer::RunSongAnalysis(this, this);
-	if (!AnalysisProfile)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Analysis failed. Cannot generate assets."));
-		return;
-	}
+	if (!AnalysisProfile) { return; }
+
+	UDataTable* NewRhythmTable = GenerateRhythmProfileTable(AnalysisProfile->GetRhythmSections());
+	UDataTable* NewNoteTable = GenerateNotesTable();
+
+	GeneratedMusicEventsProfile = NewRhythmTable;
+	GeneratedMusicNotesProfile = NewNoteTable;
+	this->MarkPackageDirty();
+
+	TArray<UObject*> GeneratedAssetsToSync;
+	if (NewRhythmTable) GeneratedAssetsToSync.Add(NewRhythmTable);
+	if (NewNoteTable) GeneratedAssetsToSync.Add(NewNoteTable);
 	
-	const TArray<FPcMusicGameplayEvents>& SectionsToExport = AnalysisProfile->GetRhythmSections();
+	FNotificationInfo Info(LOCTEXT("RhythmDataAssetsGenerated", "Successfully generated data assets. Please SAVE THIS Configuration Asset!"));
+	Info.ExpireDuration = 8.0f;
+	FSlateNotificationManager::Get().AddNotification(Info);
 
-	// --- STEP 2: Validation and Setup ---
-	if (!this->MusicGameplayNotesProfile) 
+	if (GEditor && GeneratedAssetsToSync.Num() > 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("GenerateRhythmAssets: The source 'MusicGameplayNotesProfile' DataTable is not set. Cannot proceed."));
-		return;
+		GEditor->SyncBrowserToObjects(GeneratedAssetsToSync);
 	}
-    // IMPORTANT: Additional validation to prevent crashes
-    if (!this->MusicGameplayNotesProfile->GetRowStruct())
-    {
-        UE_LOG(LogTemp, Error, TEXT("GenerateRhythmAssets: The source 'MusicGameplayNotesProfile' DataTable has no Row Struct assigned. Cannot proceed."));
-        return;
-    }
+}
 
-	// Clear out old generated assets
-	GeneratedMusicEventsProfile = nullptr;
-	GeneratedMusicNotesProfile = nullptr;
+// --- Private Helper Function Implementations ---
 
-	FAssetToolsModule& AssetToolsModule = FModuleManager::Get().LoadModuleChecked<FAssetToolsModule>("AssetTools");
-	IAssetTools& AssetTools = AssetToolsModule.Get();
-	const FString SourceAssetPath = this->GetPathName();
-	FString DefaultSavePath = FPackageName::GetLongPackagePath(SourceAssetPath);
-	TArray<UObject*> GeneratedAssetsToSave;
+UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(const TArray<FPcMusicGameplayEvents>& SectionsToExport)
+{
+	if (SectionsToExport.Num() == 0) return nullptr;
 
-	// --- Create the RHYTHM PROFILE DataTable ---
-	if (SectionsToExport.Num() > 0)
+	const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
+	const FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_Events"), *SongName.ToString());
+	
+	UDataTable* NewRhythmTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayEvents>(RhythmDefaultSaveName, DefaultSavePath);
+	if (NewRhythmTable)
 	{
-		UDataTableFactory* RhythmDataTableFactory = NewObject<UDataTableFactory>();
-		RhythmDataTableFactory->Struct = FPcMusicGameplayEvents::StaticStruct();
-
-		FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_GameplayEventsProfile"), *SongName.ToString());
-
-		UObject* NewRhythmAsset = AssetTools.CreateAssetWithDialog(
-			RhythmDefaultSaveName, DefaultSavePath, UDataTable::StaticClass(), RhythmDataTableFactory
-		);
-		UDataTable* NewRhythmTable = Cast<UDataTable>(NewRhythmAsset);
-
-		if (!NewRhythmTable)
-		{
-			UE_LOG(LogTemp, Log, TEXT("Rhythm Profile creation was cancelled by the user. Aborting."));
-			MarkPackageDirty(); 
-			return; // Exit if user cancels the first dialog
-		}
-		
 		for (const FPcMusicGameplayEvents& Section : SectionsToExport)
 		{
 			const FName RowName = FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS));
 			NewRhythmTable->AddRow(RowName, Section);
 		}
 		FAssetRegistryModule::AssetCreated(NewRhythmTable);
-		GeneratedMusicEventsProfile = NewRhythmTable;
-		GeneratedAssetsToSave.Add(NewRhythmTable);
+		NewRhythmTable->MarkPackageDirty();
 	}
-	
-	// --- **THE FIX**: Duplicate the NOTE DATA DataTable instead of copying row-by-row ---
-	FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_GameplayNotesProfile"), *SongName.ToString());
-    
-    // Use DuplicateAssetWithDialog which is safer and simpler
-    UObject* NewNoteAsset = AssetTools.DuplicateAssetWithDialog(
-        NoteDefaultSaveName, DefaultSavePath, this->MusicGameplayNotesProfile
-    );
+	return NewRhythmTable;
+}
 
-	UDataTable* NewNoteTable = Cast<UDataTable>(NewNoteAsset);
+UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
+{
+	if (!this->ImportedMusicDataProfile) return nullptr;
+
+	const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
+	const FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_Notes"), *SongName.ToString());
+
+	UDataTable* NewNoteTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayNotes>(NoteDefaultSaveName, DefaultSavePath);
 	if (NewNoteTable)
 	{
-		// The asset is already a perfect copy, no need to manually add rows!
+		TArray<FPcImportedMusicData*> SourceRows;
+		this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
+
+		// --- THE FIX: Pre-process to gather all timing points first ---
+		TMap<int32, float> TimingPointMap;
+		for (const FPcImportedMusicData* Row : SourceRows)
+		{
+			if (Row && Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
+			{
+				TimingPointMap.Add(Row->TimestampMS, Row->BeatLength);
+			}
+		}
+
+		TArray<FPcMusicGameplayNotes> AllGameplayNotes;
+		for (const FPcImportedMusicData* SourceRow : SourceRows)
+		{
+			if (SourceRow && SourceRow->EntryType == EPcGameplayEntryType::HitObject)
+			{
+				FPcMusicGameplayNotes NoteEvent;
+				NoteEvent.StartTimeMS = SourceRow->TimestampMS;
+				NoteEvent.ApproachRate = SourceRow->ApproachRate;
+				AllGameplayNotes.Add(NoteEvent);
+
+				if (SourceRow->HitObjectType & 2)
+				{
+					// Now we pass the pre-processed map to the helper function
+					AllGameplayNotes.Append(PcMusicConfig_Helpers::GenerateSliderSubEvents(*SourceRow, TimingPointMap));
+				}
+			}
+		}
+
+		AllGameplayNotes.Sort([](const FPcMusicGameplayNotes& A, const FPcMusicGameplayNotes& B) {
+			return A.StartTimeMS < B.StartTimeMS;
+		});
+
+		for (const FPcMusicGameplayNotes& NoteToAdd : AllGameplayNotes)
+		{
+			const FName RowName = FName(*FString::Printf(TEXT("%d"), NoteToAdd.StartTimeMS));
+			if (NewNoteTable->FindRowUnchecked(RowName))
+			{
+				const FName UniqueRowName = MakeUniqueObjectName(NewNoteTable, NewNoteTable->GetClass(), RowName);
+				NewNoteTable->AddRow(UniqueRowName, NoteToAdd);
+			}
+			else
+			{
+				NewNoteTable->AddRow(RowName, NoteToAdd);
+			}
+		}
 		FAssetRegistryModule::AssetCreated(NewNoteTable);
-		GeneratedMusicNotesProfile = NewNoteTable;
-		GeneratedAssetsToSave.Add(NewNoteTable);
+		NewNoteTable->MarkPackageDirty();
 	}
-	else
-	{
-		UE_LOG(LogTemp, Log, TEXT("Note Data Table creation was cancelled by the user."));
-	}
-
-	// --- Finalize: Mark dirty and notify ---
-	this->MarkPackageDirty();
-
-	FNotificationInfo Info(LOCTEXT("RhythmDataAssetsGenerated", "Successfully generated Rhythm and Note data assets. Please save THIS configuration asset!"));
-	Info.ExpireDuration = 8.0f;
-	FSlateNotificationManager::Get().AddNotification(Info);
-
-	if (GEditor && GeneratedAssetsToSave.Num() > 0)
-	{
-		GEditor->SyncBrowserToObjects(GeneratedAssetsToSave);
-	}
+	return NewNoteTable;
 }
+
+TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap)
+{
+	TArray<FPcMusicGameplayNotes> SubEvents;
+	float BaseBeatLength = 500.f;
+
+	int32 BestTPTime = -1;
+	for (const auto& Elem : TimingPointMap)
+	{
+		if (Elem.Key <= SliderData.TimestampMS && Elem.Key > BestTPTime)
+		{
+			BaseBeatLength = Elem.Value;
+			BestTPTime = Elem.Key;
+		}
+	}
+	
+	const float SliderDuration = SliderData.SliderEndTimeMS - SliderData.TimestampMS;
+	const float TickInterval = (BaseBeatLength > 0 && SliderData.SliderTickRate > 0) ? FMath::Max(20.f, BaseBeatLength / SliderData.SliderTickRate) : -1.f;
+
+	if (SliderDuration > 0 && TickInterval > 0) {
+		const float SinglePassDuration = SliderDuration / FMath::Max(1, SliderData.Repeats);
+		for (int32 Pass = 0; Pass < SliderData.Repeats; ++Pass) {
+			for (float TimeAlongPass = TickInterval; TimeAlongPass < SinglePassDuration; TimeAlongPass += TickInterval) {
+				if (!FMath::IsNearlyEqual(TimeAlongPass, SinglePassDuration, 1.f))
+				{
+					FPcMusicGameplayNotes TickEvent;
+					TickEvent.StartTimeMS = SliderData.TimestampMS + FMath::RoundToInt((Pass * SinglePassDuration) + TimeAlongPass);
+					TickEvent.ApproachRate = SliderData.ApproachRate;
+					SubEvents.Add(TickEvent);
+				}
+			}
+		}
+		for (int32 Repeat = 1; Repeat <= SliderData.Repeats; ++Repeat)
+		{
+			FPcMusicGameplayNotes TailEvent;
+			TailEvent.StartTimeMS = SliderData.TimestampMS + FMath::RoundToInt(Repeat * SinglePassDuration);
+			TailEvent.ApproachRate = SliderData.ApproachRate;
+			SubEvents.Add(TailEvent);
+		}
+	}
+	return SubEvents;
+}
+
 
 #undef LOCTEXT_NAMESPACE
 

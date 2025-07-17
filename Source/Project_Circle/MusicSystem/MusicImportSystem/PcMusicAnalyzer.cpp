@@ -96,23 +96,23 @@ UPcMusicAnalyzer* UPcMusicAnalyzer::RunSongAnalysis(UObject* Outer, UPcMusicConf
 	FPcSongAnalysisParameters Parameters;
 	Parameters.DifficultyBias = SongConfig->DifficultyBias;
 	Parameters.SourceConfig = SongConfig;
-	Parameters.GameplayMap = SongConfig->MusicGameplayNotesProfile;
+	Parameters.GameplayMap = SongConfig->ImportedMusicDataProfile;
 
 	// Populate the weighted analysis maps
-	Parameters.WeightedAnalysisMaps.Add(SongConfig->MusicGameplayNotesProfile);
+	Parameters.WeightedAnalysisMaps.Add(SongConfig->ImportedMusicDataProfile);
 	for (UDataTable* Table : SongConfig->AdditionalAnalysisMaps)
 	{
-		if (Table && Table != SongConfig->MusicGameplayNotesProfile)
+		if (Table && Table != SongConfig->ImportedMusicDataProfile)
 		{
 			Parameters.WeightedAnalysisMaps.Add(Table);
 		}
 	}
 
 	// Determine the structural base map
-	if (SongConfig->MusicEventsProfile && Parameters.WeightedAnalysisMaps.Contains(
-		SongConfig->MusicEventsProfile))
+	if (SongConfig->ImportedMusicDataProfile && Parameters.WeightedAnalysisMaps.Contains(
+		SongConfig->ImportedMusicDataProfile))
 	{
-		Parameters.StructuralBaseMap = SongConfig->MusicEventsProfile;
+		Parameters.StructuralBaseMap = SongConfig->ImportedMusicDataProfile;
 	}
 	else
 	{

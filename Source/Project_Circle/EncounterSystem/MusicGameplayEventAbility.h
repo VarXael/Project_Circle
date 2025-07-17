@@ -3,18 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
-#include "MusicGameplayEventAction.generated.h"
+#include "Abilities/GameplayAbility.h"
+#include "MusicGameplayEventAbility.generated.h"
 
 /**
  * 
  */
 UCLASS(EditInlineNew, Blueprintable, BlueprintType)
-class PROJECT_CIRCLE_API UMusicGameplayEventAction : public UObject
+class PROJECT_CIRCLE_API UMusicGameplayEventAbility : public UGameplayAbility
 {
 	GENERATED_BODY()
-	
-public:
-	UFUNCTION(BlueprintCallable,BlueprintImplementableEvent)
-	void Execute();
 };
