@@ -78,132 +78,158 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 
 UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(const TArray<FPcMusicGameplayEvents>& SectionsToExport)
 {
-	if (SectionsToExport.Num() == 0 || !ImportedMusicDataProfile) return nullptr;
+    if (SectionsToExport.Num() == 0 || !ImportedMusicDataProfile)
+    {
+       return nullptr;
+    }
 
-	const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
-	const FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_Events"), *SongName.ToString());
-	
-	UDataTable* NewRhythmTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayEvents>(RhythmDefaultSaveName, DefaultSavePath);
-	if (!NewRhythmTable) return nullptr;
+    const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
+    const FString RhythmDefaultSaveName = FString::Printf(TEXT("DT_%s_Events"), *SongName.ToString());
+    
+    UDataTable* NewRhythmTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayEvents>(RhythmDefaultSaveName, DefaultSavePath);
+    if (!NewRhythmTable)
+    {
+       return nullptr;
+    }
 
-	TArray<FPcImportedMusicData*> SourceRows;
-	ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
+    // Clear any old data from the table to ensure we start fresh.
+    NewRhythmTable->EmptyTable();
 
-	TArray<FPcImportedMusicData*> TimingPoints;
-	TArray<FPcImportedMusicData*> BreakPoints;
-	for (FPcImportedMusicData* Row : SourceRows)
-	{
-		if (Row)
-		{
-			if (Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
-			{
-				TimingPoints.Add(Row);
-			}
-			else if (Row->EntryType == EPcGameplayEntryType::Break)
-			{
-				BreakPoints.Add(Row);
-			}
-		}
-	}
-	
-	TArray<FPcMusicGameplayEvents> EnrichedSections = SectionsToExport;
+    TArray<FPcImportedMusicData*> SourceRows;
+    ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
 
-	for (FPcMusicGameplayEvents& Section : EnrichedSections)
-	{
-		int32 BestTimingPointTime = -1;
-		for (const FPcImportedMusicData* TP : TimingPoints)
-		{
-			if (TP->TimestampMS <= Section.StartTimeMS && TP->TimestampMS > BestTimingPointTime)
-			{
-				Section.Meter = TP->Meter;
-				BestTimingPointTime = TP->TimestampMS;
-			}
-		}
+    // Pre-filter the source rows for efficiency, so we don't loop through everything every time.
+    TArray<FPcImportedMusicData*> TimingPoints;
+    TArray<FPcImportedMusicData*> BreakPoints;
+    for (FPcImportedMusicData* Row : SourceRows)
+    {
+       if (Row)
+       {
+          if (Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
+          {
+             TimingPoints.Add(Row);
+          }
+          else if (Row->EntryType == EPcGameplayEntryType::Break)
+          {
+             BreakPoints.Add(Row);
+          }
+       }
+    }
+    
+    TArray<FPcMusicGameplayEvents> EnrichedSections = SectionsToExport;
 
-		for (const FPcImportedMusicData* BP : BreakPoints)
-		{
-			if (BP->TimestampMS == Section.StartTimeMS)
-			{
-				Section.bIsBreakSection = true;
-				Section.BreakEndTimeMS = BP->BreakEndTimeMS;
-				break;
-			}
-		}
-	}
+    // --- This is our single, unified loop for processing ---
+    int32 RowIndex = 0;
+    for (FPcMusicGameplayEvents& Section : EnrichedSections)
+    {
+        // --- Step 1: Enrich the data with Meter and Break info ---
+        int32 BestTimingPointTime = -1;
+        for (const FPcImportedMusicData* TP : TimingPoints)
+        {
+            if (TP->TimestampMS <= Section.StartTimeMS && TP->TimestampMS > BestTimingPointTime)
+            {
+                Section.Meter = TP->Meter;
+                BestTimingPointTime = TP->TimestampMS;
+            }
+        }
 
-	for (const FPcMusicGameplayEvents& Section : EnrichedSections)
-	{
-		const FName RowName = FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS));
-		NewRhythmTable->AddRow(RowName, Section);
-	}
-	
-	FAssetRegistryModule::AssetCreated(NewRhythmTable);
-	NewRhythmTable->MarkPackageDirty();
-	
-	return NewRhythmTable;
+        for (const FPcImportedMusicData* BP : BreakPoints)
+        {
+            if (BP->TimestampMS == Section.StartTimeMS)
+            {
+                Section.bIsBreakSection = true;
+                Section.BreakEndTimeMS = BP->BreakEndTimeMS;
+                break;
+            }
+        }
+
+        // --- Step 2: Assign the default behavior ---
+        if (DefaultMusicEventBehaviour && Section.MusicGameplayEventDefinition == nullptr)
+        {
+            Section.MusicGameplayEventDefinition = DefaultMusicEventBehaviour;
+        }
+
+        // --- Step 3: Add the fully processed row to the table ---
+        const FName RowName = FName(*FString::Printf(TEXT("Row_%d"), RowIndex));
+        NewRhythmTable->AddRow(RowName, Section);
+        RowIndex++;
+    }
+    
+    // Mark the asset as created and dirty so the editor knows to save our changes.
+    FAssetRegistryModule::AssetCreated(NewRhythmTable);
+    NewRhythmTable->MarkPackageDirty();
+    
+    return NewRhythmTable;
 }
 
 UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 {
-	if (!this->ImportedMusicDataProfile) return nullptr;
+    if (!this->ImportedMusicDataProfile) return nullptr;
 
-	const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
-	const FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_Notes"), *SongName.ToString());
+    const FString DefaultSavePath = FPackageName::GetLongPackagePath(this->GetPathName());
+    const FString NoteDefaultSaveName = FString::Printf(TEXT("DT_%s_Notes"), *SongName.ToString());
 
-	UDataTable* NewNoteTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayNotes>(NoteDefaultSaveName, DefaultSavePath);
-	if (NewNoteTable)
-	{
-		TArray<FPcImportedMusicData*> SourceRows;
-		this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
+    UDataTable* NewNoteTable = PcMusicConfig_Helpers::CreateOrFindDataTable<FPcMusicGameplayNotes>(NoteDefaultSaveName, DefaultSavePath);
+    if (!NewNoteTable)
+    {
+        return nullptr;
+    }
+    
+    NewNoteTable->EmptyTable();
 
-		TMap<int32, float> TimingPointMap;
-		for (const FPcImportedMusicData* Row : SourceRows)
-		{
-			if (Row && Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
-			{
-				TimingPointMap.Add(Row->TimestampMS, Row->BeatLength);
-			}
-		}
+    TArray<FPcImportedMusicData*> SourceRows;
+    this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
 
-		TArray<FPcMusicGameplayNotes> AllGameplayNotes;
-		for (const FPcImportedMusicData* SourceRow : SourceRows)
-		{
-			if (SourceRow && SourceRow->EntryType == EPcGameplayEntryType::HitObject)
-			{
-				FPcMusicGameplayNotes NoteEvent;
-				NoteEvent.StartTimeMS = SourceRow->TimestampMS;
-				NoteEvent.ApproachRate = SourceRow->ApproachRate;
-				AllGameplayNotes.Add(NoteEvent);
+    TMap<int32, float> TimingPointMap;
+    for (const FPcImportedMusicData* Row : SourceRows)
+    {
+       if (Row && Row->EntryType == EPcGameplayEntryType::TimingPoint && Row->Uninherited == 1)
+       {
+          TimingPointMap.Add(Row->TimestampMS, Row->BeatLength);
+       }
+    }
 
-				if (SourceRow->HitObjectType & 2)
-				{
-					AllGameplayNotes.Append(PcMusicConfig_Helpers::GenerateSliderSubEvents(*SourceRow, TimingPointMap));
-				}
-			}
-		}
+    TArray<FPcMusicGameplayNotes> AllGameplayNotes;
+    for (const FPcImportedMusicData* SourceRow : SourceRows)
+    {
+       if (SourceRow && SourceRow->EntryType == EPcGameplayEntryType::HitObject)
+       {
+          FPcMusicGameplayNotes NoteEvent;
+          NoteEvent.StartTimeMS = SourceRow->TimestampMS;
+          NoteEvent.ApproachRate = SourceRow->ApproachRate;
+          AllGameplayNotes.Add(NoteEvent);
 
-		AllGameplayNotes.Sort([](const FPcMusicGameplayNotes& A, const FPcMusicGameplayNotes& B) {
-			return A.StartTimeMS < B.StartTimeMS;
-		});
+          if (SourceRow->HitObjectType & 2)
+          {
+             AllGameplayNotes.Append(PcMusicConfig_Helpers::GenerateSliderSubEvents(*SourceRow, TimingPointMap));
+          }
+       }
+    }
 
-		for (const FPcMusicGameplayNotes& NoteToAdd : AllGameplayNotes)
-		{
-			const FName RowName = FName(*FString::Printf(TEXT("%d"), NoteToAdd.StartTimeMS));
-			if (NewNoteTable->FindRowUnchecked(RowName))
-			{
-				const FName UniqueRowName = MakeUniqueObjectName(NewNoteTable, NewNoteTable->GetClass(), RowName);
-				NewNoteTable->AddRow(UniqueRowName, NoteToAdd);
-			}
-			else
-			{
-				NewNoteTable->AddRow(RowName, NoteToAdd);
-			}
-		}
-		FAssetRegistryModule::AssetCreated(NewNoteTable);
-		NewNoteTable->MarkPackageDirty();
-	}
-	return NewNoteTable;
+    AllGameplayNotes.Sort([](const FPcMusicGameplayNotes& A, const FPcMusicGameplayNotes& B) {
+       return A.StartTimeMS < B.StartTimeMS;
+    });
+
+    int32 RowIndex = 0;
+    for (FPcMusicGameplayNotes& NoteToAdd : AllGameplayNotes)
+    {
+       if (!DefaultMusicNoteBehaviour && DefaultMusicNoteBehaviour == nullptr)
+       {
+          NoteToAdd.MusicGameplayEventDefinition = DefaultMusicNoteBehaviour;
+       }
+
+       // --- Add the fully processed row to the table ---
+       const FName RowName = FName(*FString::Printf(TEXT("Row_%d"), RowIndex));
+       NewNoteTable->AddRow(RowName, NoteToAdd);
+       RowIndex++;
+    }
+    
+    FAssetRegistryModule::AssetCreated(NewNoteTable);
+    NewNoteTable->MarkPackageDirty();
+    
+    return NewNoteTable;
 }
+
 
 TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap)
 {
