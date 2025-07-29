@@ -1,6 +1,6 @@
 ﻿
 #include "PcMusicGameplayManager.h"
-#include "PcMusicEventsSubsystem.h"
+#include "PcMusicDirectorSubsystem.h"
 #include "Components/AudioComponent.h"
 #include "MetasoundOutput.h"
 #include "MetasoundOutputSubsystem.h"
@@ -46,7 +46,7 @@ void APcMusicGameplayManager::StartMusicPlayback()
 	if (!World)
 		return;
 	
-	if (UPcMusicEventsSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicEventsSubsystem>())
+	if (UPcMusicDirectorSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicDirectorSubsystem>())
 	{ 
 		// Call the updated InitializePlayback function with the SongConfiguration asset
 		MusicSubsystem->InitializePlayback(SongConfiguration);
@@ -84,7 +84,7 @@ void APcMusicGameplayManager::OnMetaSoundTimeChanged(FName OutputName, const FMe
 
 			if (UWorld* World = GetWorld())
 			{
-				if (UPcMusicEventsSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicEventsSubsystem>())
+				if (UPcMusicDirectorSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicDirectorSubsystem>())
 				{
 					MusicSubsystem->UpdateMusicTime(CurrentSongProgressInSeconds);
 				}

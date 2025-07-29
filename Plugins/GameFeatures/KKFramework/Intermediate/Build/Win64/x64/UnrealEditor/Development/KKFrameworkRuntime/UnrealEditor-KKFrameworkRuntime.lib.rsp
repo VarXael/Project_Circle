@@ -1,0 +1,13 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-KKFrameworkRuntime.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"E:\GameDev\Unreal Engine Projects\Project_Circle\Intermediate\Build\Win64\x64\Project_CircleEditor\Development\UnrealEd\SharedPCH.UnrealEd.Cpp20.h.obj"
+"E:\GameDev\Unreal Engine Projects\Project_Circle\Plugins\GameFeatures\KKFramework\Intermediate\Build\Win64\x64\UnrealEditor\Development\KKFrameworkRuntime\KKFrameworkRuntimeModule.cpp.obj"
+"E:\GameDev\Unreal Engine Projects\Project_Circle\Plugins\GameFeatures\KKFramework\Intermediate\Build\Win64\x64\UnrealEditor\Development\KKFrameworkRuntime\PerModuleInline.gen.cpp.obj"
+"E:\GameDev\Unreal Engine Projects\Project_Circle\Plugins\GameFeatures\KKFramework\Intermediate\Build\Win64\x64\UnrealEditor\Development\KKFrameworkRuntime\Default.rc2.res"
+/OUT:"E:\GameDev\Unreal Engine Projects\Project_Circle\Plugins\GameFeatures\KKFramework\Intermediate\Build\Win64\x64\UnrealEditor\Development\KKFrameworkRuntime\UnrealEditor-KKFrameworkRuntime.lib"

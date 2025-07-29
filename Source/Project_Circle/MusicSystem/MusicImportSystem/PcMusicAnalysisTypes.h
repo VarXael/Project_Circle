@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "PcMusicAnalysisTypes.generated.h"
 
-class UMusicGameplayEventDefinition;
+class UMusicActionSequence;
 class UMusicGameplayEventActionSet;
 class UDataTable;
 class UPcMusicConfigurationData;
@@ -75,7 +75,7 @@ struct FPcMusicGameplayEvents : public FTableRowBase
 	int32 BreakEndTimeMS = 0;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Events")
-	TObjectPtr<UMusicGameplayEventDefinition> MusicGameplayEventDefinition;
+	TObjectPtr<UMusicActionSequence> MusicGameplayEventDefinition;
 };
 
 // In PcMusicAnalysisTypes.h
@@ -88,10 +88,13 @@ struct FPcMusicGameplayNotes : public FTableRowBase
 	int32 StartTimeMS = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Notes")
+	int32 ApproachTimeMS = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Notes")
 	float ApproachRate = 5.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Events")
-	TObjectPtr<UMusicGameplayEventDefinition> MusicGameplayEventDefinition;
+	TObjectPtr<UMusicActionSequence> MusicGameplayEventDefinition;
 };
 
 USTRUCT(BlueprintType)

@@ -1,0 +1,14 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "e:\\gamedev\\unreal engine projects\\project_circle\\plugins\\gamefeatures\\kkframework\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\kkframeworkruntime\\permoduleinline.gen.cpp",
+        "ProvidedModule": "",
+        "PCH": "e:\\gamedev\\unreal engine projects\\project_circle\\intermediate\\build\\win64\\x64\\project_circleeditor\\development\\unrealed\\sharedpch.unrealed.cpp20.h.pch",
+        "Includes": [
+            "e:\\gamedev\\unreal engine projects\\project_circle\\plugins\\gamefeatures\\kkframework\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\kkframeworkruntime\\definitions.kkframeworkruntime.h",
+            "e:\\epic games\\ue_5.5\\engine\\source\\runtime\\core\\public\\hal\\permoduleinline.inl"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

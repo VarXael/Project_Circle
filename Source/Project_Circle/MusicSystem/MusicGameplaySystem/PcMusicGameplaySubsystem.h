@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Project_Circle/MusicEventsSystem/MusicProxy.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "PcMusicGameplaySubsystem.generated.h"
 
@@ -13,4 +14,6 @@ UCLASS()
 class PROJECT_CIRCLE_API UPcMusicGameplaySubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
+
+	
 };
