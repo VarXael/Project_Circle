@@ -16,6 +16,8 @@ public class Project_Circle : ModuleRules
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "GameplayAbilities", "GameplayTags", "GameplayTasks" });
 		
+		PrivateDependencyModuleNames.AddRange(new string[] { "GameFeatures", "AbilitySystemGameFeatureActions" });
+		
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

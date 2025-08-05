@@ -22,7 +22,7 @@ namespace PcMusicConfig_Helpers
 {
 	TArray<FPcMusicGameplayNotes> GenerateSliderSubEvents(const FPcImportedMusicData& SliderData,
 	                                                      const TMap<int32, float>& TimingPointMap,
-	                                                      UMusicActionSequence* NoteBehaviour);
+	                                                      UMusicActionSet* NoteBehaviour);
 
 	template <typename T>
 	UDataTable* CreateOrFindDataTable(const FString& AssetName, const FString& SavePath)
@@ -207,7 +207,7 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 	this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
 
 	// --- FIX #1: Create a strong, GC-proof reference to the Data Asset ---
-	TObjectPtr<UMusicActionSequence> NoteBehaviour = DefaultMusicNoteBehaviour;
+	TObjectPtr<UMusicActionSet> NoteBehaviour = DefaultMusicNoteBehaviour;
 	if (!NoteBehaviour)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("GenerateNotesTable: DefaultMusicNoteBehaviour is not set in the configuration asset. Notes will have no behavior."));
@@ -265,7 +265,7 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 
 
 TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(
-	const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap, UMusicActionSequence* NoteBehaviour)
+	const FPcImportedMusicData& SliderData, const TMap<int32, float>& TimingPointMap, UMusicActionSet* NoteBehaviour)
 {
 	TArray<FPcMusicGameplayNotes> SubEvents;
 	float BaseBeatLength = 500.f;

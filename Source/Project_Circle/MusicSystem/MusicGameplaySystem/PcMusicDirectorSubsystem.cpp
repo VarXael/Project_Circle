@@ -1,83 +1,87 @@
-﻿#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicDirectorSubsystem.h"
+﻿// Includes have been updated
+#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicDirectorSubsystem.h"
 #include "Engine/DataTable.h"
-#include "Project_Circle/MusicEventsSystem/MusicAction.h"
-#include "Project_Circle/MusicEventsSystem/MusicActionSequence.h"
-#include "Project_Circle/MusicEventsSystem/MusicProxy.h"
+#include "MusicActions/MusicActionInstance.h"
 #include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h"
 
-void UPcMusicDirectorSubsystem::InitializePlayback(UPcMusicConfigurationData* SongConfig)
+// MODIFIED: InitializePlayback now requires the manager and stores it.
+void UPcMusicDirectorSubsystem::InitializePlayback(UPcMusicConfigurationData* SongConfig, APcMusicGameplayManager* InMusicManager)
 {
 	ResetState();
 
 	if (!SongConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("MusicGameplaySubsystem: Provided SongConfiguration was null."));
+		UE_LOG(LogTemp, Error, TEXT("MusicDirectorSubsystem: Provided SongConfiguration was null."));
 		return;
 	}
+	// NEW: Validate and store the manager reference. It's crucial for spawning instances.
+	if (!InMusicManager)
+	{
+		UE_LOG(LogTemp, Error, TEXT("MusicDirectorSubsystem: Provided PcMusicGameplayManager was null. Cannot proceed."));
+		return;
+	}
+	MusicManager = InMusicManager;
 
 	UDataTable* RhythmProfileData = SongConfig->GeneratedMusicEventsProfile;
 	UDataTable* NoteEventData = SongConfig->GeneratedMusicNotesProfile;
 
 	if (!RhythmProfileData || !NoteEventData)
 	{
-		UE_LOG(LogTemp, Error, TEXT("MusicGameplaySubsystem: A required DataTable is missing."));
+		UE_LOG(LogTemp, Error, TEXT("MusicDirectorSubsystem: A required DataTable is missing."));
 		return;
 	}
 
-	// Load Rhythm Profile (which now contains Meter and Break info)
+	// The rest of this function is unchanged, as the data loading is correct.
 	TArray<FPcMusicGameplayEvents*> TempRhythmPtrs;
 	RhythmProfileData->GetAllRows(TEXT("Loading Rhythm Profile"), TempRhythmPtrs);
 	for (const FPcMusicGameplayEvents* Ptr : TempRhythmPtrs)
 	{
-		if (Ptr)
-		{
-			RhythmProfileRows.Add(*Ptr);
-		}
+		if (Ptr) RhythmProfileRows.Add(*Ptr);
 	}
-
-	// Load Note Events
 	TArray<FPcMusicGameplayNotes*> TempNotePtrs;
 	NoteEventData->GetAllRows(TEXT("Loading Note Events"), TempNotePtrs);
 	for (const FPcMusicGameplayNotes* Ptr : TempNotePtrs)
 	{
 		if (Ptr) NoteEventRows.Add(*Ptr);
 	}
-	
 	if (RhythmProfileRows.Num() == 0 && NoteEventRows.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MusicGameplaySubsystem: Both DataTables were empty."));
+		UE_LOG(LogTemp, Warning, TEXT("MusicDirectorSubsystem: Both DataTables were empty."));
 		return;
 	}
-
 	NoteEventRows.Sort([](const FPcMusicGameplayNotes& A, const FPcMusicGameplayNotes& B) {
 		return A.StartTimeMS < B.StartTimeMS;
 	});
-
 	int32 LatestEventTime = 0;
-	for(const auto& Event : RhythmProfileRows)
-	{
-		LatestEventTime = FMath::Max(LatestEventTime, Event.StartTimeMS);
-		LatestEventTime = FMath::Max(LatestEventTime, Event.BreakEndTimeMS);
-	}
 	if (NoteEventRows.Num() > 0)
 	{
 		LatestEventTime = FMath::Max(LatestEventTime, NoteEventRows.Last().StartTimeMS);
 	}
-	AbsoluteSongEndTimeMS = LatestEventTime + 2000; // 2-second buffer
-
+	AbsoluteSongEndTimeMS = LatestEventTime + 2000;
 	bIsReadyForPlayback = true;
-	UE_LOG(LogTemp, Log, TEXT("MusicGameplaySubsystem: Initialized with %d rhythm sections and %d note events. Ready."), RhythmProfileRows.Num(), NoteEventRows.Num());
+	UE_LOG(LogTemp, Log, TEXT("MusicDirectorSubsystem: Initialized with %d rhythm sections and %d note events. Ready."), RhythmProfileRows.Num(), NoteEventRows.Num());
 }
 
+// MODIFIED: UpdateMusicTime is now the central driver.
 void UPcMusicDirectorSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 {
-	if (!bIsReadyForPlayback) return;
+	if (!bIsReadyForPlayback)
+		return;
 
 	const int32 CurrentTimeMs = FMath::RoundToInt(CurrentTimeSeconds * 1000.0f);
 	if (CurrentTimeMs > LastProcessedMusicProgressMs)
 	{
-		ProcessMusicEvents();
+		// 1. Process rhythm and beat events
+		UpdateRhythmSection(CurrentTimeMs);
+		ProcessBeatTicks(CurrentTimeMs);
 		
+		// 2. Factory create instances for upcoming notes
+		ProcessNoteSpawning(CurrentTimeMs);
+
+		// 3. Heartbeat - broadcast the tick to all active instances
+		OnMusicTick.Broadcast(CurrentTimeMs);
+		
+		// 4. Handle song end and progress broadcast
 		if (AbsoluteSongEndTimeMS > 0 && CurrentTimeMs >= AbsoluteSongEndTimeMS)
 		{
 			OnSongEnd.Broadcast(AbsoluteSongEndTimeMS / 1000.f);
@@ -92,78 +96,48 @@ void UPcMusicDirectorSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 void UPcMusicDirectorSubsystem::ResetState()
 {
 	bIsReadyForPlayback = false;
+	MusicManager = nullptr;
 	RhythmProfileRows.Empty();
 	NoteEventRows.Empty();
-	NextNoteIndex = 0;
+	NextNoteToSpawnIndex = 0;
 	LastProcessedMusicProgressMs = -1;
 	AbsoluteSongEndTimeMS = -1;
 	CurrentSectionIndex = 0;
 	NextBeatTimestampMS = 0;
 	CurrentBeatInSession = 0;
 	CurrentBPM = 0.f;
-	
-	// Reset the restored state variables
 	CurrentMeter = 4;
 	CurrentBreakEndTimeMS = -1;
 }
 
-AMusicProxy* UPcMusicDirectorSubsystem::SpawnMusicProxy(TSubclassOf<AMusicProxy> ProxyClass, const FTransform& SpawnTransform)
+void UPcMusicDirectorSubsystem::ProcessNoteSpawning(int32 InCurrentTimeMS)
 {
-	// --- Safety Checks ---
-	if (!ProxyClass)
-	{
-		UE_LOG(LogTemp, Error, TEXT("SpawnProxy failed: ProxyClass was not specified."));
-		return nullptr;
-	}
-
-	// --- Spawn the Actor ---
-	AMusicProxy* SpawnedProxy = GetWorld()->SpawnActor<AMusicProxy>(ProxyClass, SpawnTransform);
-
-	if (SpawnedProxy)
-	{
-		UE_LOG(LogTemp, Log, TEXT("Successfully spawned proxy: %s"), *SpawnedProxy->GetName());
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("SpawnActor failed for an unknown reason."));
-	}
-
-	return SpawnedProxy;
-}
-
-void UPcMusicDirectorSubsystem::ProcessMusicEvents()
-{
-	const int32 CurrentTimeMs = LastProcessedMusicProgressMs;
+	if (IsInBreakPeriod())
+		return;
 	
-	UpdateRhythmSection(CurrentTimeMs);
-	ProcessBeatTicks(CurrentTimeMs);
+	const int32 LookaheadBoundaryMS = InCurrentTimeMS + LookaheadTimeMS;
 
-	// Process Note Hits
-	while (NextNoteIndex < NoteEventRows.Num())
+	// Iterate through the sorted list of notes.
+	while (NextNoteToSpawnIndex < NoteEventRows.Num())
 	{
-		const FPcMusicGameplayNotes& NextNote = NoteEventRows[NextNoteIndex];
-		if (NextNote.StartTimeMS <= CurrentTimeMs)
+		const FPcMusicGameplayNotes& NextNote = NoteEventRows[NextNoteToSpawnIndex];
+
+		// Check if the note has entered our lookahead window.
+		if (NextNote.StartTimeMS <= LookaheadBoundaryMS)
 		{
-			OnNoteHit.Broadcast(NextNote.StartTimeMS);
-			//todo temporary, just to test for now.
-			if(NextNote.MusicGameplayEventDefinition)
+			if (UMusicActionInstance* NewInstance = NewObject<UMusicActionInstance>(this))
 			{
-				for(UMusicAction* Action : NextNote.MusicGameplayEventDefinition->MusicActions)
-					Action->OnExecute(this);
+				NewInstance->Initialize(NextNote, MusicManager.Get(), this);
 			}
-			NextNoteIndex++;
+
+			// Move to the next note in the list.
+			NextNoteToSpawnIndex++;
 		}
 		else
 		{
-			break; // Notes are sorted
+			// The notes are sorted by time, so if this one is outside the window, all subsequent ones will be too.
+			break;
 		}
-	}
-
-	// Check for the end of a break period
-	if (CurrentBreakEndTimeMS != -1 && CurrentTimeMs >= CurrentBreakEndTimeMS)
-	{
-		OnBreakEnd.Broadcast(0, CurrentBreakEndTimeMS); // StartTime isn't relevant for the end event
-		CurrentBreakEndTimeMS = -1; // We are no longer in a break
 	}
 }
 
@@ -182,47 +156,50 @@ void UPcMusicDirectorSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 		CurrentSectionIndex = NewSectionIndex;
 		const FPcMusicGameplayEvents& CurrentSection = RhythmProfileRows[CurrentSectionIndex];
 
-		// Update BPM
 		if (!FMath::IsNearlyEqual(CurrentBPM, CurrentSection.BPM))
 		{
 			CurrentBPM = CurrentSection.BPM;
 			OnBPMChanged.Broadcast(CurrentBPM);
 		}
 		
-		// --- LOGIC FOR METER CHANGES ---
 		if (CurrentMeter != CurrentSection.Meter)
 		{
 			CurrentMeter = CurrentSection.Meter;
 			OnMeterChanged.Broadcast(CurrentMeter);
 		}
 
-		// --- LOGIC FOR BREAKS ---
-		// Check if this section is a break and we're not already in one
 		if (CurrentSection.bIsBreakSection && CurrentBreakEndTimeMS == -1)
 		{
 			CurrentBreakEndTimeMS = CurrentSection.BreakEndTimeMS;
 			OnBreakStart.Broadcast(CurrentSection.StartTimeMS, CurrentSection.BreakEndTimeMS);
 		}
 		
-		// Reset beat tracking for the new section
 		CurrentBeatInSession = 0; 
 		NextBeatTimestampMS = CurrentSection.AnchorTimestampMS;
+	}
+
+	// Check for the end of a break period
+	if (CurrentBreakEndTimeMS != -1 && InCurrentTimeMS >= CurrentBreakEndTimeMS)
+	{
+		OnBreakEnd.Broadcast(0, CurrentBreakEndTimeMS);
+		CurrentBreakEndTimeMS = -1;
 	}
 }
 
 void UPcMusicDirectorSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 {
-	// --- GUARD CLAUSE FOR BREAKS ---
-	// Don't process any beat ticks if we are currently in a break period.
-	if (CurrentBreakEndTimeMS != -1) return;
+	if (IsInBreakPeriod())
+		return;
 	
-	if (RhythmProfileRows.Num() == 0 || CurrentSectionIndex >= RhythmProfileRows.Num()) return;
+	if (RhythmProfileRows.Num() == 0 || CurrentSectionIndex >= RhythmProfileRows.Num())
+		return;
 
 	const FPcMusicGameplayEvents& CurrentSection = RhythmProfileRows[CurrentSectionIndex];
 	const float BeatLength = CurrentSection.BeatLengthMS;
 	const int32 Anchor = CurrentSection.AnchorTimestampMS;
 
-	if (BeatLength <= 0 || InCurrentTimeMS < Anchor) return;
+	if (BeatLength <= 0 || InCurrentTimeMS < Anchor)
+		return;
 
 	if (NextBeatTimestampMS <= 0 || NextBeatTimestampMS < InCurrentTimeMS - FMath::RoundToInt(BeatLength * 4))
 	{

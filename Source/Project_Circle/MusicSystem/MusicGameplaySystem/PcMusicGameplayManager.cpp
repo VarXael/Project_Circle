@@ -1,7 +1,7 @@
-﻿
-#include "PcMusicGameplayManager.h"
+﻿#include "PcMusicGameplayManager.h"
 #include "PcMusicDirectorSubsystem.h"
 #include "Components/AudioComponent.h"
+#include "AbilitySystemComponent.h"      // NEW: Required include for ASC
 #include "MetasoundOutput.h"
 #include "MetasoundOutputSubsystem.h"
 #include "Sound/SoundWave.h"
@@ -10,12 +10,19 @@
 
 APcMusicGameplayManager::APcMusicGameplayManager()
 {
-	PrimaryActorTick.bCanEverTick = false; 
+	PrimaryActorTick.bCanEverTick = false;
 	
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RootSceneComponent"));
 	MusicAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("MusicAudioComponent"));
 	MusicAudioComponent->SetupAttachment(RootComponent);
 	MusicAudioComponent->bAutoActivate = false;
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(false);
+}
+
+UAbilitySystemComponent* APcMusicGameplayManager::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
 }
 
 void APcMusicGameplayManager::BeginPlay()
@@ -32,10 +39,8 @@ void APcMusicGameplayManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-
 void APcMusicGameplayManager::StartMusicPlayback()
 {
-	// Updated validation to check for the single SongConfiguration asset
 	if (!SongConfiguration)
 	{
 		UE_LOG(LogTemp, Error, TEXT("PcMusicManager: Missing essential assets. Check sound assets and the SongConfiguration."));
@@ -43,13 +48,12 @@ void APcMusicGameplayManager::StartMusicPlayback()
 	}
 
 	UWorld* World = GetWorld();
-	if (!World)
-		return;
+	if (!World) return;
 	
 	if (UPcMusicDirectorSubsystem* MusicSubsystem = World->GetSubsystem<UPcMusicDirectorSubsystem>())
 	{ 
-		// Call the updated InitializePlayback function with the SongConfiguration asset
-		MusicSubsystem->InitializePlayback(SongConfiguration);
+		// MODIFIED: The call to InitializePlayback now passes 'this' to provide the world context.
+		MusicSubsystem->InitializePlayback(SongConfiguration, this);
 	}
 	
 	MusicAudioComponent->Stop();
@@ -71,7 +75,6 @@ void APcMusicGameplayManager::StartMusicPlayback()
 	MusicAudioComponent->Play();
 }
 
-// No changes needed to OnMetaSoundTimeChanged or Tick
 void APcMusicGameplayManager::OnMetaSoundTimeChanged(FName OutputName, const FMetaSoundOutput& Output)
 {
 	if (Output.IsValid() && Output.IsType<Metasound::FTime>())
@@ -93,6 +96,7 @@ void APcMusicGameplayManager::OnMetaSoundTimeChanged(FName OutputName, const FMe
 	}
 }
 
+// Tick remains empty as per your original design.
 void APcMusicGameplayManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
