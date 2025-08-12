@@ -3,108 +3,125 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayAbilitySpec.h" // Required for FGameplayAbilitySpecHandle
-#include "MusicActionSet.h"
+#include "UObject/Object.h"
+#include "GameplayTagContainer.h"
 #include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalysisTypes.h"
 #include "MusicActionInstance.generated.h"
 
-class UAbilitySystemComponent;
 class APcMusicGameplayManager;
 class UPcMusicDirectorSubsystem;
-
-/** An enum to represent the internal state of an active note. */
-UENUM()
-enum class EMusicNoteState : uint8
-{
-	None,
-	Approaching,
-	Hit,
-	Missed
-};
+class UMusicAction;
 
 /**
- * The autonomous "brain" for a single musical note. This lightweight UObject is created
- * for each note that enters the gameplay window. It manages its own state, listens
- * for time updates from the PcMusicDirectorSubsystem, and executes abilities on the
- * central PcMusicGameplayManager in response to events (Prepare, Hit, Miss).
+ * The Blueprintable "Brain" for a single musical note. This lightweight UObject is created
+ * for each note that enters the gameplay window. Its Blueprint child class contains the
+ * entire logical lifecycle of the note (what to do on Prepare, Hit, Miss, and any custom events).
  */
-UCLASS(BlueprintType)
+UCLASS(Blueprintable)
 class PROJECT_CIRCLE_API UMusicActionInstance : public UObject
 {
 	GENERATED_BODY()
 
 public:
 	/**
-	 * Initializes the instance with all the data it needs to manage its lifecycle.
-	 * This grants the note's abilities to the central manager's ASC and subscribes to the music tick.
-	 * @param InNoteData The specific data for this note (timing, etc.) from the master DataTable.
-	 * @param InOwnerManager The gameplay manager actor, which owns the central Ability System Component.
-	 * @param InDirector The music director subsystem, used to subscribe to the music tick for time updates.
+	 * [Blueprint] This event is the "BeginPlay" for the note instance.
+	 * It fires once after the instance has been created and initialized with its data.
 	 */
-	void Initialize(const FPcMusicGameplayNotes& InNoteData, APcMusicGameplayManager* InOwnerManager, UPcMusicDirectorSubsystem* InDirector);
+	UFUNCTION(BlueprintImplementableEvent, Category = "Music Action Instance", meta = (DisplayName = "On Initialized"))
+	void K2_OnBeginInitialization();
 
 	/**
-	 * Called by an external source (e.g., a visual proxy actor) to report a successful player interaction with this note.
+	 * [Blueprint] This event fires exactly ONCE when the song's current time reaches this note's StartTimeMS.
+	 * This is the primary event for "On Hit Time" logic.
 	 */
-	void ReportHitSuccess();
+	UFUNCTION(BlueprintImplementableEvent, Category = "Music Action Instance", meta = (DisplayName = "On Execution"))
+	void K2_OnExecution();
 
 	/**
-	 * Gets the core gameplay data associated with this note instance.
-	 * @return A const reference to the note data.
+	 * [Blueprint] This event fires after K2_OnCue gets called.
+	 * It is used as a way to override in blueprints the C++ Deactivate function default behaviour.
+	 * If this function gets overridden, remember to call Deactivate once done with it!
 	 */
-	const FPcMusicGameplayNotes& GetNoteData() const { return NoteData; }
-	
-	/**
-	 * Gets the central Ability System Component from the Gameplay Manager.
-	 * This is the ASC that all abilities for all notes are run on.
-	 */
-	UAbilitySystemComponent* GetAbilitySystemComponent() const;
-
-private:
-	/**
-	 * The main update function, subscribed to the Director's OnMusicTick delegate.
-	 * This function is responsible for detecting when a note has been missed.
-	 * @param CurrentTimeMs The current song time broadcast by the director.
-	 */
-	void HandleMusicTick(float CurrentTimeMs);
+	UFUNCTION(BlueprintNativeEvent, Category = "Music Action Instance", meta = (DisplayName = "On Execution Completed"))
+	void K2_OnExecutionCompleted();
 
 	/**
-	 * Looks up and triggers the abilities associated with a given event phase (e.g., OnHit).
-	 * @param TargetASC The Ability System Component on which to activate the abilities.
-	 * @param Phase The enum representing the event phase.
+	 * [Blueprint] This event is a clean up event.
+	 * It's default behaviour is to destroy this music action instance once the timestamp has been reached and unbind any delegates.
 	 */
-	void TryActivateAbilityForPhase(UAbilitySystemComponent* TargetASC, EMusicEventPhase Phase);
-
-	/**
-	 * Handles all cleanup for this instance. It revokes the abilities it granted to the manager's
-	 * ASC, unsubscribes from delegates, and marks itself for garbage collection.
-	 */
+	UFUNCTION(BlueprintCallable, Category = "Music Action Instance")
 	void Deactivate();
 
-	// --- Core Data & State ---
+	/**
+	 * [Blueprint] This event is the "Tick" for the note instance.
+	 * It is called every frame by the Director, providing the current song time.
+	 * @param CurrentTimeMs The precise current time of the song in milliseconds.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Music Action Instance", meta = (DisplayName = "On Music Tick"))
+	void K2_OnMusicTick(float CurrentTimeMs);
 
-	/** A copy of the specific data for this note, taken from the master DataTable during initialization. */
-	UPROPERTY(VisibleInstanceOnly, Category = "State")
-	FPcMusicGameplayNotes NoteData;
-	
-	/** The current state of this note instance's lifecycle. */
-	UPROPERTY(VisibleInstanceOnly, Category = "State")
-	EMusicNoteState CurrentState = EMusicNoteState::None;
-
-	// --- References & Handles ---
-
-	/** A weak pointer to the central gameplay manager, which owns the Ability System Component. */
-	UPROPERTY()
-	TWeakObjectPtr<APcMusicGameplayManager> OwnerManager;
-
-	/** A weak pointer to the music director, used to subscribe/unsubscribe to its time updates. */
-	UPROPERTY()
-	TWeakObjectPtr<UPcMusicDirectorSubsystem> OwnerDirector;
 
 	/**
-	 * Stores the handles to the abilities that this instance granted to the manager's ASC.
-	 * This is crucial for cleaning up and revoking the correct abilities upon deactivation.
+	 * [C++] Initializes the instance with its core data. Called by the Director immediately after creation.
+	 * This then calls the K2_OnInitialized event to pass control to the Blueprint graph.
+	 * @param InNoteData The specific data for this note (timing, etc.) from the master DataTable.
+	 * @param InOwnerManager The gameplay manager actor, which provides world context.
+	 * @param InDirector
 	 */
+	void Initialize(const FPcMusicGameplayNotes& InNoteData, APcMusicGameplayManager* InOwnerManager, UPcMusicDirectorSubsystem* InDirector);
+	
+	/**
+	 * [C++] This event is the "Tick" for the note instance.
+	 * It links itself to the delegate "OnMusicTick" of the UPcMusicDirectorSubsystem inside the Initialize function.
+	 */
+	UFUNCTION()
+	void MusicTick(float CurrentTimeMs);
+	
+	/**
+	 * [BlueprintCallable] Executes a UMusicAction from the note's Action Library by its tag.
+	 * This is the primary way for the Blueprint graph to trigger world events like spawning actors.
+	 * @param ActionTag The tag identifying the action to execute from the ActionSet's library.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Music Action Instance")
+	void ExecuteMusicActionByTag(FGameplayTag ActionTag);
+
+	/**
+	 * [Blueprint Read/Write] If true, this will call K2_OnMusicTick every frame.
+	 * Keep it false for simple, fire-and-forget notes to improve performance.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Action Instance|Ticking")
+	bool bShouldPerformMusicTick = false;
+
+	// --- Blueprint-Accessible Getters ---
+	
+	UFUNCTION(BlueprintPure, Category = "Music Action Instance")
+	const FPcMusicGameplayNotes& GetNoteData() const
+	{
+		return NoteData;
+	}
+	
+	UFUNCTION(BlueprintPure, Category = "Music Action Instance")
+	APcMusicGameplayManager* GetOwnerManager() const
+	{
+		return OwnerManager;
+	}
+
+	virtual UWorld* GetWorld() const override;
+	virtual void BeginDestroy() override;
+
+private:
+	// --- Core Data & References ---
+
+	/** A copy of the specific data for this note, taken from the master DataTable. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "State", meta = (AllowPrivateAccess = "true"))
+	FPcMusicGameplayNotes NoteData;
+	
+	/** A pointer to the central gameplay manager, which provides world context. */
 	UPROPERTY()
-	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
+	TObjectPtr<APcMusicGameplayManager> OwnerManager;
+
+	UPROPERTY()
+	TWeakObjectPtr<UPcMusicDirectorSubsystem> DirectorSubsystem;
+
+	bool bHasFiredExecution = false;
 };

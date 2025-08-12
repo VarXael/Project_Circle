@@ -4,38 +4,33 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Templates/SubclassOf.h"
+#include "GameplayTagContainer.h"
 #include "MusicActionSet.generated.h"
 
-class UGameplayAbility;
+class UMusicActionInstance;
+class UMusicAction;
 
 /**
- * A simple, reliable enum to define the event phases in a note's lifecycle.
- * This is used as the key in the ActionMap.
- */
-UENUM(BlueprintType)
-enum class EMusicEventPhase : uint8
-{
-	OnPrepare	UMETA(DisplayName = "On Prepare (Enters Lookahead)"),
-	OnHit		UMETA(DisplayName = "On Hit (Player Success)"),
-	OnMiss		UMETA(DisplayName = "On Miss (Time Expired)")
-};
-
-/**
- * A wrapper struct to allow an array of abilities as a TMap value in the editor.
+ * A struct that pairs a Blueprintable UMusicAction class with a Gameplay Tag for designers to reference.
  */
 USTRUCT(BlueprintType)
-struct FMusicAbilityArray
+struct FTaggedMusicAction
 {
 	GENERATED_BODY()
 
+	/** The unique tag that the MusicActionInstance Blueprint will use to call this action. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TArray<TSubclassOf<UGameplayAbility>> Abilities;
+	FGameplayTag ActionTag;
+
+	/** The UMusicAction Blueprint class that contains the logic for this action. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSubclassOf<UMusicAction> ActionClass;
 };
 
 /**
- * Maps event phases (Enums) to a list of abilities to execute. This is a reusable
- * behavior template that can be assigned to any note.
+ * A Data Asset that serves as a "Note Type" template. It defines which Blueprint 'Brain'
+ * to use for a note and provides a library of actions that the 'Brain' can execute by tag.
+ * This asset can be reused across many different notes in a DataTable.
  */
 UCLASS()
 class PROJECT_CIRCLE_API UMusicActionSet : public UDataAsset
@@ -43,7 +38,11 @@ class PROJECT_CIRCLE_API UMusicActionSet : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	/** The core mapping of an event phase to the list of abilities that should fire. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Note Abilities")
-	TMap<EMusicEventPhase, FMusicAbilityArray> ActionMap;
+	/** The Blueprint class of the UMusicActionInstance to spawn for notes using this set. This is the 'Brain'. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Note Instance")
+	TSubclassOf<UMusicActionInstance> MusicActionInstanceClass;
+
+	/** The library of actions this 'Brain' is allowed to look up and execute by tag. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Note Actions")
+	TArray<FTaggedMusicAction> ActionLibrary;
 };

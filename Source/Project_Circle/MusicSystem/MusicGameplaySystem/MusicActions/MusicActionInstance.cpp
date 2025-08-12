@@ -1,149 +1,94 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "MusicActionInstance.h"
-#include "AbilitySystemComponent.h"
 #include "MusicActionSet.h"
-#include "Abilities/GameplayAbility.h"
+#include "MusicAction.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicDirectorSubsystem.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicGameplayManager.h"
 
-UAbilitySystemComponent* UMusicActionInstance::GetAbilitySystemComponent() const
-{
-	if (OwnerManager.IsValid())
-	{
-		return OwnerManager->GetAbilitySystemComponent();
-	}
-	return nullptr;
-}
 
-void UMusicActionInstance::Initialize(const FPcMusicGameplayNotes& InNoteData, APcMusicGameplayManager* InOwnerManager, UPcMusicDirectorSubsystem* InDirector)
+
+void UMusicActionInstance::Initialize(const FPcMusicGameplayNotes& InNoteData, APcMusicGameplayManager* InOwnerManager,UPcMusicDirectorSubsystem* InDirector)
 {
+	check(IsValid(InOwnerManager));
+	check(InNoteData.MusicGameplayEventDefinition != nullptr);
+	check(IsValid(InDirector));
+
 	NoteData = InNoteData;
 	OwnerManager = InOwnerManager;
-	OwnerDirector = InDirector;
 
-	if (!OwnerManager.IsValid() || !OwnerDirector.IsValid() || !NoteData.MusicGameplayEventDefinition)
-	{
-		UE_LOG(LogTemp, Error, TEXT("UMusicActionInstance::Initialize failed: A required dependency was null. Deactivating."));
-		Deactivate();
-		return;
-	}
+	DirectorSubsystem = InDirector;
+	DirectorSubsystem->OnMusicTick.AddDynamic(this, &UMusicActionInstance::MusicTick);
 
-	UAbilitySystemComponent* ManagerASC = GetAbilitySystemComponent();
-	if (!ManagerASC)
-	{
-		UE_LOG(LogTemp, Error, TEXT("UMusicActionInstance::Initialize failed: OwnerManager has no AbilitySystemComponent. Deactivating."));
-		Deactivate();
-		return;
-	}
-
-	const UMusicActionSet* ActionSet = NoteData.MusicGameplayEventDefinition;
-	for (const auto& Kvp : ActionSet->ActionMap)
-	{
-		for (const TSubclassOf<UGameplayAbility>& AbilityClass : Kvp.Value.Abilities)
-		{
-			if (AbilityClass)
-			{
-				FGameplayAbilitySpec Spec(AbilityClass);
-				// Set this UObject as the SourceObject. This allows the ability to know which note instance triggered it.
-				Spec.SourceObject = this;
-				const FGameplayAbilitySpecHandle NewHandle = ManagerASC->GiveAbility(Spec);
-				GrantedAbilityHandles.Add(NewHandle);
-			}
-		}
-	}
-	
-	// 4. Set the initial state and subscribe to the director's tick delegate to begin listening for time updates.
-	CurrentState = EMusicNoteState::Approaching;
-	OwnerDirector->OnMusicTick.AddUObject(this, &UMusicActionInstance::HandleMusicTick);
-
-	// 5. Fire the initial "OnPrepare" abilities to signal the note's appearance.
-	TryActivateAbilityForPhase(ManagerASC, EMusicEventPhase::OnPrepare);
+	K2_OnBeginInitialization();
 }
 
-void UMusicActionInstance::ReportHitSuccess()
+void UMusicActionInstance::MusicTick(float CurrentTimeMs)
 {
-	// A note can only be successfully hit if it's currently in the "Approaching" state.
-	if (CurrentState != EMusicNoteState::Approaching)
+	// The C++ one-shot event check
+	if (!bHasFiredExecution && CurrentTimeMs >= NoteData.StartTimeMS)
 	{
-		return;
+		bHasFiredExecution = true;
+		K2_OnExecution();
+		K2_OnExecutionCompleted_Implementation(); // Default behavior is to deactivate after execution
 	}
-	
-	if (UAbilitySystemComponent* ManagerASC = GetAbilitySystemComponent())
+
+	// The optional Blueprint tick
+	if (bShouldPerformMusicTick)
 	{
-		CurrentState = EMusicNoteState::Hit;
-		TryActivateAbilityForPhase(ManagerASC, EMusicEventPhase::OnHit);
+		K2_OnMusicTick(CurrentTimeMs);
 	}
-	
-	// The note's lifecycle is complete.
+}
+
+
+void UMusicActionInstance::K2_OnExecutionCompleted_Implementation()
+{
 	Deactivate();
-}
-
-void UMusicActionInstance::HandleMusicTick(float CurrentTimeMs)
-{
-	// Only process the tick if the note is in the "Approaching" state.
-	if (CurrentState != EMusicNoteState::Approaching)
-	{
-		return;
-	}
-
-	// If the current song time has passed the note's designated hit time, it has been missed.
-	if (CurrentTimeMs >= NoteData.StartTimeMS)
-	{
-		if (UAbilitySystemComponent* ManagerASC = GetAbilitySystemComponent())
-		{
-			CurrentState = EMusicNoteState::Missed;
-			TryActivateAbilityForPhase(ManagerASC, EMusicEventPhase::OnMiss);
-		}
-		
-		// The note's lifecycle is complete.
-		Deactivate();
-	}
-}
-
-void UMusicActionInstance::TryActivateAbilityForPhase(UAbilitySystemComponent* TargetASC, EMusicEventPhase Phase)
-{
-	// Ensure we have a valid ASC and ActionSet to read from.
-	if (!TargetASC || !NoteData.MusicGameplayEventDefinition)
-	{
-		return;
-	}
-
-	const UMusicActionSet* ActionSet = NoteData.MusicGameplayEventDefinition;
-	
-	// Find the list of abilities associated with the specified event phase.
-	if (const FMusicAbilityArray* FoundArray = ActionSet->ActionMap.Find(Phase))
-	{
-		// Execute every ability defined in that list.
-		for (const TSubclassOf<UGameplayAbility>& AbilityClass : FoundArray->Abilities)
-		{
-			if (AbilityClass)
-			{
-				TargetASC->TryActivateAbilityByClass(AbilityClass);
-			}
-		}
-	}
 }
 
 void UMusicActionInstance::Deactivate()
 {
-	// 1. Revoke the abilities this instance granted from the central manager's ASC.
-	if (UAbilitySystemComponent* ManagerASC = GetAbilitySystemComponent())
+	if (DirectorSubsystem.IsValid())
 	{
-		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
-		{
-			// This removes the ability spec, ensuring it can't be activated again.
-			ManagerASC->ClearAbility(Handle);
-		}
-		GrantedAbilityHandles.Empty();
+		DirectorSubsystem->OnMusicTick.RemoveDynamic(this, &UMusicActionInstance::MusicTick);
 	}
-
-	// 2. Unsubscribe from the Director's tick to prevent this object from receiving updates after deactivation.
-	if (OwnerDirector.IsValid())
-	{
-		OwnerDirector->OnMusicTick.RemoveAll(this);
-	}
-
-	// 3. Mark this UObject for garbage collection, as its job is done.
 	MarkAsGarbage();
+}
+
+void UMusicActionInstance::ExecuteMusicActionByTag(FGameplayTag ActionTag)
+{
+	// Ensure we have a valid manager to own the new action and a valid ActionSet to read from.
+	APcMusicGameplayManager* Manager = OwnerManager.Get();
+	const UMusicActionSet* ActionSet = NoteData.MusicGameplayEventDefinition;
+	if (!Manager || !ActionSet || !ActionTag.IsValid())
+	{
+		return;
+	}
+
+	// Find the action class associated with the provided tag in our library.
+	const FTaggedMusicAction* FoundAction = ActionSet->ActionLibrary.FindByPredicate(
+		[&](const FTaggedMusicAction& Action)
+		{
+			return Action.ActionTag == ActionTag;
+		});
+
+	if (FoundAction && FoundAction->ActionClass)
+	{
+		// Create a new instance of the UMusicAction, owned by the stable Manager actor.
+		UMusicAction* ActionObject = NewObject<UMusicAction>(Manager, FoundAction->ActionClass);
+
+		// Run the action's Blueprint logic.
+		ActionObject->Execute(this);
+	}
+}
+
+UWorld* UMusicActionInstance::GetWorld() const
+{
+	// IsValid() checks if the pointer is not null and the object is not pending kill.
+	return IsValid(OwnerManager) ? OwnerManager->GetWorld() : nullptr;
+}
+
+void UMusicActionInstance::BeginDestroy()
+{
+	UObject::BeginDestroy();
 }
