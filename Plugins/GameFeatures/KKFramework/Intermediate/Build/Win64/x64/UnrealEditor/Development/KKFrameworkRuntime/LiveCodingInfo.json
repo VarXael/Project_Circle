@@ -1,5 +1,9 @@
 {
 	"RemapUnityFiles": 
 	{
+		"Module.KKFrameworkRuntime.cpp.obj": [
+			"PerModuleInline.gen.cpp.obj",
+			"KKFrameworkRuntimeModule.cpp.obj"
+		]
 	}
 }

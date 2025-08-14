@@ -1,0 +1,13 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-CadenceRuntime.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"C:\Game Development\Unreal Engine\Project_Circle\Intermediate\Build\Win64\x64\Project_CircleEditor\Development\UnrealEd\SharedPCH.UnrealEd.Cpp20.h.obj"
+"C:\Game Development\Unreal Engine\Project_Circle\Plugins\GameFeatures\Cadence\Intermediate\Build\Win64\x64\UnrealEditor\Development\CadenceRuntime\CadenceRuntimeModule.cpp.obj"
+"C:\Game Development\Unreal Engine\Project_Circle\Plugins\GameFeatures\Cadence\Intermediate\Build\Win64\x64\UnrealEditor\Development\CadenceRuntime\PerModuleInline.gen.cpp.obj"
+"C:\Game Development\Unreal Engine\Project_Circle\Plugins\GameFeatures\Cadence\Intermediate\Build\Win64\x64\UnrealEditor\Development\CadenceRuntime\Default.rc2.res"
+/OUT:"C:\Game Development\Unreal Engine\Project_Circle\Plugins\GameFeatures\Cadence\Intermediate\Build\Win64\x64\UnrealEditor\Development\CadenceRuntime\UnrealEditor-CadenceRuntime.lib"
