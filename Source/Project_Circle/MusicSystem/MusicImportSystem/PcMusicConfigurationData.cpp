@@ -20,6 +20,7 @@
 
 namespace PcMusicConfig_Helpers
 {
+	// [MODIFIED] The ParentNoteID is completely removed from the function signature and its logic.
 	TArray<FPcMusicGameplayNotes> GenerateSliderSubEvents(const FPcImportedMusicData& SliderData,
 	                                                      const TMap<int32, float>& TimingPointMap,
 	                                                      UMusicActionSet* NoteBehaviour);
@@ -118,13 +119,11 @@ UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(
 		return nullptr;
 	}
 
-	// Clear any old data from the table to ensure we start fresh.
 	NewRhythmTable->EmptyTable();
 
 	TArray<FPcImportedMusicData*> SourceRows;
 	ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
 
-	// Pre-filter the source rows for efficiency, so we don't loop through everything every time.
 	TArray<FPcImportedMusicData*> TimingPoints;
 	TArray<FPcImportedMusicData*> BreakPoints;
 	for (FPcImportedMusicData* Row : SourceRows)
@@ -147,7 +146,6 @@ UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(
 	int32 RowIndex = 0;
 	for (FPcMusicGameplayEvents& Section : EnrichedSections)
 	{
-		// --- Step 1: Enrich the data with Meter and Break info ---
 		int32 BestTimingPointTime = -1;
 		for (const FPcImportedMusicData* TP : TimingPoints)
 		{
@@ -168,19 +166,16 @@ UDataTable* UPcMusicConfigurationData::GenerateRhythmProfileTable(
 			}
 		}
 
-		// --- Step 2: Assign the default behavior ---
 		if (DefaultMusicEventBehaviour && Section.MusicGameplayEventDefinition == nullptr)
 		{
 			Section.MusicGameplayEventDefinition = DefaultMusicEventBehaviour;
 		}
 
-		// --- Step 3: Add the fully processed row to the table ---
 		const FName RowName = FName(*FString::Printf(TEXT("Row_%d"), RowIndex));
 		NewRhythmTable->AddRow(RowName, Section);
 		RowIndex++;
 	}
 
-	// Mark the asset as created and dirty so the editor knows to save our changes.
 	FAssetRegistryModule::AssetCreated(NewRhythmTable);
 	NewRhythmTable->MarkPackageDirty();
 
@@ -205,14 +200,13 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 
 	TArray<FPcImportedMusicData*> SourceRows;
 	this->ImportedMusicDataProfile->GetAllRows(TEXT(""), SourceRows);
-
-	// --- FIX #1: Create a strong, GC-proof reference to the Data Asset ---
+	
 	TObjectPtr<UMusicActionSet> NoteBehaviour = DefaultMusicNoteBehaviour;
 	if (!NoteBehaviour)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("GenerateNotesTable: DefaultMusicNoteBehaviour is not set in the configuration asset. Notes will have no behavior."));
 	}
-
+	
 	TMap<int32, float> TimingPointMap;
 	for (const FPcImportedMusicData* Row : SourceRows)
 	{
@@ -222,39 +216,48 @@ UDataTable* UPcMusicConfigurationData::GenerateNotesTable()
 		}
 	}
 
+	// --- Step 1: Generate ALL note events (heads, ticks, tails) without IDs. ---
 	TArray<FPcMusicGameplayNotes> AllGameplayNotes;
 	for (const FPcImportedMusicData* SourceRow : SourceRows)
 	{
 		if (SourceRow && SourceRow->EntryType == EPcGameplayEntryType::HitObject)
 		{
 			FPcMusicGameplayNotes NoteEvent;
+			// We do NOT assign NoteID here.
 			NoteEvent.StartTimeMS = SourceRow->TimestampMS;
 			NoteEvent.ApproachRate = SourceRow->ApproachRate;
-			// Use the GC-proof local variable for assignment
 			NoteEvent.MusicGameplayEventDefinition = NoteBehaviour;
 			AllGameplayNotes.Add(NoteEvent);
 
 			if (SourceRow->HitObjectType & 2) // Check for slider
 			{
-				// --- FIX #2: Pass the behavior into the helper function ---
+				// The helper function no longer takes an ID.
 				AllGameplayNotes.Append(PcMusicConfig_Helpers::GenerateSliderSubEvents(*SourceRow, TimingPointMap, NoteBehaviour));
 			}
 		}
 	}
 
+	// --- Step 2: Sort the entire list of notes chronologically. ---
+	// This puts every single event in its final, correct order.
 	AllGameplayNotes.Sort([](const FPcMusicGameplayNotes& A, const FPcMusicGameplayNotes& B)
 	{
+		// If two notes are at the exact same time, it doesn't matter which comes first.
 		return A.StartTimeMS < B.StartTimeMS;
 	});
 
-	int32 RowIndex = 0;
-	// --- FIX #3: The flawed and redundant final loop has been removed. ---
-	for (const FPcMusicGameplayNotes& NoteToAdd : AllGameplayNotes)
+	// --- Step 3: Assign final IDs and populate the table. ---
+	// Because the list is now perfectly sorted, the loop index 'i' IS the correct sequential ID.
+	for (int32 i = 0; i < AllGameplayNotes.Num(); ++i)
 	{
-		// --- Add the fully processed row to the table ---
-		const FName RowName = FName(*FString::Printf(TEXT("Row_%d"), RowIndex));
+		// Get a reference to the note we're working on.
+		FPcMusicGameplayNotes& NoteToAdd = AllGameplayNotes[i];
+		
+		// Assign the final, unique, sequential ID.
+		NoteToAdd.NoteID = i;
+
+		// Add the finalized row to the data table.
+		const FName RowName = FName(*FString::Printf(TEXT("Row_%d"), i));
 		NewNoteTable->AddRow(RowName, NoteToAdd);
-		RowIndex++;
 	}
 
 	FAssetRegistryModule::AssetCreated(NewNoteTable);
@@ -295,10 +298,10 @@ TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(
 				if (!FMath::IsNearlyEqual(TimeAlongPass, SinglePassDuration, 1.f))
 				{
 					FPcMusicGameplayNotes TickEvent;
+					// NoteID is NOT set here.
 					TickEvent.StartTimeMS = SliderData.TimestampMS + FMath::RoundToInt(
 						(Pass * SinglePassDuration) + TimeAlongPass);
 					TickEvent.ApproachRate = SliderData.ApproachRate;
-					// --- ASSIGN BEHAVIOR HERE ---
 					TickEvent.MusicGameplayEventDefinition = NoteBehaviour;
 					SubEvents.Add(TickEvent);
 				}
@@ -307,9 +310,9 @@ TArray<FPcMusicGameplayNotes> PcMusicConfig_Helpers::GenerateSliderSubEvents(
 		for (int32 Repeat = 1; Repeat <= SliderData.Repeats; ++Repeat)
 		{
 			FPcMusicGameplayNotes TailEvent;
+			// NoteID is NOT set here.
 			TailEvent.StartTimeMS = SliderData.TimestampMS + FMath::RoundToInt(Repeat * SinglePassDuration);
 			TailEvent.ApproachRate = SliderData.ApproachRate;
-			// --- AND ASSIGN BEHAVIOR HERE ---
 			TailEvent.MusicGameplayEventDefinition = NoteBehaviour;
 			SubEvents.Add(TailEvent);
 		}

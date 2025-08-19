@@ -50,7 +50,6 @@ void UPcMusicDirectorSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 			NoteEventRows.Add(*Ptr);
 		}
 	}
-	// --- END OF CORRECTED SECTION ---
 
 	if (RhythmProfileRows.Num() == 0 && NoteEventRows.Num() == 0)
 	{

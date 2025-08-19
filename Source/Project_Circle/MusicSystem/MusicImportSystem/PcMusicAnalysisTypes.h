@@ -85,6 +85,9 @@ struct FPcMusicGameplayNotes : public FTableRowBase
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Notes")
+	int32 NoteID = 0;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Notes")
 	int32 StartTimeMS = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Gameplay Notes")

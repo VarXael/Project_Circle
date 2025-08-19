@@ -151,7 +151,6 @@ UPcMusicAnalyzer* UPcMusicAnalyzer::RunSongAnalysis(UObject* Outer, UPcMusicConf
 	return NewAnalysis;
 }
 
-// MODIFIED: The function now takes the single parameter struct.
 void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Parameters)
 {
 	// --- STEP 1: Structural Analysis ---
@@ -164,18 +163,17 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		UE_LOG(LogTemp, Error, TEXT("Music Analysis CRITICAL FAIL: StructuralBaseMap was not set or could not be determined. Analysis cannot continue."));
 		return; 
 	}
-	
-	Parameters.StructuralBaseMap->ForeachRow<FPcImportedMusicData>("Populating Structural Data",
-	                                                     [&](const FName&, const FPcImportedMusicData& Value)
-	                                                     {
-		                                                     StructuralAllEvents.Add(&Value);
-		                                                     if (Value.EntryType == EPcGameplayEntryType::HitObject)
-			                                                     StructuralHitObjects.Add(&Value);
-		                                                     else if (Value.EntryType == EPcGameplayEntryType::TimingPoint
-			                                                     && Value.Uninherited == 1)
-			                                                     StructuralUninheritedTPs.
-				                                                     Add(Value);
-	                                                     });
+
+
+	Parameters.StructuralBaseMap->ForeachRow<FPcImportedMusicData>(
+		"Populating Structural Data",
+		[&](const FName&, const FPcImportedMusicData& Value){
+			StructuralAllEvents.Add(&Value);
+			if (Value.EntryType == EPcGameplayEntryType::HitObject)
+				StructuralHitObjects.Add(&Value);
+			else if (Value.EntryType == EPcGameplayEntryType::TimingPoint && Value.Uninherited == 1)
+				StructuralUninheritedTPs.Add(Value);
+	});
 
 	if (StructuralUninheritedTPs.Num() == 0 || StructuralHitObjects.Num() == 0)
 	{
