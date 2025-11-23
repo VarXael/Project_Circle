@@ -1,18 +1,14 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Pawn.h"
-#include "InputActionValue.h" // Required for Enhanced Input
+#include "GameFramework/Character.h"
 #include "PcPlayerCharacter.generated.h"
 
-// Forward Declarations
-class UCapsuleComponent;
 class UCameraComponent;
-class UInputMappingContext;
-class UInputAction;
+class APcPlanet;
 
 UCLASS()
-class PROJECT_CIRCLE_API APcPlayerCharacter : public APawn
+class PROJECT_CIRCLE_API APcPlayerCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
@@ -21,53 +17,47 @@ public:
 
 protected:
 	virtual void Tick(float DeltaTime) override;
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
-	// --- ENHANCED INPUT VARIABLES ---
-	
-	// The "Map" of keys (WASD = Move, Mouse = Look)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputMappingContext* DefaultMappingContext;
-
-	// The individual actions
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputAction* MoveAction;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputAction* LookAction;
-
-	// --- INPUT FUNCTIONS ---
-	// Note: They now take "const FInputActionValue& Value"
-	void Move(const FInputActionValue& Value);
-	void Look(const FInputActionValue& Value);
-
-private:
-	// Physics Helpers
-	FVector SlideAlongSurface(const FVector& Velocity, const FVector& Normal);
+	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
+	virtual void NotifyActorEndOverlap(AActor* OtherActor) override;
 
 public:
-	// Components
-	UPROPERTY(VisibleAnywhere, Category = "Components")
-	UCapsuleComponent* CapsuleComp;
+	UFUNCTION(BlueprintCallable) void Input_Move(FVector2D Value);
+	UFUNCTION(BlueprintCallable) void Input_Look(FVector2D Value);
+	UFUNCTION(BlueprintCallable) void Input_Jump();
 
+public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
 
-	// Settings
-	UPROPERTY(EditAnywhere, Category = "Project Circle")
-	FVector SphereCenter = FVector::ZeroVector;
+	UPROPERTY(VisibleAnywhere, Category = "Gravity")
+	APcPlanet* CurrentPlanet;
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle")
-	bool bIsVoidInside = true; 
+	// --- PHYSICS SETTINGS ---
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle")
-	float MoveSpeed = 600.0f;
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float MoveAcceleration = 1500.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle")
-	float GravityStrength = 980.0f;
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float MaxSurfSpeed = 2000.0f;
 
-	// State
+	// How strongly the floor repels you (The Bounce)
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float BuoyancyStiffness = 1000.0f;
+
+	// How quickly the bounce settles (Prevents infinite wobble)
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float BuoyancyDamping = 5.0f;
+
+	// Friction when moving SLOW (Sticky)
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float FrictionLowSpeed = 4.0f;
+
+	// Friction when moving FAST (Surfing)
+	UPROPERTY(EditAnywhere, Category = "Water Physics")
+	float FrictionHighSpeed = 0.2f;
+
+private:
+	// We manage our own velocity now
 	FVector Velocity = FVector::ZeroVector;
 	FVector CurrentInput = FVector::ZeroVector;
-	bool bIsGrounded = false;
 };

@@ -1,156 +1,143 @@
 ﻿#include "PcPlayerCharacter.h"
-#include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Project_Circle/Planet/PcPlanet.h"
 
 APcPlayerCharacter::APcPlayerCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	CapsuleComp = CreateDefaultSubobject<UCapsuleComponent>(TEXT("CapsuleComp"));
-	CapsuleComp->InitCapsuleSize(34.0f, 88.0f);
-	CapsuleComp->SetCollisionProfileName(TEXT("Pawn"));
-	CapsuleComp->SetSimulatePhysics(false);
-	RootComponent = CapsuleComp;
-
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComp"));
-	CameraComp->SetupAttachment(CapsuleComp);
+	CameraComp->SetupAttachment(GetCapsuleComponent());
 	CameraComp->SetRelativeLocation(FVector(0, 0, 60.0f));
 	CameraComp->bUsePawnControlRotation = false;
-}
+	bUseControllerRotationYaw = false;
 
-void APcPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
-{
-	// 1. Add the Mapping Context (Enable the keys)
-	if (APlayerController* PlayerController = Cast<APlayerController>(Controller))
+	// DISABLE Standard Physics
+	if (GetCharacterMovement())
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
-		{
-			// Priority 0 is fine for default movement
-			if (DefaultMappingContext)
-			{
-				Subsystem->AddMappingContext(DefaultMappingContext, 0);
-			}
-		}
+		GetCharacterMovement()->GravityScale = 0.0f; // We apply custom gravity
+		GetCharacterMovement()->DefaultLandMovementMode = MOVE_Flying; // Free movement
+		GetCharacterMovement()->AirControl = 1.0f;
 	}
 
-	// 2. Bind the Actions (Connect the logic)
-	// We cast to UEnhancedInputComponent to access the new binding functions
-	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
-	{
-		// Bind MOVE (Triggered = runs every frame key is held; Completed = runs when released)
-		if (MoveAction)
-		{
-			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &APcPlayerCharacter::Move);
-			EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &APcPlayerCharacter::Move);
-		}
-
-		// Bind LOOK
-		if (LookAction)
-		{
-			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &APcPlayerCharacter::Look);
-		}
-	}
-}
-
-void APcPlayerCharacter::Move(const FInputActionValue& Value)
-{
-	// Value is a Vector2D (X = Forward/Back, Y = Right/Left)
-	FVector2D MovementVector = Value.Get<FVector2D>();
-	
-	// Store it for the Tick function to use
-	CurrentInput.X = MovementVector.X;
-	CurrentInput.Y = MovementVector.Y;
-}
-
-void APcPlayerCharacter::Look(const FInputActionValue& Value)
-{
-	// Value is a Vector2D (X = Mouse X, Y = Mouse Y)
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
-
-	// 1. Yaw (Left/Right) - Rotate the CAPSULE
-	if (LookAxisVector.X != 0.0f)
-	{
-		AddActorLocalRotation(FRotator(0, LookAxisVector.X, 0));
-	}
-
-	// 2. Pitch (Up/Down) - Rotate the CAMERA
-	if (LookAxisVector.Y != 0.0f)
-	{
-		if (CameraComp)
-		{
-			FRotator CurrentRot = CameraComp->GetRelativeRotation();
-			// NOTE: We usually invert Y for mouse look, depends on your Input Action modifiers
-			float NewPitch = FMath::Clamp(CurrentRot.Pitch + LookAxisVector.Y, -85.0f, 85.0f);
-			CameraComp->SetRelativeRotation(FRotator(NewPitch, 0, 0));
-		}
-	}
+	// CRITICAL: Capsule must Overlap, not Block, or we can't sink
+	GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Overlap);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block); // Still block other players
 }
 
 void APcPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// --- GRAVITY & ORIENTATION ---
-	FVector ActorLoc = GetActorLocation();
-	FVector GravityDir;
+	FVector Location = GetActorLocation();
+	FVector GravityDir = FVector(0, 0, -1);
+	float Altitude = 0.0f;
 
-	if (bIsVoidInside)
-		GravityDir = (ActorLoc - SphereCenter).GetSafeNormal();
-	else
-		GravityDir = (SphereCenter - ActorLoc).GetSafeNormal();
+	// 1. GET PLANET DATA
+	if (CurrentPlanet)
+	{
+		GravityDir = CurrentPlanet->GetGravityDirection(Location);
+		Altitude = CurrentPlanet->GetAltitude(Location);
+	}
 
-	FVector TargetUp = -GravityDir; 
-	
-	// Align Capsule
+	// 2. ORIENTATION
+	// Rotate feet to point to the planet center
+	FVector TargetUp = -GravityDir;
 	FQuat CurrentRot = GetActorQuat();
 	FQuat TargetRot = FQuat::FindBetweenNormals(GetActorUpVector(), TargetUp) * CurrentRot;
 	SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 15.0f * DeltaTime));
 
-	// --- MOVEMENT ---
-	FVector Forward = GetActorForwardVector();
-	FVector Right = GetActorRightVector();
-	FVector DesiredMove = (Forward * CurrentInput.X + Right * CurrentInput.Y).GetSafeNormal();
+	// 3. CALCULATE FORCES
+	FVector TotalForce = FVector::ZeroVector;
 
-	if (bIsGrounded)
+	// A. GRAVITY (Always Pulls Down)
+	TotalForce += GravityDir * 980.0f;
+
+	// B. BUOYANCY (Push Up if Sinking)
+	if (Altitude < 0.0f) // Underwater / Underground
 	{
-		float TargetSpeed = MoveSpeed;
-		FVector CurrentPlaneVel = Velocity - (Velocity | GravityDir) * GravityDir;
-		FVector TargetVel = DesiredMove * TargetSpeed;
-		
-		// Snappy movement on ground
-		FVector NewPlaneVel = FMath::VInterpConstantTo(CurrentPlaneVel, TargetVel, DeltaTime, 2000.0f);
-		Velocity = NewPlaneVel + (Velocity | GravityDir) * GravityDir;
+		float Depth = -Altitude;
+
+		// Spring Force: F = kx (Stiffness * Depth)
+		FVector SpringForce = TargetUp * (Depth * BuoyancyStiffness);
+
+		// Damping Force: F = -cv (Resist vertical speed)
+		float VerticalSpeed = (Velocity | GravityDir); // Project velocity onto gravity axis
+		FVector DampingForce = -GravityDir * (VerticalSpeed * BuoyancyDamping);
+
+		TotalForce += SpringForce + DampingForce;
 	}
-	else
+
+	// C. INPUT MOVEMENT
+	// Project input onto the surface plane so we move tangent to the sphere
+	FVector CamFwd = CameraComp->GetForwardVector();
+	FVector CamRight = CameraComp->GetRightVector();
+	FVector MoveDir = (CamFwd * CurrentInput.X + CamRight * CurrentInput.Y).GetSafeNormal();
+	MoveDir = FVector::VectorPlaneProject(MoveDir, TargetUp).GetSafeNormal();
+
+	TotalForce += MoveDir * MoveAcceleration;
+
+	// 4. INTEGRATE VELOCITY
+	Velocity += TotalForce * DeltaTime;
+
+	// 5. DYNAMIC FRICTION (The Surfing Logic)
+	// Apply drag to horizontal velocity only
+	FVector VerticalVel = (Velocity | GravityDir) * GravityDir;
+	FVector HorizontalVel = Velocity - VerticalVel;
+	float Speed = HorizontalVel.Size();
+
+	if (Speed > 0.0f)
 	{
-		// Air Control
-		Velocity += DesiredMove * 500.0f * DeltaTime;
+		// High Speed = Low Friction (Surf)
+		// Low Speed = High Friction (Stop)
+		float FrictionAlpha = FMath::Clamp(Speed / 1000.0f, 0.0f, 1.0f);
+		float CurrentFriction = FMath::Lerp(FrictionLowSpeed, FrictionHighSpeed, FrictionAlpha);
+
+		// Apply Drag: v = v * (1 - friction * dt)
+		HorizontalVel *= FMath::Max(0.0f, 1.0f - (CurrentFriction * DeltaTime));
+
+		// Recombine
+		Velocity = HorizontalVel + VerticalVel;
 	}
 
-	Velocity += GravityDir * GravityStrength * DeltaTime;
-
-	// --- COLLISION ---
-	FVector DeltaMove = Velocity * DeltaTime;
-	FHitResult Hit;
-	AddActorWorldOffset(DeltaMove, true, &Hit);
-
-	bIsGrounded = false;
-
-	if (Hit.IsValidBlockingHit())
-	{
-		Velocity = SlideAlongSurface(Velocity, Hit.Normal);
-
-		float FloorDot = FVector::DotProduct(Hit.Normal, TargetUp);
-		if (FloorDot > 0.7f) bIsGrounded = true;
-
-		if (Hit.PenetrationDepth > 0.0f)
-			AddActorWorldOffset(Hit.Normal * Hit.PenetrationDepth, false);
-	}
+	// 6. MOVE
+	AddActorWorldOffset(Velocity * DeltaTime, true); // Sweep true just in case we hit a generic box
 }
 
-FVector APcPlayerCharacter::SlideAlongSurface(const FVector& InVelocity, const FVector& Normal)
+// --- BINDINGS ---
+void APcPlayerCharacter::Input_Jump()
 {
-	return InVelocity - Normal * FVector::DotProduct(InVelocity, Normal);
+	// Manual Jump: Add upward velocity relative to planet
+	if (CurrentPlanet)
+	{
+		FVector Up = -CurrentPlanet->GetGravityDirection(GetActorLocation());
+		Velocity += Up * 600.0f;
+	}
 }
+
+// Input Mapping
+void APcPlayerCharacter::Input_Move(FVector2D Value)
+{
+	CurrentInput.X = Value.X;
+	CurrentInput.Y = Value.Y;
+}
+
+void APcPlayerCharacter::Input_Look(FVector2D Value)
+{
+	if (Value.X != 0.0f) AddActorLocalRotation(FRotator(0, Value.X, 0));
+	if (Value.Y != 0.0f)
+	{
+		FRotator Rot = CameraComp->GetRelativeRotation();
+		Rot.Pitch = FMath::Clamp(Rot.Pitch + Value.Y, -85.0f, 85.0f);
+		CameraComp->SetRelativeRotation(Rot);
+	}
+}
+
+void APcPlayerCharacter::NotifyActorBeginOverlap(AActor* Other)
+{
+	if (APcPlanet* P = Cast<APcPlanet>(Other)) CurrentPlanet = P;
+}
+
+void APcPlayerCharacter::NotifyActorEndOverlap(AActor* Other) { if (Other == CurrentPlanet) CurrentPlanet = nullptr; }
