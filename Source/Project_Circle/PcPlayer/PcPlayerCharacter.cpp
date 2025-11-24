@@ -9,21 +9,18 @@ APcPlayerCharacter::APcPlayerCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Initialize Components
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComp"));
 	CameraComp->SetupAttachment(GetCapsuleComponent());
 	CameraComp->SetRelativeLocation(FVector(0, 0, 60.0f));
 	CameraComp->bUsePawnControlRotation = false; 
 	bUseControllerRotationYaw = false;
 
-	// Disable default Unreal physics (gravity/friction) as we handle it manually
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->GravityScale = 0.0f;
 		GetCharacterMovement()->DefaultLandMovementMode = MOVE_Flying;
 	}
 	
-	// Ensure capsule blocks pawns but overlaps static geometry for the sinking mechanic
 	GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECR_Block);
 }
 
@@ -38,45 +35,42 @@ void APcPlayerCharacter::Input_Pulse()
 	// 1. Rhythm Check
 	if (TimeNow - LastPulseTime < PulseCooldown) return;
 	LastPulseTime = TimeNow;
+	LastActionTime = TimeNow; // Reset decay timer
 
-	// 2. BOOST & SNAP (The Fix)
+	// 2. ECONOMY: Step Up
+	CurrentMultiplier += PulseMultiplierGain;
 	
-	// Add the gain first (e.g., 1.29 + 0.5 = 1.79)
-	float RawNewMultiplier = CurrentMultiplier + PulseMultiplierGain;
+	// Round to nearest whole number to keep tiers clean (e.g. 1.0 -> 2.0)
+	CurrentMultiplier = FMath::RoundToFloat(CurrentMultiplier);
+	CurrentMultiplier = FMath::Min(CurrentMultiplier, MaxMultiplier);
+	HighestMultiplier = CurrentMultiplier;
 
-	// Snap to nearest step size (PulseMultiplierGain is 0.5)
-	// Math: Round(1.79 / 0.5) -> Round(3.58) -> 4.0
-	//       4.0 * 0.5 = 2.0. (Clean Tier)
-	float SnappedMultiplier = FMath::RoundToFloat(RawNewMultiplier / PulseMultiplierGain) * PulseMultiplierGain;
+	// 3. STATE TRANSITION: Enter Slide
+	CurrentState = EMoveState::Sliding;
+	SlideStateTimer = 0.0f; // Reset timer
 
-	// Apply & Cap
-	CurrentMultiplier = FMath::Min(SnappedMultiplier, MaxMultiplier);
-
-	// Save Peak for the decay logic
-	HighestMultiplier = CurrentMultiplier; 
-
-	// 3. PHYSICS KICK
+	// 4. PHYSICS: The Boost
+	FVector BoostDir;
 	if (!CurrentInput.IsZero())
 	{
+		// Boost in input direction
 		FVector CamFwd = CameraComp->GetForwardVector();
 		FVector CamRight = CameraComp->GetRightVector();
-		FVector InputDir = (CamFwd * CurrentInput.X + CamRight * CurrentInput.Y).GetSafeNormal();
-		InputDir = FVector::VectorPlaneProject(InputDir, GetActorUpVector()).GetSafeNormal();
+		BoostDir = (CamFwd * CurrentInput.X + CamRight * CurrentInput.Y).GetSafeNormal();
+		BoostDir = FVector::VectorPlaneProject(BoostDir, GetActorUpVector()).GetSafeNormal();
 		
-		// Calculate Snap Turn Speed
+		// Snap velocity rotation to new direction immediately (Snappy feel)
 		float CurrentSpeed = Velocity.Size();
-		if (CurrentSpeed < 100.0f) CurrentSpeed = 0.0f;
-
-		// Rotate Velocity Instantly
-		Velocity = InputDir * (CurrentSpeed + PulseSpeedBoost);
+		Velocity = BoostDir * (CurrentSpeed + PulseSpeedBoost);
 	}
 	else
 	{
-		// No Input Boost
-		FVector Fwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), GetActorUpVector());
-		Velocity += Fwd.GetSafeNormal() * PulseSpeedBoost;
+		// Boost forward if no input
+		BoostDir = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), GetActorUpVector()).GetSafeNormal();
+		Velocity += BoostDir * PulseSpeedBoost;
 	}
-	
+
+	// Juice
 	if (PulseCameraShake)
 	{
 		if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -86,34 +80,26 @@ void APcPlayerCharacter::Input_Pulse()
 	}
 }
 
+void APcPlayerCharacter::Input_SlideHold(bool bIsHolding)
+{
+	bIsSlideKeyDown = bIsHolding;
+}
+
 void APcPlayerCharacter::Input_Jump()
 {
-	// Only jump if we have a planet reference to know where "Up" is
 	if (CurrentPlanet) 
 	{ 
-		// Break the rail lock
 		VerticalStrength = 20.0f; 
-		
-		// Apply jump force
 		Velocity += -CurrentPlanet->GetGravityDirection(GetActorLocation()) * 800.0f; 
+		CurrentState = EMoveState::Air;
 	}
 }
 
-void APcPlayerCharacter::Input_Move(FVector2D Value) 
-{ 
-	CurrentInput.X = Value.X; 
-	CurrentInput.Y = Value.Y; 
-}
-
+void APcPlayerCharacter::Input_Move(FVector2D Value) { CurrentInput.X = Value.X; CurrentInput.Y = Value.Y; }
 void APcPlayerCharacter::Input_Look(FVector2D Value) 
 {
-	if (Value.X != 0.0f) 
-	{
-		AddActorLocalRotation(FRotator(0, Value.X, 0));
-	}
-	
-	if (Value.Y != 0.0f) 
-	{
+	if (Value.X != 0.0f) AddActorLocalRotation(FRotator(0, Value.X, 0));
+	if (Value.Y != 0.0f) {
 		FRotator Rot = CameraComp->GetRelativeRotation();
 		Rot.Pitch = FMath::Clamp(Rot.Pitch + Value.Y, -85.0f, 85.0f);
 		CameraComp->SetRelativeRotation(Rot);
@@ -140,30 +126,22 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 	}
 	FVector TargetUp = -GravityDir;
 
-	// 2. Update Orientation
+	// 2. Orientation
 	FQuat CurrentRot = GetActorQuat();
 	FQuat TargetRot = FQuat::FindBetweenNormals(GetActorUpVector(), TargetUp) * CurrentRot;
 	SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 15.0f * DeltaTime));
 
-	// 3. Rail / Tether Physics
-	// Decay strength over time so the player eventually re-locks to the surface
+	// 3. Rail / Vertical Logic
 	VerticalStrength = FMath::FInterpTo(VerticalStrength, 0.0f, DeltaTime, StrengthDecay);
 	
-	// Fallback raycast if no planet is defined (Flat ground testing)
 	bool bRailCheck = false;
-	if (CurrentPlanet) 
-	{
-		bRailCheck = (FMath::Abs(Altitude) < 100.0f);
-	}
+	if (CurrentPlanet) bRailCheck = (FMath::Abs(Altitude) < 100.0f);
 	else 
 	{
-		FHitResult H; 
-		FCollisionQueryParams P; 
-		P.AddIgnoredActor(this);
+		FHitResult H; FCollisionQueryParams P; P.AddIgnoredActor(this);
 		bRailCheck = GetWorld()->LineTraceSingleByChannel(H, Location, Location + (GravityDir * 150.0f), ECC_WorldStatic, P);
 	}
 
-	// Determine if we should snap to the rail
 	bool bIsSnapped = (VerticalStrength < 5.0f) && bRailCheck;
 
 	FVector VerticalVel = (Velocity | GravityDir) * GravityDir;
@@ -172,202 +150,192 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 	if (bIsSnapped)
 	{
 		bIsGrounded = true;
-		
+		if (CurrentState == EMoveState::Air) CurrentState = EMoveState::Cruising; // Landed
+
 		if (CurrentPlanet)
 		{
-			// Geometric Snap: Force position to the planet surface radius
 			FVector RadialDir = (Location - CurrentPlanet->GetActorLocation()).GetSafeNormal();
 			FVector SurfacePoint = CurrentPlanet->GetActorLocation() + (RadialDir * CurrentPlanet->SurfaceRadius);
-			
-			// Hard interp to lock position
 			SetActorLocation(FMath::VInterpTo(Location, SurfacePoint, DeltaTime, 20.0f), true);
-			
-			// Clear vertical momentum to prevent bouncing
 			VerticalVel = FVector::ZeroVector;
 		}
 		else
 		{
-			// Flat ground stick force
 			Velocity += GravityDir * 500.0f * DeltaTime;
 		}
 	}
 	else
 	{
 		bIsGrounded = false;
-		
-		// Apply Gravity / Tether Force
-		// If altitude is positive, pull down. If negative (underground), pull up.
+		CurrentState = EMoveState::Air;
 		float TetherForce = (Altitude > 0) ? 980.0f : -2000.0f; 
-		
-		// If we have high vertical strength (Jump), reduce gravity influence
-		if (VerticalStrength > 5.0f) 
-		{
-			TetherForce *= 0.5f;
-		}
-		
+		if (VerticalStrength > 5.0f) TetherForce *= 0.5f;
 		VerticalVel += GravityDir * TetherForce * DeltaTime;
 	}
 
-	// 4. Update Horizontal Movement (Steering & Multiplier)
-	Velocity = HorizontalVel + VerticalVel; // Reassemble for calculation
+	// 4. Horizontal Movement (Slide vs Cruise)
+	Velocity = HorizontalVel + VerticalVel; 
 	UpdateMovementPhysics(DeltaTime, TargetUp);
 
-	// 5. Execute Move
+	// 5. Move & Slide
 	FHitResult MoveHit;
 	AddActorWorldOffset(Velocity * DeltaTime, true, &MoveHit);
 
-	// Handle blocking collisions (Walls)
 	if (MoveHit.IsValidBlockingHit())
 	{
 		Velocity = SlideAlongSurface(Velocity, MoveHit.Normal);
-		if (MoveHit.PenetrationDepth > 0.0f) 
-		{
-			AddActorWorldOffset(MoveHit.Normal * MoveHit.PenetrationDepth);
-		}
+		if (MoveHit.PenetrationDepth > 0.0f) AddActorWorldOffset(MoveHit.Normal * MoveHit.PenetrationDepth);
 	}
 	
-	// --- JUICE LOGIC (FOV & TILT) ---
-
-	// 1. DYNAMIC FOV (Speed Warp)
-	// Calculate ratio: 0.0 = Stopped, 1.0 = Max Possible Speed
+	// --- JUICE (FOV & TILT) ---
 	float SpeedRatio = Velocity.Size() / (BaseSpeed * MaxMultiplier);
 	SpeedRatio = FMath::Clamp(SpeedRatio, 0.0f, 1.0f);
 
 	float TargetFOV = FMath::Lerp(BaseFOV, SpeedFOV, SpeedRatio);
-    
-	// Smoothly interpolate FOV
-	float CurrentFOV = CameraComp->FieldOfView;
-	CameraComp->SetFieldOfView(FMath::FInterpTo(CurrentFOV, TargetFOV, DeltaTime, 5.0f));
+	CameraComp->SetFieldOfView(FMath::FInterpTo(CameraComp->FieldOfView, TargetFOV, DeltaTime, 5.0f));
 
-
-	// 2. CAMERA TILT (Banking)
-	// We tilt based on the "Right" input (CurrentInput.Y) or lateral velocity
-	float TargetTilt = 0.0f;
-
-	// If pressing keys, tilt into the turn
-	if (!CurrentInput.IsZero())
-	{
-		TargetTilt = CurrentInput.Y * MaxCameraTilt; // Y is Left/Right (-1 to 1)
-	}
-
-	// Get current rotation relative to the capsule
+	float TargetTilt = (!CurrentInput.IsZero()) ? CurrentInput.Y * MaxCameraTilt : 0.0f;
 	FRotator RelativeRot = CameraComp->GetRelativeRotation();
-    
-	// Smoothly interp the Roll (Tilt)
 	RelativeRot.Roll = FMath::FInterpTo(RelativeRot.Roll, TargetTilt, DeltaTime, 10.0f);
-    
 	CameraComp->SetRelativeRotation(RelativeRot);
 }
 
 void APcPlayerCharacter::UpdateMovementPhysics(float DeltaTime, FVector SurfaceNormal)
 {
-	// --- A. MULTIPLIER TIERED DECAY ---
-	
-	bool bHasInput = !CurrentInput.IsZero();
-	float TimeSincePulse = GetWorld()->GetTimeSeconds() - LastPulseTime;
-
-	// Determine the floor multiplier (Walking vs Stopped)
-	float FloorMultiplier = bHasInput ? 1.0f : 0.0f;
-
-	// Calculate how many tiers we should have dropped based on time passed
-	int32 Drops = FMath::FloorToInt(TimeSincePulse / PulseGracePeriod);
-	
-	// Calculate target tier relative to the peak of the current combo
-	float TargetTier = HighestMultiplier - (Drops * DropStepAmount);
-	
-	// Clamp to floor
-	TargetTier = FMath::Max(TargetTier, FloorMultiplier);
-
-	// Apply the decay or recovery
-	if (CurrentMultiplier > TargetTier)
-	{
-		// Collapse down to the next tier rapidly
-		CurrentMultiplier = FMath::FInterpTo(CurrentMultiplier, TargetTier, DeltaTime, PulseDropSpeed);
-	}
-	else if (bHasInput && CurrentMultiplier < 1.0f)
-	{
-		// Recover from 0 to 1 (Walking startup)
-		CurrentMultiplier += 0.5f * DeltaTime; 
-	}
-
-	// Hard clamp
-	CurrentMultiplier = FMath::Clamp(CurrentMultiplier, 0.0f, MaxMultiplier);
-
-
-	// --- B. STEERING CALCULATIONS ---
-	
-	// Map Multiplier to Steering responsiveness (Reverse Inertia)
-	// 1.0x Speed = 0.0 Alpha (Heavy). 3.0x Speed = 1.0 Alpha (Snappy).
-	float ControlAlpha = FMath::GetMappedRangeValueClamped(FVector2D(1.0f, MaxMultiplier), FVector2D(0.0f, 1.0f), CurrentMultiplier);
-	
-	// Override control if within Pulse window
-	if (TimeSincePulse < PulseControlDuration) 
-	{
-		ControlAlpha = 1.0f;
-	}
-
-	float CurrentSteeringRate = FMath::Lerp(MinSteeringRate, MaxSteeringRate, ControlAlpha);
-
-
-	// --- C. APPLY FORCES ---
-	
-	// Decompose velocity again for horizontal processing
+	// Separate Horizontal Component
 	FVector VerticalVel = (Velocity | SurfaceNormal) * SurfaceNormal;
 	FVector HorizontalVel = Velocity - VerticalVel;
 	float CurrentSpeed = HorizontalVel.Size();
-	float TargetSpeedMagnitude = BaseSpeed * CurrentMultiplier;
 
-	// Calculate desired direction relative to surface
+	float TargetFriction = Friction;
+	float TargetSteeringAlpha = 0.0f; // 0 = Heavy, 1 = Snappy
+
+	// --- STATE MACHINE LOGIC ---
+	if (CurrentState == EMoveState::Sliding)
+	{
+		UpdateSlideLogic(DeltaTime, TargetFriction, TargetSteeringAlpha);
+	}
+	else if (CurrentState == EMoveState::Cruising)
+	{
+		UpdateCruisingLogic(DeltaTime, TargetFriction, TargetSteeringAlpha);
+	}
+
+	// --- APPLY STEERING ---
+	float FinalSteeringRate = FMath::Lerp(MinSteeringRate, MaxSteeringRate, TargetSteeringAlpha);
+
+	// Determine Input Direction Projected on Surface
 	FVector CamFwd = CameraComp->GetForwardVector();
 	FVector CamRight = CameraComp->GetRightVector();
 	FVector InputDir = (CamFwd * CurrentInput.X + CamRight * CurrentInput.Y).GetSafeNormal();
 	InputDir = FVector::VectorPlaneProject(InputDir, SurfaceNormal).GetSafeNormal();
 
-	// Apply Steering (Vector Rotation)
 	if (!InputDir.IsZero() && CurrentSpeed > 10.0f)
 	{
 		FVector CurrentDir = HorizontalVel.GetSafeNormal();
-		FVector NewDir = FMath::VInterpNormalRotationTo(CurrentDir, InputDir, DeltaTime, CurrentSteeringRate * 10.0f);
+		FVector NewDir = FMath::VInterpNormalRotationTo(CurrentDir, InputDir, DeltaTime, FinalSteeringRate * 10.0f);
 		HorizontalVel = NewDir * CurrentSpeed;
 	}
 
-	// Acceleration Logic
-	if (CurrentSpeed < TargetSpeedMagnitude && bHasInput)
+	// --- APPLY ACCEL & FRICTION ---
+	float SpeedCap = BaseSpeed * CurrentMultiplier;
+
+	// Acceleration (Only if holding input and under cap)
+	if (!CurrentInput.IsZero() && CurrentSpeed < SpeedCap)
 	{
 		// Kickstart if stationary
 		if (HorizontalVel.IsZero()) HorizontalVel = InputDir * 100.0f;
-		
-		// Apply Engine Force
 		HorizontalVel += InputDir * Acceleration * DeltaTime;
 	}
-	else if (CurrentSpeed > TargetSpeedMagnitude || !bHasInput)
-	{
-		// Drag Logic (Slow down to match target)
-		HorizontalVel *= FMath::Max(0.0f, 1.0f - (Friction * DeltaTime));
-	}
-
-	// Reassemble final velocity
+	
+	// Friction / Drag
+	// We apply friction if: We are overspeeding OR we are not inputting (drag to stop)
+	// BUT: If Sliding (Phase 1), Friction is 0, so this multiplier becomes 1.0 (No drag)
+	float DragFactor = FMath::Max(0.0f, 1.0f - (TargetFriction * DeltaTime));
+	HorizontalVel *= DragFactor;
+	
+	// Reassemble
 	Velocity = HorizontalVel + VerticalVel;
 }
 
-// ==============================================================================
-// HELPERS & EVENTS
-// ==============================================================================
+void APcPlayerCharacter::UpdateSlideLogic(float DeltaTime, float& OutFriction, float& OutSteeringAlpha)
+{
+	SlideStateTimer += DeltaTime;
 
-void APcPlayerCharacter::NotifyActorBeginOverlap(AActor* Other) 
-{ 
-	if (APcPlanet* P = Cast<APcPlanet>(Other)) 
+	// Reset Decay Timer while sliding
+	LastActionTime = GetWorld()->GetTimeSeconds();
+
+	// Check Exit Conditions (Time expired OR Key Released)
+	float TotalSlideTime = SlideHydroplaneTime + SlideFadeTime;
+	if (SlideStateTimer >= TotalSlideTime || !bIsSlideKeyDown)
 	{
-		CurrentPlanet = P;
+		CurrentState = EMoveState::Cruising;
+		// Force physics back to standard immediately if exited early
+		UpdateCruisingLogic(DeltaTime, OutFriction, OutSteeringAlpha); 
+		return;
+	}
+
+	// --- PHASE 1: HYDROPLANE ---
+	if (SlideStateTimer <= SlideHydroplaneTime)
+	{
+		OutFriction = 0.0f;         // Infinite glide
+		OutSteeringAlpha = 1.0f;    // Maximum control
+		
+		// Passive Growth
+		CurrentMultiplier += SlidePassiveGrowth * DeltaTime;
+		CurrentMultiplier = FMath::Min(CurrentMultiplier, MaxMultiplier);
+		HighestMultiplier = CurrentMultiplier;
+	}
+	// --- PHASE 2: THE FADE ---
+	else
+	{
+		float FadeAlpha = (SlideStateTimer - SlideHydroplaneTime) / SlideFadeTime;
+		
+		// Blend Friction back to normal
+		OutFriction = FMath::Lerp(0.0f, Friction, FadeAlpha);
+		
+		// Blend Control back to normal (based on current multiplier)
+		float NormalControl = FMath::GetMappedRangeValueClamped(FVector2D(1.0f, MaxMultiplier), FVector2D(0.0f, 1.0f), CurrentMultiplier);
+		OutSteeringAlpha = FMath::Lerp(1.0f, NormalControl, FadeAlpha);
 	}
 }
 
-void APcPlayerCharacter::NotifyActorEndOverlap(AActor* Other) 
-{ 
-	if (Other == CurrentPlanet) 
+void APcPlayerCharacter::UpdateCruisingLogic(float DeltaTime, float& OutFriction, float& OutSteeringAlpha)
+{
+	// 1. Calculate Steering Feel (Reverse Inertia)
+	// 1.0x = Heavy (0.0), MaxMult = Snappy (1.0)
+	OutSteeringAlpha = FMath::GetMappedRangeValueClamped(FVector2D(1.0f, MaxMultiplier), FVector2D(0.0f, 1.0f), CurrentMultiplier);
+	OutFriction = Friction;
+
+	// 2. Economy Decay
+	float TimeSinceAction = GetWorld()->GetTimeSeconds() - LastActionTime;
+	bool bHasInput = !CurrentInput.IsZero();
+
+	// Only decay if we are past the grace period
+	if (TimeSinceAction > PulseGracePeriod)
 	{
-		CurrentPlanet = nullptr;
+		// Determine how many tiers we have dropped
+		float Overtime = TimeSinceAction - PulseGracePeriod;
+		
+		// We don't drop linearly, we target specific steps below the Peak
+		// Example: Peak 3.0. 1 sec later -> Target 2.0.
+		// However, if we are walking (HasInput), we don't drop below 1.0
+		float FloorMult = bHasInput ? 1.0f : 0.0f;
+		
+		// Calculate steps dropped
+		int32 Steps = FMath::FloorToInt(Overtime); // 1 step per second past grace
+		float TargetTier = HighestMultiplier - (Steps * DropStepAmount);
+		TargetTier = FMath::Max(TargetTier, FloorMult);
+
+		// Interp down
+		CurrentMultiplier = FMath::FInterpTo(CurrentMultiplier, TargetTier, DeltaTime, PulseDropSpeed);
 	}
+	else if (bHasInput && CurrentMultiplier < 1.0f)
+	{
+		// Recovery (Walking startup)
+		CurrentMultiplier += 2.0f * DeltaTime;
+	}
+
+	CurrentMultiplier = FMath::Clamp(CurrentMultiplier, 0.0f, MaxMultiplier);
 }
 
 FVector APcPlayerCharacter::SlideAlongSurface(const FVector& InVel, const FVector& Normal) 
@@ -375,7 +343,12 @@ FVector APcPlayerCharacter::SlideAlongSurface(const FVector& InVel, const FVecto
 	return InVel - Normal * (InVel | Normal); 
 }
 
+void APcPlayerCharacter::NotifyActorBeginOverlap(AActor* Other) { if (APcPlanet* P = Cast<APcPlanet>(Other)) CurrentPlanet = P; }
+void APcPlayerCharacter::NotifyActorEndOverlap(AActor* Other) { if (Other == CurrentPlanet) CurrentPlanet = nullptr; }
+
 FString APcPlayerCharacter::GetDebugInfo() const 
 { 
-	return FString::Printf(TEXT("Mult: %.2f\nSpeed: %.0f\nPeak: %.2f"), CurrentMultiplier, Velocity.Size(), HighestMultiplier); 
+	FString StateName = (CurrentState == EMoveState::Sliding) ? "SLIDING" : "CRUISING";
+	return FString::Printf(TEXT("[%s]\nMult: %.2f (Peak: %.1f)\nSpeed: %.0f\nSlide: %.1fs"), 
+		*StateName, CurrentMultiplier, HighestMultiplier, Velocity.Size(), SlideStateTimer); 
 }
