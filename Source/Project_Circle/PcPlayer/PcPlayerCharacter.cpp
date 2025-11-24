@@ -20,10 +20,14 @@ APcPlayerCharacter::APcPlayerCharacter()
 		GetCharacterMovement()->DefaultLandMovementMode = MOVE_Flying;
 	}
 	
-	// IMPORTANT: Overlap allows sinking. Block stops it.
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	
-	// Initialize Speed
+	CurrentSpeedCap = BaseMoveSpeed;
+}
+
+void APcPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
 	CurrentSpeedCap = BaseMoveSpeed;
 }
 
@@ -44,76 +48,91 @@ void APcPlayerCharacter::Input_Look(FVector2D Value)
 	}
 }
 
-void APcPlayerCharacter::Input_JumpStart() 
+void APcPlayerCharacter::Input_JumpTrigger() 
 { 
-	bIsHoldingJump = true;
-
-	// --- RHYTHM LOGIC ---
+	// --- FIXED RHYTHM LOGIC ---
 	
-	// 1. If we are just starting from the ground (Not waving yet)
+	// 1. If Grounded (Wading in water) -> Start Jump
 	if (!bIsWaveActive)
 	{
 		bIsWaveActive = true;
 		WavePhase = 0.0f;
-		CurrentJumpPeak = MaxJumpHeight;
+		return;
 	}
-	else 
+	
+	// 2. If Airborne -> Check Window
+	float AirEnd = PI; // 3.14
+	float CoyoteZone = AirEnd - (AirEnd * CoyoteThreshold); 
+	
+	bool bInRhythmWindow = WavePhase > CoyoteZone;
+
+	if (bInRhythmWindow)
 	{
-		// 2. We are already in the air. Check for Perfect Timing.
-		// "Sink" phase starts at PI (3.14). We allow input slightly before that.
-		
-		float AirEnd = PI; // 3.14
-		float CoyoteZone = AirEnd - (AirEnd * CoyoteThreshold); 
-		bool bInRhythmWindow = WavePhase > CoyoteZone;
+		// SUCCESS: Perfect timing
+		CurrentSpeedCap += SpeedBonusPerHop;
+		CurrentSpeedCap = FMath::Min(CurrentSpeedCap, MaxBoostSpeed);
 
-		if (bInRhythmWindow)
-		{
-			// --- SUCCESS (BUNNY HOP) ---
-			CurrentSpeedCap += SpeedBonusPerHop;
-			CurrentSpeedCap = FMath::Min(CurrentSpeedCap, MaxBoostSpeed);
-
-			// Chain the jump immediately
-			WavePhase = 0.0f;
-			CurrentJumpPeak = MaxJumpHeight;
-		}
-		else
-		{
-			// --- FAIL (Too Early) ---
-			CurrentSpeedCap = BaseMoveSpeed;
-		}
+		// Chain the jump
+		WavePhase = 0.0f;
+	}
+	else
+	{
+		// EARLY PRESS:
+		// We do NOTHING. We ignore the input. 
+		// We do NOT reset speed. This allows you to mash/press early without penalty.
+		// The penalty only comes if you fail to press it at all and hit the floor.
 	}
 }
 
-void APcPlayerCharacter::Input_JumpStop() { bIsHoldingJump = false; }
+void APcPlayerCharacter::Input_StartAttack()
+{
+	// Ensure Projectile Class is assigned in Blueprint!
+	if (ProjectileClass)
+	{
+		// Fire first shot immediately
+		FireProjectile(); 
+		// Start timer for subsequent shots
+		GetWorldTimerManager().SetTimer(TimerHandle_Attack, this, &APcPlayerCharacter::FireProjectile, FireRate, true);
+	}
+}
 
-void APcPlayerCharacter::Input_PrimaryAttack()
+void APcPlayerCharacter::Input_StopAttack()
+{
+	GetWorldTimerManager().ClearTimer(TimerHandle_Attack);
+}
+
+void APcPlayerCharacter::FireProjectile()
 {
 	if (!ProjectileClass) return;
+	
 	FVector SpawnLoc = GetActorLocation() + (GetActorForwardVector() * 80.0f);
 	FVector GravityDir = (CurrentPlanet) ? CurrentPlanet->GetGravityDirection(SpawnLoc) : FVector(0,0,-1);
 	FVector SurfaceNormal = -GravityDir;
+	
+	// Flatten aim to surface
 	FVector CamFwd = CameraComp->GetForwardVector();
 	FVector ShootDir = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
 
-	FActorSpawnParameters P; P.Owner = this; P.Instigator = this;
-	if (auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, ShootDir.Rotation(), P))
+	FActorSpawnParameters P; 
+	P.Owner = this; 
+	P.Instigator = this;
+	
+	auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, ShootDir.Rotation(), P);
+	if (Proj)
+	{
 		Proj->InitializeProjectile(ShootDir, CurrentPlanet);
+	}
 }
 
 // ==============================================================================
-// DEBUG INTERFACE
+// DEBUG
 // ==============================================================================
 
 FString APcPlayerCharacter::GetDebugInfo() const
 {
-	FString StateStr = bIsWaveActive ? TEXT("WAVING") : TEXT("GROUND");
 	float Progress = (bIsWaveActive) ? (WavePhase / (2.0f * PI)) * 100.0f : 0.0f;
-
-	return FString::Printf(
-		TEXT("STATE: %s\nSPEED: %.0f / %.0f\nPHASE: %.0f%%\nALT: %.1f"),
-		*StateStr, CurrentSpeedCap, MaxBoostSpeed, Progress, 
-		CurrentJumpPeak * FMath::Sin(WavePhase)
-	);
+	return FString::Printf(TEXT("SPEED: %.0f / %.0f\nPHASE: %.0f%%\nALT: %.1f"),
+		CurrentSpeedCap, MaxBoostSpeed, Progress, SmoothedAltitude);
 }
 
 bool APcPlayerCharacter::IsInRhythmWindow() const
@@ -125,7 +144,7 @@ bool APcPlayerCharacter::IsInRhythmWindow() const
 }
 
 // ==============================================================================
-// LOGIC LOOP
+// MOVEMENT LOOP
 // ==============================================================================
 
 void APcPlayerCharacter::Tick(float DeltaTime)
@@ -136,7 +155,7 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 
 void APcPlayerCharacter::ApplyDeterministicMovement(float DeltaTime)
 {
-	// 1. FLOOR & ORIENTATION
+	// 1. FLOOR SETUP
 	FVector ActorLoc = GetActorLocation();
 	FVector UpVector = GetActorUpVector();
 	FHitResult GroundHit; FCollisionQueryParams P; P.AddIgnoredActor(this);
@@ -146,28 +165,44 @@ void APcPlayerCharacter::ApplyDeterministicMovement(float DeltaTime)
 	bool bFoundGround = GetWorld()->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_WorldStatic, P);
 
 	if (!bFoundGround) return;
-
-	FVector GroundLocation = GroundHit.Location;
 	FVector SurfaceNormal = GroundHit.Normal;
 
+	// Orient to floor
 	FQuat CurrentRot = GetActorQuat();
 	FQuat TargetRot = FQuat::FindBetweenNormals(GetActorUpVector(), SurfaceNormal) * CurrentRot;
 	SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 20.0f * DeltaTime));
 
 	// --------------------------------------------------------
-	// 2. DYNAMIC HANDLING (Speed = Control)
+	// 2. DRAG PHYSICS (Water vs Air)
 	// --------------------------------------------------------
-
-	float CurrentAccel = bIsWaveActive ? AirAcceleration : GroundAcceleration;
 	
-	float SpeedRatio = (CurrentSpeedCap - BaseMoveSpeed) / (MaxBoostSpeed - BaseMoveSpeed);
-	SpeedRatio = FMath::Clamp(SpeedRatio, 0.0f, 1.0f);
+	float TargetDrag = 0.0f;
+	float TargetAccel = 0.0f;
 
-	// Add Snappiness (MaxControlBonus) as we get faster
-	CurrentAccel += (SpeedRatio * MaxControlBonus);
+	if (bIsWaveActive)
+	{
+		// IN AIR: Low Drag, Low Control (Slippery)
+		TargetDrag = AirDrag;
+		TargetAccel = AirAccel;
+	}
+	else
+	{
+		// ON GROUND: High Drag (Water Resistance), High Control
+		TargetDrag = GroundDrag;
+		TargetAccel = GroundAccel;
+	}
+	
+	// Speed Bonus: If we are boosted, we feel slightly less drag on the ground
+	// This rewards high speed play
+	if (!bIsWaveActive && CurrentSpeedCap > BaseMoveSpeed)
+	{
+		// Reduce drag slightly based on speed tier
+		float BoostFactor = (CurrentSpeedCap - BaseMoveSpeed) / MaxBoostSpeed; // 0 to 1
+		TargetDrag = FMath::Lerp(GroundDrag, GroundDrag * 0.5f, BoostFactor);
+	}
 
 	// --------------------------------------------------------
-	// 3. HORIZONTAL MOVEMENT
+	// 3. HORIZONTAL MOVE
 	// --------------------------------------------------------
 	FVector Forward = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
 	FVector Right = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
@@ -176,43 +211,42 @@ void APcPlayerCharacter::ApplyDeterministicMovement(float DeltaTime)
 	FVector TargetVel = TargetDir.GetSafeNormal() * CurrentSpeedCap;
 	if (CurrentInput.IsZero()) TargetVel = FVector::ZeroVector;
 
-	float InterpSpeed = CurrentInput.IsZero() ? Deceleration : CurrentAccel;
+	float InterpSpeed = CurrentInput.IsZero() ? TargetDrag : TargetAccel;
 	HorizontalVelocity = FMath::VInterpTo(HorizontalVelocity, TargetVel, DeltaTime, InterpSpeed);
 
-	// 4. VERTICAL OFFSET (The Deterministic Wave)
-	float VerticalOffset = 0.0f;
+	// --------------------------------------------------------
+	// 4. VERTICAL OFFSET
+	// --------------------------------------------------------
+	float TargetAltitude = 0.0f;
 
 	if (bIsWaveActive)
 	{
-		// Cut jump height if button released while going up
-		if (!bIsHoldingJump && WavePhase < HALF_PI)
-		{
-			CurrentJumpPeak = FMath::Sin(WavePhase) * MaxJumpHeight;
-			WavePhase = HALF_PI; // Fast forward to peak
-		}
-
 		float PhaseSpeed = (2.0f * PI) / WaveDuration;
 		WavePhase += PhaseSpeed * DeltaTime;
 
 		float RawSine = FMath::Sin(WavePhase);
-		if (RawSine >= 0.0f) VerticalOffset = RawSine * CurrentJumpPeak; // Air
-		else VerticalOffset = RawSine * SinkDepth; // Sink
+		if (RawSine >= 0.0f) TargetAltitude = RawSine * JumpHeight; 
+		else TargetAltitude = RawSine * SinkDepth; 
 
-		// End Cycle
 		if (WavePhase >= 2.0f * PI)
 		{
+			// WAVE ENDED
 			bIsWaveActive = false;
 			WavePhase = 0.0f;
-			VerticalOffset = 0.0f;
+			TargetAltitude = 0.0f;
 			
-			// Missed Opportunity: Landed without chaining -> Reset Speed
+			// If we reached here, it means we hit the floor WITHOUT chaining a jump.
+			// The Water catches us. Reset Speed.
 			CurrentSpeedCap = BaseMoveSpeed;
 		}
 	}
 
-	// 5. FINAL POSITION
-	FVector NewGroundPos = GroundLocation + (HorizontalVelocity * DeltaTime);
-	SetActorLocation(NewGroundPos + (SurfaceNormal * VerticalOffset));
+	// Visual Smoothing
+	SmoothedAltitude = FMath::FInterpTo(SmoothedAltitude, TargetAltitude, DeltaTime, 15.0f);
+
+	// 5. FINAL POS
+	FVector NewGroundPos = GroundHit.Location + (HorizontalVelocity * DeltaTime);
+	SetActorLocation(NewGroundPos + (SurfaceNormal * SmoothedAltitude));
 }
 
 void APcPlayerCharacter::NotifyActorBeginOverlap(AActor* Other) { if (APcPlanet* P = Cast<APcPlanet>(Other)) CurrentPlanet = P; }

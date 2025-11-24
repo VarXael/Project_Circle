@@ -17,33 +17,26 @@ public:
 	APcPlayerCharacter();
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 	virtual void NotifyActorEndOverlap(AActor* OtherActor) override;
 
 public:
-	// ==============================================================================
-	// INPUT INTERFACE
-	// ==============================================================================
-	
+	// --- INPUTS ---
 	UFUNCTION(BlueprintCallable) void Input_Move(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_Look(FVector2D Value);
-	UFUNCTION(BlueprintCallable) void Input_JumpStart(); 
-	UFUNCTION(BlueprintCallable) void Input_JumpStop();
-	UFUNCTION(BlueprintCallable) void Input_PrimaryAttack();
+	UFUNCTION(BlueprintCallable) void Input_JumpTrigger(); 
+	UFUNCTION(BlueprintCallable) void Input_StartAttack();
+	UFUNCTION(BlueprintCallable) void Input_StopAttack();
 
-	// --- DEBUG INTERFACE FOR HUD ---
+	// Debug
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	FString GetDebugInfo() const;
-
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	bool IsInRhythmWindow() const;
 
 public:
-	// ==============================================================================
-	// COMPONENTS
-	// ==============================================================================
-	
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
 
@@ -54,66 +47,65 @@ public:
 	// CONFIGURATION
 	// ==============================================================================
 
-	// --- 1. MOVEMENT BASICS ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
 	float BaseMoveSpeed = 800.0f; 
 
+	// --- GROUND PHYSICS (The Water) ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float GroundAcceleration = 8.0f; 
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float AirAcceleration = 2.0f;    
+	float GroundDrag = 15.0f; // Heavy friction on floor
 
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float Deceleration = 10.0f;
+	float GroundAccel = 15.0f; 
+
+	// --- AIR PHYSICS (The Glide) ---
+	// Lower numbers = More slidey, preserving momentum
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
+	float AirDrag = 2.0f; 
+
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
+	float AirAccel = 5.0f; 
 
 
-	// --- 2. THE WAVE (Jump Arc) ---
+	// --- 2. THE WAVE ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
-	float MaxJumpHeight = 350.0f;
+	float JumpHeight = 350.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
 	float SinkDepth = 60.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
-	float WaveDuration = 0.9f;
+	float WaveDuration = 0.8f;
 
-
-	// --- 3. BUNNY HOP (Rhythm System) ---
-	
-	/** Speed gained per successful perfect jump. */
+	// --- 3. BUNNY HOP ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
 	float SpeedBonusPerHop = 400.0f;
 
-	/** Maximum possible speed. */
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
 	float MaxBoostSpeed = 2500.0f;
 
-	/** How much snappy acceleration we regain as we get faster. */
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
-	float MaxControlBonus = 25.0f; 
-
-	/** How early (percentage) before the bottom of the sink can we press Jump? */
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
-	float CoyoteThreshold = 0.20f; 
+	float CoyoteThreshold = 0.25f; // Generous window
 
 	// --- 4. COMBAT ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Combat")
+	float FireRate = 0.12f;
+
 private:
-	// --- STATE ---
 	FVector HorizontalVelocity = FVector::ZeroVector;
 	FVector CurrentInput = FVector::ZeroVector;
-	
-	// Dynamic Stats
 	float CurrentSpeedCap = 0.0f;
 
-	// Wave Logic
 	bool bIsWaveActive = false;
-	bool bIsHoldingJump = false;
 	float WavePhase = 0.0f;         
-	float CurrentJumpPeak = 0.0f;   
+	float SmoothedAltitude = 0.0f;
+
+	FTimerHandle TimerHandle_Attack;
+	
+	// Helper for auto-fire
+	void FireProjectile(); 
 
 	void ApplyDeterministicMovement(float DeltaTime);
 };
