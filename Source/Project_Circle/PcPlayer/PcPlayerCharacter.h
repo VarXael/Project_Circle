@@ -6,10 +6,7 @@
 
 class UCameraComponent;
 class APcPlanet;
-class APcProjectile;
-
-// Delegate for sound/FX
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerHitSignature);
+class APcWeapon; // Forward Declaration
 
 UCLASS()
 class PROJECT_CIRCLE_API APcPlayerCharacter : public ACharacter
@@ -29,21 +26,18 @@ public:
 	UFUNCTION(BlueprintCallable) void Input_Move(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_Look(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_JumpTrigger(); 
+	
+	// --- COMBAT INPUTS ---
 	UFUNCTION(BlueprintCallable) void Input_StartAttack();
 	UFUNCTION(BlueprintCallable) void Input_StopAttack();
+	UFUNCTION(BlueprintCallable) void Input_FireLaser(); // <--- NEW
 
-	// Called by Projectiles
-	UFUNCTION(BlueprintCallable)
-	void TakeHit();
-
-	UFUNCTION(BlueprintImplementableEvent)
-	void OnHitReceived(); // For BP Sound/Screen Shake
+	UFUNCTION(BlueprintCallable) void TakeHit();
+	UFUNCTION(BlueprintImplementableEvent) void OnHitReceived();
 
 	// Debug
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	FString GetDebugInfo() const;
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	bool IsInRhythmWindow() const;
+	UFUNCTION(BlueprintCallable, Category = "Debug") FString GetDebugInfo() const;
+	UFUNCTION(BlueprintCallable, Category = "Debug") bool IsInRhythmWindow() const;
 
 public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
@@ -53,73 +47,45 @@ public:
 	APcPlanet* CurrentPlanet;
 
 	// ==============================================================================
-	// CONFIGURATION
+	// WEAPON SYSTEM
 	// ==============================================================================
+	UPROPERTY(EditAnywhere, Category = "Project Circle | Combat")
+	TSubclassOf<APcWeapon> StartingWeaponClass;
 
-	// --- 1. SPEED ECONOMY ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float BaseMoveSpeed = 600.0f; 
+	UPROPERTY(BlueprintReadOnly, Category = "Project Circle | Combat")
+	APcWeapon* CurrentWeapon;
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float MaxSkimSpeed = 2500.0f; 
+	// ==============================================================================
+	// MOVEMENT CONFIGURATION
+	// ==============================================================================
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement") float BaseMoveSpeed = 600.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement") float MaxSkimSpeed = 2500.0f; 
 
-	// --- 2. DYNAMIC STEERING (Control Curve) ---
-	// Slow = Heavy turn (Boat). Fast = Instant turn (F1 Car).
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float MinSteeringRate = 120.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics") float MinSteeringRate = 120.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics") float MaxSteeringRate = 400.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics") float CarveAcceleration = 1200.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics") float BaseDrag = 1.0f; 
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float MaxSteeringRate = 400.0f; // Very Snappy at high speed
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump") float MinJumpHeight = 150.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump") float MaxJumpHeight = 500.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump") float JumpBoostAmount = 800.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump") float WaveDuration = 0.8f;
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump") float CoyoteThreshold = 0.25f;
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float CarveAcceleration = 1200.0f; // Buffed: Gain speed faster
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float BaseDrag = 1.0f; // Nerfed: Less punishment
-
-	// --- 3. DYNAMIC JUMP (Height Curve) ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float MinJumpHeight = 150.0f; // Initial heavy hop
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float MaxJumpHeight = 500.0f; // Full speed soaring
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float JumpBoostAmount = 800.0f; // Buffed: One jump gets you far
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float WaveDuration = 0.8f;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float CoyoteThreshold = 0.25f;
-
-	// --- 4. SINKING ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
-	float MudDepth = 80.0f; 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
-	float LiftSensitivity = 3.0f; 
-
-	// --- 5. COMBAT ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 5. Combat")
-	TSubclassOf<APcProjectile> ProjectileClass;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 5. Combat")
-	float FireRate = 0.12f;
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy") float MudDepth = 80.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy") float LiftSensitivity = 3.0f; 
 
 private:
 	FVector HorizontalVelocity = FVector::ZeroVector;
 	FVector CurrentInput = FVector::ZeroVector;
-	
 	float CurrentSpeed = 0.0f;
 	float CarveIntensity = 0.0f; 
-	float CurrentSteeringRate = 0.0f; // Debug info
+	float CurrentSteeringRate = 0.0f; 
 	
 	bool bIsWaveActive = false;
 	float WavePhase = 0.0f;         
 	float SmoothedAltitude = 0.0f;
-	float CurrentJumpPeak = 0.0f; // Calculates height based on speed at jump start
-
-	FTimerHandle TimerHandle_Attack;
-	void FireProjectile(); 
+	float CurrentJumpPeak = 0.0f;
 
 	void ApplySkaterMovement(float DeltaTime);
 };
