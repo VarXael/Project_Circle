@@ -1,9 +1,11 @@
 ﻿#include "PcPlayerCharacter.h"
+
 #include "PcProjectile.h"
 #include "Project_Circle/Planet/PcPlanet.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 
 APcPlayerCharacter::APcPlayerCharacter()
 {
@@ -21,20 +23,15 @@ APcPlayerCharacter::APcPlayerCharacter()
 	}
 	
 	GetCapsuleComponent()->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-	
-	CurrentSpeedCap = BaseMoveSpeed;
 }
 
 void APcPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentSpeedCap = BaseMoveSpeed;
+	CurrentSpeed = BaseMoveSpeed; 
 }
 
-// ==============================================================================
-// INPUT
-// ==============================================================================
-
+// ... (Input Move/Look/Attack same as before) ...
 void APcPlayerCharacter::Input_Move(FVector2D Value) { CurrentInput = FVector(Value.X, Value.Y, 0.0f); }
 
 void APcPlayerCharacter::Input_Look(FVector2D Value) 
@@ -48,51 +45,12 @@ void APcPlayerCharacter::Input_Look(FVector2D Value)
 	}
 }
 
-void APcPlayerCharacter::Input_JumpTrigger() 
-{ 
-	// --- FIXED RHYTHM LOGIC ---
-	
-	// 1. If Grounded (Wading in water) -> Start Jump
-	if (!bIsWaveActive)
-	{
-		bIsWaveActive = true;
-		WavePhase = 0.0f;
-		return;
-	}
-	
-	// 2. If Airborne -> Check Window
-	float AirEnd = PI; // 3.14
-	float CoyoteZone = AirEnd - (AirEnd * CoyoteThreshold); 
-	
-	bool bInRhythmWindow = WavePhase > CoyoteZone;
-
-	if (bInRhythmWindow)
-	{
-		// SUCCESS: Perfect timing
-		CurrentSpeedCap += SpeedBonusPerHop;
-		CurrentSpeedCap = FMath::Min(CurrentSpeedCap, MaxBoostSpeed);
-
-		// Chain the jump
-		WavePhase = 0.0f;
-	}
-	else
-	{
-		// EARLY PRESS:
-		// We do NOTHING. We ignore the input. 
-		// We do NOT reset speed. This allows you to mash/press early without penalty.
-		// The penalty only comes if you fail to press it at all and hit the floor.
-	}
-}
-
 void APcPlayerCharacter::Input_StartAttack()
 {
-	// Ensure Projectile Class is assigned in Blueprint!
 	if (ProjectileClass)
 	{
-		// Fire first shot immediately
 		FireProjectile(); 
-		// Start timer for subsequent shots
-		GetWorldTimerManager().SetTimer(TimerHandle_Attack, this, &APcPlayerCharacter::FireProjectile, FireRate, true);
+		GetWorldTimerManager().SetTimer(TimerHandle_Attack, this, &APcPlayerCharacter::FireProjectile, FireRate, true, 0.0f);
 	}
 }
 
@@ -104,58 +62,86 @@ void APcPlayerCharacter::Input_StopAttack()
 void APcPlayerCharacter::FireProjectile()
 {
 	if (!ProjectileClass) return;
-	
 	FVector SpawnLoc = GetActorLocation() + (GetActorForwardVector() * 80.0f);
 	FVector GravityDir = (CurrentPlanet) ? CurrentPlanet->GetGravityDirection(SpawnLoc) : FVector(0,0,-1);
 	FVector SurfaceNormal = -GravityDir;
 	
-	// Flatten aim to surface
 	FVector CamFwd = CameraComp->GetForwardVector();
 	FVector ShootDir = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
 
-	FActorSpawnParameters P; 
-	P.Owner = this; 
-	P.Instigator = this;
-	
+	FActorSpawnParameters P; P.Owner = this; P.Instigator = this;
 	auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, ShootDir.Rotation(), P);
-	if (Proj)
+	if (Proj) 
 	{
-		Proj->InitializeProjectile(ShootDir, CurrentPlanet);
+		Proj->InitializeProjectile(ShootDir, CurrentPlanet, true); // True = Player Projectile
 	}
 }
 
-// ==============================================================================
-// DEBUG
-// ==============================================================================
+
+// --- MOVEMENT & JUMP LOGIC ---
+
+void APcPlayerCharacter::Input_JumpTrigger() 
+{ 
+	// 1. Kickstart from Mud
+	if (!bIsWaveActive)
+	{
+		bIsWaveActive = true;
+		WavePhase = 0.0f;
+		
+		// CALCULATE JUMP HEIGHT BASED ON CURRENT SPEED (Progression)
+		float SpeedRatio = (CurrentSpeed - BaseMoveSpeed) / (MaxSkimSpeed - BaseMoveSpeed);
+		CurrentJumpPeak = FMath::Lerp(MinJumpHeight, MaxJumpHeight, SpeedRatio);
+		return;
+	}
+	
+	// 2. Rhythm Boost
+	float AirEnd = PI; 
+	float CoyoteZone = AirEnd - (AirEnd * CoyoteThreshold); 
+	bool bInRhythmWindow = WavePhase > CoyoteZone;
+
+	if (bInRhythmWindow)
+	{
+		CurrentSpeed += JumpBoostAmount;
+		CurrentSpeed = FMath::Min(CurrentSpeed, MaxSkimSpeed);
+		
+		// Recalculate height for the next chain (It will be higher now due to speed boost)
+		float SpeedRatio = (CurrentSpeed - BaseMoveSpeed) / (MaxSkimSpeed - BaseMoveSpeed);
+		CurrentJumpPeak = FMath::Lerp(MinJumpHeight, MaxJumpHeight, SpeedRatio);
+		
+		WavePhase = 0.0f; 
+	}
+}
+
+void APcPlayerCharacter::TakeHit()
+{
+	// Logic to subtract speed? Or Health?
+	OnHitReceived(); // Play BP effects
+}
 
 FString APcPlayerCharacter::GetDebugInfo() const
 {
-	float Progress = (bIsWaveActive) ? (WavePhase / (2.0f * PI)) * 100.0f : 0.0f;
-	return FString::Printf(TEXT("SPEED: %.0f / %.0f\nPHASE: %.0f%%\nALT: %.1f"),
-		CurrentSpeedCap, MaxBoostSpeed, Progress, SmoothedAltitude);
+	return FString::Printf(TEXT("SPEED: %.0f\nSTEER RATE: %.0f\nJUMP PEAK: %.0f"),
+		CurrentSpeed, CurrentSteeringRate, CurrentJumpPeak);
 }
-
 bool APcPlayerCharacter::IsInRhythmWindow() const
 {
 	if (!bIsWaveActive) return false;
-	float AirEnd = PI; 
+	float AirEnd = PI;
 	float CoyoteZone = AirEnd - (AirEnd * CoyoteThreshold);
 	return WavePhase > CoyoteZone;
 }
 
-// ==============================================================================
-// MOVEMENT LOOP
-// ==============================================================================
+// --- TICK ---
 
 void APcPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	ApplyDeterministicMovement(DeltaTime);
+	ApplySkaterMovement(DeltaTime);
 }
 
-void APcPlayerCharacter::ApplyDeterministicMovement(float DeltaTime)
+void APcPlayerCharacter::ApplySkaterMovement(float DeltaTime)
 {
-	// 1. FLOOR SETUP
+	// 1. FLOOR & ORIENTATION
 	FVector ActorLoc = GetActorLocation();
 	FVector UpVector = GetActorUpVector();
 	FHitResult GroundHit; FCollisionQueryParams P; P.AddIgnoredActor(this);
@@ -167,84 +153,100 @@ void APcPlayerCharacter::ApplyDeterministicMovement(float DeltaTime)
 	if (!bFoundGround) return;
 	FVector SurfaceNormal = GroundHit.Normal;
 
-	// Orient to floor
 	FQuat CurrentRot = GetActorQuat();
 	FQuat TargetRot = FQuat::FindBetweenNormals(GetActorUpVector(), SurfaceNormal) * CurrentRot;
 	SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 20.0f * DeltaTime));
 
-	// --------------------------------------------------------
-	// 2. DRAG PHYSICS (Water vs Air)
-	// --------------------------------------------------------
+	// 2. SKATER PHYSICS
+	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
+	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
+	FVector InputDir = (CamFwd * CurrentInput.X) + (CamRight * CurrentInput.Y);
+	InputDir.Normalize();
+
+	if (HorizontalVelocity.IsZero() && !InputDir.IsZero())
+		HorizontalVelocity = InputDir * 100.0f;
+
+	FVector CurrentDir = HorizontalVelocity.GetSafeNormal();
 	
-	float TargetDrag = 0.0f;
-	float TargetAccel = 0.0f;
+	// --- CONTROL CURVE (Speed = Control) ---
+	float SpeedRatio = (CurrentSpeed - BaseMoveSpeed) / (MaxSkimSpeed - BaseMoveSpeed);
+	SpeedRatio = FMath::Clamp(SpeedRatio, 0.0f, 1.0f);
+
+	// Lerp between Boat (Min) and F1 (Max) steering
+	CurrentSteeringRate = FMath::Lerp(MinSteeringRate, MaxSteeringRate, SpeedRatio);
+
+	// STEER
+	if (!InputDir.IsZero())
+	{
+		FVector NewDir = FMath::VInterpNormalRotationTo(CurrentDir, InputDir, DeltaTime, CurrentSteeringRate);
+		HorizontalVelocity = NewDir * HorizontalVelocity.Size();
+		CurrentDir = NewDir;
+	}
+
+	// CARVE & ACCEL
+	float Dot = (InputDir | CurrentDir); 
+	bool bIsTurning = !InputDir.IsZero() && (Dot < 0.98f) && (Dot > 0.0f);
+	CarveIntensity = FMath::FInterpTo(CarveIntensity, (bIsTurning ? 1.0f : 0.0f), DeltaTime, 5.0f);
+
+	float MudFactor = 1.0f - SpeedRatio; // 0.0 = Clean, 1.0 = Dirty
 
 	if (bIsWaveActive)
 	{
-		// IN AIR: Low Drag, Low Control (Slippery)
-		TargetDrag = AirDrag;
-		TargetAccel = AirAccel;
+		// AIR: Minimal Drag
+		CurrentSpeed -= 10.0f * MudFactor * DeltaTime;
 	}
 	else
 	{
-		// ON GROUND: High Drag (Water Resistance), High Control
-		TargetDrag = GroundDrag;
-		TargetAccel = GroundAccel;
+		// GROUND
+		if (bIsTurning)
+		{
+			// Carve: Gain Speed (Buffed)
+			// We add a Base Carve + a Multiplier based on speed (Snowball)
+			float Accel = CarveAcceleration * (1.0f + SpeedRatio);
+			CurrentSpeed += Accel * DeltaTime;
+		}
+		else if (InputDir.IsZero() || Dot <= 0.0f)
+		{
+			CurrentSpeed -= BaseDrag * 400.0f * DeltaTime; 
+		}
+		else
+		{
+			// Straight: Drag reduces as we get faster
+			CurrentSpeed -= BaseDrag * 100.0f * MudFactor * DeltaTime;
+		}
 	}
-	
-	// Speed Bonus: If we are boosted, we feel slightly less drag on the ground
-	// This rewards high speed play
-	if (!bIsWaveActive && CurrentSpeedCap > BaseMoveSpeed)
-	{
-		// Reduce drag slightly based on speed tier
-		float BoostFactor = (CurrentSpeedCap - BaseMoveSpeed) / MaxBoostSpeed; // 0 to 1
-		TargetDrag = FMath::Lerp(GroundDrag, GroundDrag * 0.5f, BoostFactor);
-	}
 
-	// --------------------------------------------------------
-	// 3. HORIZONTAL MOVE
-	// --------------------------------------------------------
-	FVector Forward = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
-	FVector Right = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
-	FVector TargetDir = (Forward * CurrentInput.X) + (Right * CurrentInput.Y);
-	
-	FVector TargetVel = TargetDir.GetSafeNormal() * CurrentSpeedCap;
-	if (CurrentInput.IsZero()) TargetVel = FVector::ZeroVector;
+	CurrentSpeed = FMath::Clamp(CurrentSpeed, BaseMoveSpeed, MaxSkimSpeed);
+	HorizontalVelocity = CurrentDir * CurrentSpeed;
 
-	float InterpSpeed = CurrentInput.IsZero() ? TargetDrag : TargetAccel;
-	HorizontalVelocity = FMath::VInterpTo(HorizontalVelocity, TargetVel, DeltaTime, InterpSpeed);
-
-	// --------------------------------------------------------
-	// 4. VERTICAL OFFSET
-	// --------------------------------------------------------
+	// 3. BUOYANCY / JUMP
 	float TargetAltitude = 0.0f;
 
 	if (bIsWaveActive)
 	{
 		float PhaseSpeed = (2.0f * PI) / WaveDuration;
 		WavePhase += PhaseSpeed * DeltaTime;
-
 		float RawSine = FMath::Sin(WavePhase);
-		if (RawSine >= 0.0f) TargetAltitude = RawSine * JumpHeight; 
-		else TargetAltitude = RawSine * SinkDepth; 
-
+		
+		// Use dynamic peak
+		if (RawSine >= 0.0f) TargetAltitude = RawSine * CurrentJumpPeak; 
+		else TargetAltitude = RawSine * MudDepth; 
+		
 		if (WavePhase >= 2.0f * PI)
 		{
-			// WAVE ENDED
 			bIsWaveActive = false;
 			WavePhase = 0.0f;
-			TargetAltitude = 0.0f;
-			
-			// If we reached here, it means we hit the floor WITHOUT chaining a jump.
-			// The Water catches us. Reset Speed.
-			CurrentSpeedCap = BaseMoveSpeed;
 		}
 	}
+	else
+	{
+		float Lift = CarveIntensity * LiftSensitivity * MudDepth; 
+		TargetAltitude = -MudDepth + Lift;
+		TargetAltitude = FMath::Min(TargetAltitude, 0.0f); 
+	}
 
-	// Visual Smoothing
-	SmoothedAltitude = FMath::FInterpTo(SmoothedAltitude, TargetAltitude, DeltaTime, 15.0f);
+	SmoothedAltitude = FMath::FInterpTo(SmoothedAltitude, TargetAltitude, DeltaTime, 10.0f);
 
-	// 5. FINAL POS
 	FVector NewGroundPos = GroundHit.Location + (HorizontalVelocity * DeltaTime);
 	SetActorLocation(NewGroundPos + (SurfaceNormal * SmoothedAltitude));
 }

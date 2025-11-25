@@ -8,6 +8,9 @@ class UCameraComponent;
 class APcPlanet;
 class APcProjectile;
 
+// Delegate for sound/FX
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlayerHitSignature);
+
 UCLASS()
 class PROJECT_CIRCLE_API APcPlayerCharacter : public ACharacter
 {
@@ -17,18 +20,24 @@ public:
 	APcPlayerCharacter();
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void BeginPlay() override;
 	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 	virtual void NotifyActorEndOverlap(AActor* OtherActor) override;
 
 public:
-	// --- INPUTS ---
 	UFUNCTION(BlueprintCallable) void Input_Move(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_Look(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_JumpTrigger(); 
 	UFUNCTION(BlueprintCallable) void Input_StartAttack();
 	UFUNCTION(BlueprintCallable) void Input_StopAttack();
+
+	// Called by Projectiles
+	UFUNCTION(BlueprintCallable)
+	void TakeHit();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnHitReceived(); // For BP Sound/Screen Shake
 
 	// Debug
 	UFUNCTION(BlueprintCallable, Category = "Debug")
@@ -47,65 +56,70 @@ public:
 	// CONFIGURATION
 	// ==============================================================================
 
+	// --- 1. SPEED ECONOMY ---
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float BaseMoveSpeed = 800.0f; 
-
-	// --- GROUND PHYSICS (The Water) ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float GroundDrag = 15.0f; // Heavy friction on floor
+	float BaseMoveSpeed = 600.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float GroundAccel = 15.0f; 
+	float MaxSkimSpeed = 2500.0f; 
 
-	// --- AIR PHYSICS (The Glide) ---
-	// Lower numbers = More slidey, preserving momentum
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float AirDrag = 2.0f; 
+	// --- 2. DYNAMIC STEERING (Control Curve) ---
+	// Slow = Heavy turn (Boat). Fast = Instant turn (F1 Car).
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
+	float MinSteeringRate = 120.0f; 
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float AirAccel = 5.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
+	float MaxSteeringRate = 400.0f; // Very Snappy at high speed
 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
+	float CarveAcceleration = 1200.0f; // Buffed: Gain speed faster
 
-	// --- 2. THE WAVE ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
-	float JumpHeight = 350.0f;
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
+	float BaseDrag = 1.0f; // Nerfed: Less punishment
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
-	float SinkDepth = 60.0f;
+	// --- 3. DYNAMIC JUMP (Height Curve) ---
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
+	float MinJumpHeight = 150.0f; // Initial heavy hop
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Wave Jump")
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
+	float MaxJumpHeight = 500.0f; // Full speed soaring
+
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
+	float JumpBoostAmount = 800.0f; // Buffed: One jump gets you far
+
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
 	float WaveDuration = 0.8f;
 
-	// --- 3. BUNNY HOP ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
-	float SpeedBonusPerHop = 400.0f;
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
+	float CoyoteThreshold = 0.25f;
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
-	float MaxBoostSpeed = 2500.0f;
+	// --- 4. SINKING ---
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
+	float MudDepth = 80.0f; 
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
+	float LiftSensitivity = 3.0f; 
 
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Bunny Hop")
-	float CoyoteThreshold = 0.25f; // Generous window
-
-	// --- 4. COMBAT ---
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Combat")
+	// --- 5. COMBAT ---
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 5. Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Combat")
+	UPROPERTY(EditAnywhere, Category = "Project Circle | 5. Combat")
 	float FireRate = 0.12f;
 
 private:
 	FVector HorizontalVelocity = FVector::ZeroVector;
 	FVector CurrentInput = FVector::ZeroVector;
-	float CurrentSpeedCap = 0.0f;
-
+	
+	float CurrentSpeed = 0.0f;
+	float CarveIntensity = 0.0f; 
+	float CurrentSteeringRate = 0.0f; // Debug info
+	
 	bool bIsWaveActive = false;
 	float WavePhase = 0.0f;         
 	float SmoothedAltitude = 0.0f;
+	float CurrentJumpPeak = 0.0f; // Calculates height based on speed at jump start
 
 	FTimerHandle TimerHandle_Attack;
-	
-	// Helper for auto-fire
 	void FireProjectile(); 
 
-	void ApplyDeterministicMovement(float DeltaTime);
+	void ApplySkaterMovement(float DeltaTime);
 };

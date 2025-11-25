@@ -14,7 +14,8 @@ class PROJECT_CIRCLE_API APcProjectile : public AActor
 	
 public:	
 	APcProjectile();
-	void InitializeProjectile(FVector ShootDirection, APcPlanet* InPlanet);
+	// Added bool bIsPlayerOwned
+	void InitializeProjectile(FVector ShootDirection, APcPlanet* InPlanet, bool bIsPlayerOwned);
 
 protected:
 	virtual void Tick(float DeltaTime) override;
@@ -25,17 +26,15 @@ protected:
 	UPROPERTY(VisibleAnywhere)
 	UStaticMeshComponent* MeshComp;
 
-	// --- CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Projectile")
 	float Speed = 2000.0f;
-
 	UPROPERTY(EditAnywhere, Category = "Projectile")
 	float LifeSpan = 5.0f; 
-
+	
+	// Set this to 0 or very small
 	UPROPERTY(EditAnywhere, Category = "Projectile")
-	float HoverHeight = 32.0f; 
+	float HoverHeight = 5.0f; 
 
-	/** Gravity applied when in the air. */
 	UPROPERTY(EditAnywhere, Category = "Projectile")
 	float GravityStrength = 1500.0f;
 
@@ -44,6 +43,7 @@ private:
 	APcPlanet* CurrentPlanet;
 	float TimeAlive;
 	bool bIsAirborne = true; 
+	bool bIsPlayerProjectile = true; // Logic flag
 
 	void HandleAirMovement(float DeltaTime);
 	void HandleSurfaceMovement(float DeltaTime);
