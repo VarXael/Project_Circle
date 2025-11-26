@@ -25,7 +25,7 @@ void APcEnemyTurret::BeginPlay()
 	if (PlanetActor) CurrentPlanet = Cast<APcPlanet>(PlanetActor);
 
 	// Start Shooting
-	GetWorldTimerManager().SetTimer(TimerHandle_Shoot, this, &APcEnemyTurret::Shoot, FireRate, true);
+	//GetWorldTimerManager().SetTimer(TimerHandle_Shoot, this, &APcEnemyTurret::Shoot, FireRate, true);
 }
 
 void APcEnemyTurret::Tick(float DeltaTime)
@@ -58,8 +58,6 @@ void APcEnemyTurret::Tick(float DeltaTime)
 
 void APcEnemyTurret::Shoot()
 {
-	// FIX: Removed "!CurrentPlanet" check. 
-	// The Projectile handles null planets automatically now.
 	if (!ProjectileClass) return;
 
 	FVector SpawnLoc = MuzzleLoc->GetComponentLocation();
@@ -67,9 +65,8 @@ void APcEnemyTurret::Shoot()
 	FVector Forward = MuzzleLoc->GetForwardVector();
 
 	// Spawn
-	FActorSpawnParameters P; 
+	FActorSpawnParameters P;
 	P.Owner = this; 
-	// Instigator removed to fix compile error
 	
 	auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, SpawnRot, P);
 	if (Proj)

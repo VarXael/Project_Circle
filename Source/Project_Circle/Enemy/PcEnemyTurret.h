@@ -41,5 +41,6 @@ public:
 
 private:
 	FTimerHandle TimerHandle_Shoot;
+	UFUNCTION(BlueprintCallable)
 	void Shoot();
 };
