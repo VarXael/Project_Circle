@@ -1,5 +1,4 @@
 #include "PcWeapon.h"
-
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Project_Circle/Planet/PcPlanet.h" 
@@ -24,7 +23,6 @@ APcWeapon::APcWeapon()
 void APcWeapon::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentRecoverySpeed = StandardRecoverySpeed;
 	bIsLaserReady = true; 
 }
 
@@ -39,10 +37,8 @@ void APcWeapon::AttachToPlayer(APcPlayerCharacter* TargetPlayer)
 	}
 }
 
-// --- INPUT HANDLER ---
 void APcWeapon::ApplyInputForSway(FVector2D LookInput)
 {
-	// We accumulate input (or overwrite it)
 	CurrentLookInput = LookInput;
 }
 
@@ -60,16 +56,17 @@ void APcWeapon::StopPrimaryFire()
 
 void APcWeapon::PerformStandardShot()
 {
-	CurrentRecoilLoc += StandardRecoilPos;
-	CurrentRecoilRot += StandardRecoilRot;
-	CurrentRecoverySpeed = StandardRecoverySpeed; // Standard snaps back fast
-
+	// Simple Recoil Kick
+	CurrentRecoilLoc += FVector(-5.0f, 0, 0); 
+	
 	if (ProjectileClass && OwningPlayer)
 	{
 		FVector SpawnLoc = MuzzleLocation->GetComponentLocation();
 		APcPlanet* Planet = OwningPlayer->CurrentPlanet;
+		
+		// If on planet, Gravity is Outwards. Surface Normal is Inwards (Opposite).
 		FVector GravityDir = (Planet) ? Planet->GetGravityDirection(SpawnLoc) : FVector(0,0,-1);
-		FVector SurfaceNormal = -GravityDir;
+		FVector SurfaceNormal = -GravityDir; 
 
 		FVector CamFwd = OwningPlayer->CameraComp->GetForwardVector();
 		FVector ShootDir = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
@@ -80,119 +77,68 @@ void APcWeapon::PerformStandardShot()
 	}
 }
 
-// --- LASER ATTACK ---
+// --- LASER FIRE ---
 void APcWeapon::FireLaserAttack()
 {
-	// --- 1. CHECK COOLDOWN ---
-	if (!bIsLaserReady) 
-	{
-		return; // Weapon is hot, cannot fire
-	}
+	if (!bIsLaserReady || !OwningPlayer) return;
 
-	// Lock the weapon
 	bIsLaserReady = false;
 	
-	// --- 2. CALCULATE TARGET (The Hitscan) ---
+	// 1. Raycast for Target
 	FVector CamLoc = OwningPlayer->CameraComp->GetComponentLocation();
 	FVector CamFwd = OwningPlayer->CameraComp->GetForwardVector();
-	
-	// We trace from the Camera (Crosshair) out to Max Range
 	FVector TraceEnd = CamLoc + (CamFwd * LaserMaxRange); 
-	FVector BeamTargetPoint = TraceEnd; // Default to sky if we miss
+	FVector BeamTargetPoint = TraceEnd; 
 
 	FHitResult Hit;
-	FCollisionQueryParams P;
-	P.AddIgnoredActor(this); // Ignore Weapon
-	P.AddIgnoredActor(OwningPlayer); // Ignore Player
+	FCollisionQueryParams P; P.AddIgnoredActor(this); P.AddIgnoredActor(OwningPlayer);
 
-	// Perform the Trace
 	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, TraceEnd, ECC_Visibility, P))
 	{
 		BeamTargetPoint = Hit.Location;
-		
-		// OPTIONAL: Apply Damage here
-		// UGameplayStatics::ApplyDamage(Hit.GetActor(), 100.0f, OwningPlayer->GetController(), this, UDamageType::StaticClass());
+		// Apply Damage logic here later...
 	}
 
-	// --- 3. SPAWN THE VISUAL BEAM (STATIC) ---
+	// 2. Spawn FX
 	if (LaserBeamFX)
 	{
-		// 1. Get the CURRENT position of the muzzle (Snapshot)
-		FVector SpawnLocation = MuzzleLocation->GetComponentLocation();
-		FRotator SpawnRotation = FRotator::ZeroRotator; // Rotation doesn't matter for a beam connecting two points
-
-		// 2. Spawn "At Location" instead of "Attached"
 		UNiagaraComponent* BeamComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			GetWorld(),
-			LaserBeamFX,
-			SpawnLocation,
-			SpawnRotation,
-			FVector::OneVector,
-			true, // Auto Destroy
-			true, // Auto Activate
-			ENCPoolMethod::None,
-			true // PreCull Check
+			GetWorld(), LaserBeamFX, MuzzleLocation->GetComponentLocation(), FRotator::ZeroRotator, FVector::OneVector, true, true, ENCPoolMethod::None, true
 		);
 
 		if (BeamComp)
 		{
-			// 3. Set the Beam End (Same as before)
+			// Assumes your Niagara System has a Vector parameter named "BeamEnd"
 			BeamComp->SetNiagaraVariableVec3(FString("BeamEnd"), BeamTargetPoint);
-			
-			// Note: Since we spawned "At Location", the system's origin (0,0,0) 
-			// is now permanently fixed at the coordinate where you fired.
-			// Even if you move the gun, the beam start point stays put.
 		}
 	}
 
-	// --- 4. SET COOLDOWN TIMER ---
-	// Subtract the buffer so it feels responsive (ready slightly before animation ends)
-	float ActualCooldown = FMath::Max(0.1f, LaserCooldownDuration - LaserInputBuffer);
-	GetWorld()->GetTimerManager().SetTimer(TimerHandle_LaserCooldown, this, &APcWeapon::ResetLaserCooldown, ActualCooldown, false);
-
-	// --- 5. APPLY HEAVY RECOIL ANIMATION ---
-	// Calculate speed so the gun settles exactly when the cooldown finishes
-	CurrentRecoverySpeed = 5.0f / LaserCooldownDuration; 
-	
-	CurrentRecoilLoc += LaserRecoilPos; // Big Kick Back
-	CurrentRecoilRot += LaserRecoilRot; // Big Muzzle Rise
-	
-	UE_LOG(LogTemp, Warning, TEXT("LASER BLAST! Hit: %s"), *BeamTargetPoint.ToString());
+	// 3. Cooldown & Recoil
+	GetWorld()->GetTimerManager().SetTimer(TimerHandle_LaserCooldown, this, &APcWeapon::ResetLaserCooldown, LaserCooldownDuration, false);
+	CurrentRecoilLoc += FVector(-20.0f, 0, 0); // Heavy Kick
 }
 
 void APcWeapon::ResetLaserCooldown()
 {
 	bIsLaserReady = true;
-	UE_LOG(LogTemp, Log, TEXT("Laser Ready!"));
 }
 
-// --- TICK (ANIMATION MIXER) ---
+// --- ANIMATION ---
 void APcWeapon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 1. INTERP RECOIL (Spring)
-	CurrentRecoilLoc = FMath::VInterpTo(CurrentRecoilLoc, FVector::ZeroVector, DeltaTime, CurrentRecoverySpeed);
-	CurrentRecoilRot = FMath::RInterpTo(CurrentRecoilRot, FRotator::ZeroRotator, DeltaTime, CurrentRecoverySpeed);
+	// Spring Interp
+	CurrentRecoilLoc = FMath::VInterpTo(CurrentRecoilLoc, FVector::ZeroVector, DeltaTime, 10.0f);
+	CurrentRecoilRot = FMath::RInterpTo(CurrentRecoilRot, FRotator::ZeroRotator, DeltaTime, 10.0f);
 
-	// 2. INTERP SWAY (Lag)
-	// Target Sway is Inverse of Input (Look Right -> Gun lags Left)
+	// Sway Logic
 	FVector TargetSwayLoc = FVector(0.0f, -CurrentLookInput.X * SwayAmount, CurrentLookInput.Y * SwayAmount);
-	TargetSwayLoc.Y = FMath::Clamp(TargetSwayLoc.Y, -SwayMax, SwayMax);
-	TargetSwayLoc.Z = FMath::Clamp(TargetSwayLoc.Z, -SwayMax, SwayMax);
-
-	// Add some rotation sway (Tilt)
-	FRotator TargetSwayRot = FRotator(CurrentLookInput.Y * SwayRotationAmount, CurrentLookInput.X * SwayRotationAmount, 0.0f);
-
-	// Smooth the sway
 	CurrentSwayLoc = FMath::VInterpTo(CurrentSwayLoc, TargetSwayLoc, DeltaTime, SwaySpeed);
-	CurrentSwayRot = FMath::RInterpTo(CurrentSwayRot, TargetSwayRot, DeltaTime, SwaySpeed);
-
-	// Reset Input (so it returns to center if player stops moving mouse)
+	
+	// Fade input
 	CurrentLookInput = FMath::Vector2DInterpTo(CurrentLookInput, FVector2D::ZeroVector, DeltaTime, 10.0f);
 
-
-	// 3. COMBINE EVERYTHING
 	WeaponMesh->SetRelativeLocation(CurrentRecoilLoc + CurrentSwayLoc);
-	WeaponMesh->SetRelativeRotation(CurrentRecoilRot + CurrentSwayRot);
+	WeaponMesh->SetRelativeRotation(CurrentRecoilRot);
 }

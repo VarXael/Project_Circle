@@ -14,23 +14,19 @@ class PROJECT_CIRCLE_API APcPlanet : public AActor
 public:	
 	APcPlanet();
 
-	// Root Component (Scene)
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	USceneComponent* SceneRoot;
 
-	// Visual Mesh
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	UStaticMeshComponent* PlanetMesh;
 
-	// Logic Trigger (Attached to Mesh)
 	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	USphereComponent* InfluenceZone;
 
-	// The Radius the player walks on (Visual Radius)
+	// The Radius of the hollow shell
 	UPROPERTY(EditAnywhere, Category = "Planet")
 	float SurfaceRadius = 2000.0f;
 
-	// Math Helpers
+	// Gravity pulls OUTWARDS (Centrifuge)
 	FVector GetGravityDirection(FVector Location) const;
-	float GetAltitude(FVector Location) const;
 };

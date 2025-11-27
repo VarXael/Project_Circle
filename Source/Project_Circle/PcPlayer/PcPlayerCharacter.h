@@ -36,7 +36,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void Input_StopAttack();
 	UFUNCTION(BlueprintCallable)
-	void Input_FireLaser(); // <--- NEW
+	void Input_FireLaser();
 
 	UFUNCTION(BlueprintCallable)
 	void TakeHit();
@@ -109,7 +109,7 @@ private:
 	FVector CurrentInput = FVector::ZeroVector;
 	float CurrentSpeed = 0.0f;
 	float CarveIntensity = 0.0f;
-	float CurrentSteeringRate = 0.0f;
+	//float CurrentSteeringRate = 0.0f;
 
 	bool bIsWaveActive = false;
 	float WavePhase = 0.0f;
