@@ -1,40 +1,36 @@
 #include "PcPlanet.h"
 #include "Components/SphereComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SceneComponent.h"
 
 APcPlanet::APcPlanet()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
+	// 1. Root
+	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	RootComponent = SceneRoot;
+
+	// 2. Mesh (Attached to Root)
+	PlanetMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PlanetMesh"));
+	PlanetMesh->SetupAttachment(RootComponent);
+
+	// 3. Trigger (Attached to Mesh)
 	InfluenceZone = CreateDefaultSubobject<USphereComponent>(TEXT("InfluenceZone"));
-	InfluenceZone->SetSphereRadius(4000.0f); // Bigger than surface to catch player early
-	InfluenceZone->SetCollisionProfileName(TEXT("Trigger"));
-	RootComponent = InfluenceZone;
-}
-
-FVector APcPlanet::GetGravityDirection(const FVector& TargetLocation) const
-{
-	FVector Center = GetActorLocation();
-	FVector Direction = (TargetLocation - Center).GetSafeNormal();
-	return bIsVoidInside ? Direction : -Direction;
-}
-
-float APcPlanet::GetAltitude(const FVector& TargetLocation) const
-{
-	float DistToCenter = FVector::Dist(TargetLocation, GetActorLocation());
+	InfluenceZone->SetupAttachment(RootComponent);
 	
-	if (bIsVoidInside)
-	{
-		// Void: Surface is at Radius. We are "Above" if closer to center (Dist < Radius)
-		// Wait, for Void:
-		// Center (0) ... Air ... Surface (3000) ... Rock (4000)
-		// So "Altitude" is Distance from Rock.
-		// If Dist = 2900, Altitude = 100 (Air).
-		// If Dist = 3100, Altitude = -100 (Underwater).
-		return SurfaceRadius - DistToCenter;
-	}
-	else
-	{
-		// Planet: Surface is at Radius. We are "Above" if further away (Dist > Radius)
-		return DistToCenter - SurfaceRadius;
-	}
+	InfluenceZone->SetSphereRadius(4000.0f);
+	InfluenceZone->SetCollisionProfileName(TEXT("Trigger"));
+}
+
+FVector APcPlanet::GetGravityDirection(FVector Location) const
+{
+	// Returns vector pointing FROM Player TO Planet Center
+	return (GetActorLocation() - Location).GetSafeNormal();
+}
+
+float APcPlanet::GetAltitude(FVector Location) const
+{
+	float Dist = FVector::Dist(Location, GetActorLocation());
+	return Dist - SurfaceRadius;
 }

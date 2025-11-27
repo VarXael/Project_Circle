@@ -14,25 +14,23 @@ class PROJECT_CIRCLE_API APcPlanet : public AActor
 public:	
 	APcPlanet();
 
-	// Returns the Gravity Direction (Normalized)
-	UFUNCTION(BlueprintCallable, Category = "Project Circle")
-	FVector GetGravityDirection(const FVector& TargetLocation) const;
+	// Root Component (Scene)
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	USceneComponent* SceneRoot;
 
-	// Returns the signed distance to the surface.
-	// Positive (+) = Above Ground (Air)
-	// Negative (-) = Below Ground (Sinking/Water)
-	UFUNCTION(BlueprintCallable, Category = "Project Circle")
-	float GetAltitude(const FVector& TargetLocation) const;
+	// Visual Mesh
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
+	UStaticMeshComponent* PlanetMesh;
 
-public:
-	UPROPERTY(VisibleAnywhere, Category = "Components")
+	// Logic Trigger (Attached to Mesh)
+	UPROPERTY(VisibleAnywhere, Category = "Planet")
 	USphereComponent* InfluenceZone;
 
-	// The radius of the PHYSICAL floor (the "Water Surface")
-	UPROPERTY(EditAnywhere, Category = "Gravity Settings")
-	float SurfaceRadius = 3000.0f;
+	// The Radius the player walks on (Visual Radius)
+	UPROPERTY(EditAnywhere, Category = "Planet")
+	float SurfaceRadius = 2000.0f;
 
-	// TRUE = Void (Walking inside). FALSE = Planet (Walking outside).
-	UPROPERTY(EditAnywhere, Category = "Gravity Settings")
-	bool bIsVoidInside = true;
+	// Math Helpers
+	FVector GetGravityDirection(FVector Location) const;
+	float GetAltitude(FVector Location) const;
 };
