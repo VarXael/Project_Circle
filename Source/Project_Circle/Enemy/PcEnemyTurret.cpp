@@ -1,7 +1,8 @@
 #include "PcEnemyTurret.h"
-#include "Project_Circle/Planet/PcPlanet.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet/GameplayStatics.h"
+// Include the new component header
+#include "Project_Circle/GravitySystem/PcGravityMovementComponent.h"
 #include "Project_Circle/PcPlayer/PcProjectile.h"
 
 APcEnemyTurret::APcEnemyTurret()
@@ -14,45 +15,66 @@ APcEnemyTurret::APcEnemyTurret()
 	MuzzleLoc = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLoc"));
 	MuzzleLoc->SetupAttachment(MeshComp);
 	MuzzleLoc->SetRelativeLocation(FVector(50, 0, 20)); 
+
+	// Create the Universal Movement Component
+	GravityComp = CreateDefaultSubobject<UPcGravityMovementComponent>(TEXT("GravityComp"));
+	
+	// "GroundUnit" gives high friction (snappy movement)
+	GravityComp->MovementMode = EPcMovementMode::GroundUnit;
+		
+	GravityComp->MaxSpeed = MovementSpeed;
+	GravityComp->Acceleration = 2000.0f; // Fast start
+	GravityComp->Deceleration = 2000.0f; // Fast stop
+		
+	// IMPORTANT: Adjust this if your enemy sinks into the ground
+	// 0 = Pivot at feet. 90 = Pivot in center (for 180cm tall unit).
+	GravityComp->PivotOffset = 0.0f; 
+		
+	// 5.0f = Heavy water feel. 15.0f = Solid ground feel.
+	GravityComp->VerticalSmoothing = 10.0f; 
 }
 
 void APcEnemyTurret::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// Try to find a planet, but don't panic if we don't
-	AActor* PlanetActor = UGameplayStatics::GetActorOfClass(GetWorld(), APcPlanet::StaticClass());
-	if (PlanetActor) CurrentPlanet = Cast<APcPlanet>(PlanetActor);
-
-	// Start Shooting
-	//GetWorldTimerManager().SetTimer(TimerHandle_Shoot, this, &APcEnemyTurret::Shoot, FireRate, true);
+	GetWorldTimerManager().SetTimer(TimerHandle_Shoot, this, &APcEnemyTurret::Shoot, FireRate, true);
 }
 
 void APcEnemyTurret::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Look at Player
+	if (!GravityComp) return;
+
+	// --- AI LOGIC ---
 	APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 	if (Player)
 	{
-		FVector MyLoc = GetActorLocation();
-		FVector TargetLoc = Player->GetActorLocation();
+		float Dist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
 		
-		// FALLBACK: If no planet, Up is Z (0,0,1)
-		FVector UpVector = FVector::UpVector;
-		if (CurrentPlanet)
+		// Calculate Direction to Player
+		// We don't need to worry about "Sphere Math" here. 
+		// The component handles wrapping this vector around the world.
+		FVector DirToPlayer = (Player->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+
+		// Move if too far
+		if (Dist > StopDistance)
 		{
-			UpVector = -CurrentPlanet->GetGravityDirection(MyLoc);
+			GravityComp->AddInputVector(DirToPlayer);
 		}
-
-		// Project direction onto the surface plane so it doesn't tilt up/down
-		FVector DirToPlayer = (TargetLoc - MyLoc).GetSafeNormal();
-		FVector FlatDir = FVector::VectorPlaneProject(DirToPlayer, UpVector).GetSafeNormal();
-
-		// Use MakeRotFromXZ to ensure we stay upright relative to the floor
-		FRotator LookRot = UKismetMathLibrary::MakeRotFromXZ(FlatDir, UpVector);
-		SetActorRotation(LookRot);
+		
+		// The Component handles Rotation automatically when moving (GroundUnit mode).
+		// If we are stopped, we might want to manually rotate to face player:
+		if (Dist <= StopDistance)
+		{
+			// Manual aiming when standing still
+			FVector Up = GravityComp->GetSurfaceNormal();
+			FVector FlatDir = FVector::VectorPlaneProject(DirToPlayer, Up).GetSafeNormal();
+			FRotator LookRot = UKismetMathLibrary::MakeRotFromXZ(FlatDir, Up);
+			
+			SetActorRotation(FMath::RInterpTo(GetActorRotation(), LookRot, DeltaTime, 10.0f));
+		}
 	}
 }
 
@@ -64,14 +86,28 @@ void APcEnemyTurret::Shoot()
 	FRotator SpawnRot = MuzzleLoc->GetComponentRotation();
 	FVector Forward = MuzzleLoc->GetForwardVector();
 
-	// Spawn
-	FActorSpawnParameters P;
-	P.Owner = this; 
+	FActorSpawnParameters P; P.Owner = this; 
 	
 	auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, SpawnRot, P);
 	if (Proj)
 	{
-		// IsPlayerOwned = false
-		Proj->InitializeProjectile(Forward, CurrentPlanet, false);
+		// Pass nullptr for Planet. 
+		// Ideally, APcProjectile should be updated to use UPcGravityMovementComponent too!
+		// For now, it will use its legacy logic.
+		Proj->InitializeProjectile(Forward, nullptr, false);
+	}
+}
+
+void APcEnemyTurret::DebugLaunch()
+{
+	if (GravityComp)
+	{
+		// Launch UP (Inwards) + Random Direction
+		FVector Up = GravityComp->GetSurfaceNormal();
+		FVector RandDir = FMath::VRand();
+        
+		FVector LaunchForce = (Up * 3000.0f) + (RandDir * 1000.0f);
+        
+		GravityComp->AddImpulse(LaunchForce);
 	}
 }

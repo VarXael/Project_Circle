@@ -5,6 +5,7 @@
 #include "PcProjectile.generated.h"
 
 class USphereComponent;
+class UPcGravityMovementComponent; // The new motor
 class APcPlanet;
 
 UCLASS()
@@ -14,40 +15,37 @@ class PROJECT_CIRCLE_API APcProjectile : public AActor
 	
 public:	
 	APcProjectile();
-	// Added bool bIsPlayerOwned
+
+	/** 
+	 * Fired by Weapon. 
+	 * @param ShootDirection: The world direction to fly.
+	 * @param InPlanet: (Optional) The gravity component will find it anyway, but we keep the signature compatible.
+	 */
 	void InitializeProjectile(FVector ShootDirection, APcPlanet* InPlanet, bool bIsPlayerOwned);
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USphereComponent* CollisionComp;
 
-	UPROPERTY(VisibleAnywhere)
+	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UStaticMeshComponent* MeshComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPcGravityMovementComponent* MovementComp;
 
 	UPROPERTY(EditAnywhere, Category = "Projectile")
 	float Speed = 2000.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Projectile")
 	float LifeSpan = 5.0f; 
-	
-	// Set this to 0 or very small
-	UPROPERTY(EditAnywhere, Category = "Projectile")
-	float HoverHeight = 5.0f; 
-
-	UPROPERTY(EditAnywhere, Category = "Projectile")
-	float GravityStrength = 1500.0f;
 
 private:
-	FVector Velocity;
-	APcPlanet* CurrentPlanet;
-	float TimeAlive;
-	bool bIsAirborne = true; 
-	bool bIsPlayerProjectile = true; // Logic flag
+	float TimeAlive = 0.0f;
+	bool bIsPlayerProjectile = true;
 
-	void HandleAirMovement(float DeltaTime);
-	void HandleSurfaceMovement(float DeltaTime);
-	
 	UFUNCTION()
 	void OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 };
