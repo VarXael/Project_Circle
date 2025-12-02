@@ -46,9 +46,9 @@ void APcProjectile::InitializeProjectile(FVector ShootDirection, APcPlanet* InPl
 
 	if (MovementComp)
 	{
-		// Set the velocity immediately
-		FVector LaunchVelocity = ShootDirection.GetSafeNormal() * Speed;
-		MovementComp->SetVelocity(LaunchVelocity);
+		// Set the initial velocity. The component will keep this magnitude 
+		// and rotate it around the world automatically.
+		MovementComp->SetVelocity(ShootDirection.GetSafeNormal() * Speed);
 	}
 }
 
