@@ -28,9 +28,13 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 public:
-	// --- MOVEMENT SETTINGS ---
+	// --- MOVEMENT CONFIG ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
 	EPcMovementMode MovementMode = EPcMovementMode::GroundUnit;
+
+	/** If true, character rotates to face velocity. If false (Player), they face Mouse/Input. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	bool bOrientRotationToMovement = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
 	float MaxSpeed = 1200.0f;
@@ -49,16 +53,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
 	float GravityScale = 1000.0f;
 
+	/** Distance to snap to floor. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
 	float SnapDistance = 100.0f;
 
-	/** If closer to the planet center than this, we disable alignment to prevent jitter. */
+	// --- ORBITAL LOCK (Projectiles) ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
-	float MinGravityDistance = 500.0f;
+	bool bUseFixedRadius = false;
 
-	// --- DEBUG ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
-	bool bDrawDebug = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
+	float FixedRadius = 0.0f;
+
+	/** Call this on spawn to lock the projectile to its current distance from center. */
+	UFUNCTION(BlueprintCallable, Category = "Physics")
+	void LockCurrentAltitudeAsOrbit();
 
 	// --- POSITIONING ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Positioning")
@@ -69,6 +77,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Positioning")
 	float VerticalSmoothing = 10.0f;
+
+	/** If true, bypasses smoothing and sets height instantly (For Jumping). */
+	UPROPERTY(BlueprintReadWrite, Category = "Positioning")
+	bool bSnapToHoverHeight = false;
+
+	// --- DEBUG ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	bool bDrawDebug = false;
 
 	// --- INPUT INTERFACE ---
 	UFUNCTION(BlueprintCallable, Category = "Input")

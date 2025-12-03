@@ -5,6 +5,8 @@
 #include "Camera/CameraComponent.h"
 #include "Project_Circle/PcPlayer/PcPlayerCharacter.h"
 #include "Project_Circle/PcPlayer/PcProjectile.h"
+// Include the component header to access GetSurfaceNormal
+#include "Project_Circle/GravitySystem/PcGravityMovementComponent.h"
 
 APcWeapon::APcWeapon()
 {
@@ -56,24 +58,32 @@ void APcWeapon::StopPrimaryFire()
 
 void APcWeapon::PerformStandardShot()
 {
-	// Simple Recoil Kick
 	CurrentRecoilLoc += FVector(-5.0f, 0, 0); 
 	
 	if (ProjectileClass && OwningPlayer)
 	{
 		FVector SpawnLoc = MuzzleLocation->GetComponentLocation();
-		APcPlanet* Planet = OwningPlayer->CurrentPlanet;
 		
-		// If on planet, Gravity is Outwards. Surface Normal is Inwards (Opposite).
-		FVector GravityDir = (Planet) ? Planet->GetGravityDirection(SpawnLoc) : FVector(0,0,-1);
-		FVector SurfaceNormal = -GravityDir; 
+		// ERROR FIX: Use the Player's Component to find Up, not a raw variable.
+		FVector SurfaceNormal = FVector::UpVector;
+		if (OwningPlayer->GravityComp)
+		{
+			SurfaceNormal = OwningPlayer->GravityComp->GetSurfaceNormal();
+		}
 
+		// Flatten the shot parallel to the ground (Standard FPS logic)
 		FVector CamFwd = OwningPlayer->CameraComp->GetForwardVector();
 		FVector ShootDir = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
 
 		FActorSpawnParameters P; P.Owner = OwningPlayer; P.Instigator = OwningPlayer;
+		
 		auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, ShootDir.Rotation(), P);
-		if (Proj) Proj->InitializeProjectile(ShootDir, Planet, true);
+		if (Proj) 
+		{
+			// We pass nullptr for Planet because the Projectile's own GravityComponent 
+			// will find the planet automatically in its BeginPlay.
+			Proj->InitializeProjectile(ShootDir, nullptr, true);
+		}
 	}
 }
 
@@ -84,7 +94,6 @@ void APcWeapon::FireLaserAttack()
 
 	bIsLaserReady = false;
 	
-	// 1. Raycast for Target
 	FVector CamLoc = OwningPlayer->CameraComp->GetComponentLocation();
 	FVector CamFwd = OwningPlayer->CameraComp->GetForwardVector();
 	FVector TraceEnd = CamLoc + (CamFwd * LaserMaxRange); 
@@ -96,10 +105,8 @@ void APcWeapon::FireLaserAttack()
 	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, TraceEnd, ECC_Visibility, P))
 	{
 		BeamTargetPoint = Hit.Location;
-		// Apply Damage logic here later...
 	}
 
-	// 2. Spawn FX
 	if (LaserBeamFX)
 	{
 		UNiagaraComponent* BeamComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
@@ -108,14 +115,13 @@ void APcWeapon::FireLaserAttack()
 
 		if (BeamComp)
 		{
-			// Assumes your Niagara System has a Vector parameter named "BeamEnd"
-			BeamComp->SetNiagaraVariableVec3(FString("BeamEnd"), BeamTargetPoint);
+			// WARNING FIX: Use FName variant instead of FString
+			BeamComp->SetVariableVec3(FName("BeamEnd"), BeamTargetPoint);
 		}
 	}
 
-	// 3. Cooldown & Recoil
 	GetWorld()->GetTimerManager().SetTimer(TimerHandle_LaserCooldown, this, &APcWeapon::ResetLaserCooldown, LaserCooldownDuration, false);
-	CurrentRecoilLoc += FVector(-20.0f, 0, 0); // Heavy Kick
+	CurrentRecoilLoc += FVector(-20.0f, 0, 0); 
 }
 
 void APcWeapon::ResetLaserCooldown()
@@ -128,15 +134,12 @@ void APcWeapon::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Spring Interp
 	CurrentRecoilLoc = FMath::VInterpTo(CurrentRecoilLoc, FVector::ZeroVector, DeltaTime, 10.0f);
 	CurrentRecoilRot = FMath::RInterpTo(CurrentRecoilRot, FRotator::ZeroRotator, DeltaTime, 10.0f);
 
-	// Sway Logic
 	FVector TargetSwayLoc = FVector(0.0f, -CurrentLookInput.X * SwayAmount, CurrentLookInput.Y * SwayAmount);
 	CurrentSwayLoc = FMath::VInterpTo(CurrentSwayLoc, TargetSwayLoc, DeltaTime, SwaySpeed);
 	
-	// Fade input
 	CurrentLookInput = FMath::Vector2DInterpTo(CurrentLookInput, FVector2D::ZeroVector, DeltaTime, 10.0f);
 
 	WeaponMesh->SetRelativeLocation(CurrentRecoilLoc + CurrentSwayLoc);

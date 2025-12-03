@@ -5,8 +5,8 @@
 #include "PcPlayerCharacter.generated.h"
 
 class UCameraComponent;
-class APcPlanet;
-class APcWeapon; // Forward Declaration
+class APcWeapon;
+class UPcGravityMovementComponent; 
 
 UCLASS()
 class PROJECT_CIRCLE_API APcPlayerCharacter : public ACharacter
@@ -19,102 +19,104 @@ public:
 protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual void BeginPlay() override;
-	virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
-	virtual void NotifyActorEndOverlap(AActor* OtherActor) override;
 
 public:
+	// --- INPUTS ---
 	UFUNCTION(BlueprintCallable)
 	void Input_Move(FVector2D Value);
+	
 	UFUNCTION(BlueprintCallable)
 	void Input_Look(FVector2D Value);
+	
 	UFUNCTION(BlueprintCallable)
 	void Input_JumpTrigger();
 
-	// --- COMBAT INPUTS ---
+	// --- COMBAT ---
 	UFUNCTION(BlueprintCallable)
 	void Input_StartAttack();
 	UFUNCTION(BlueprintCallable)
 	void Input_StopAttack();
 	UFUNCTION(BlueprintCallable)
 	void Input_FireLaser();
-
 	UFUNCTION(BlueprintCallable)
 	void TakeHit();
-	UFUNCTION(BlueprintImplementableEvent)
-	void OnHitReceived();
 
-	// Debug
+	// --- DEBUG ---
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	FString GetDebugInfo() const;
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	bool IsInRhythmWindow() const;
 
 public:
+	// --- COMPONENTS ---
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
 
-	UPROPERTY(VisibleAnywhere, Category = "Gravity")
-	APcPlanet* CurrentPlanet;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UPcGravityMovementComponent* GravityComp;
 
-	// ==============================================================================
-	// WEAPON SYSTEM
-	// ==============================================================================
-	UPROPERTY(EditAnywhere, Category = "Project Circle | Combat")
+	UPROPERTY(EditAnywhere, Category = "Combat")
 	TSubclassOf<APcWeapon> StartingWeaponClass;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Project Circle | Combat")
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Combat")
 	APcWeapon* CurrentWeapon;
 
-	// ==============================================================================
-	// MOVEMENT CONFIGURATION
-	// ==============================================================================
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
+	// --- MOVEMENT PHYSICS ---
+	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
 	float BaseMoveSpeed = 600.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 1. Movement")
-	float MaxSkimSpeed = 2500.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float MinSteeringRate = 120.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float MaxSteeringRate = 400.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float CarveAcceleration = 1200.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float BaseDrag = 1.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float MinJumpHeight = 150.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float MaxJumpHeight = 500.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float JumpBoostAmount = 800.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float WaveDuration = 0.8f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 3. Jump")
-	float CoyoteThreshold = 0.25f;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
-	float MudDepth = 80.0f;
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 4. Buoyancy")
-	float LiftSensitivity = 3.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float StraightLineDrag = 800.0f;
 	
-	UPROPERTY(EditAnywhere, Category = "Project Circle | 2. Physics")
-	float MomentumMultiplier = 800.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
+	float MaxSkimSpeed = 2500.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
+	float SteeringRate = 300.0f; 
+
+	UPROPERTY(EditAnywhere, Category = "Movement | Physics")
+	float CarveAcceleration = 1200.0f; 
+	
+	UPROPERTY(EditAnywhere, Category = "Movement | Physics")
+	float PassiveDrag = 400.0f; 
+
+	// --- JUMP SETTINGS ---
+	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
+	float JumpPeakHeight = 200.0f; 
+	
+	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
+	float JumpBoostSpeed = 800.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
+	float WaveDuration = 0.6f; 
+
+	// --- RHYTHM SYSTEM ---
+	/** How long after landing does the "Perfect" window last? */
+	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
+	float PerfectWindowDuration = 0.2f;
+
+	/** How forgiving is the input? (Allows pressing space slightly before landing) */
+	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
+	float InputBufferAllowance = 0.15f;
+
+	/** Time allowed between jumps to keep the streak (e.g. 2x jump time) */
+	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
+	float MaxComboTime = 1.2f;
+	
+	bool IsInRhythmWindow() const;
 
 private:
-	FVector HorizontalVelocity = FVector::ZeroVector;
+	// --- INTERNAL STATE ---
 	FVector CurrentInput = FVector::ZeroVector;
 	float CurrentSpeed = 0.0f;
-	float CarveIntensity = 0.0f;
-	//float CurrentSteeringRate = 0.0f;
+	
+	// Jump State
+	bool bIsJumping = false;
+	bool bInPerfectWindow = false; // True immediately after landing
+	
+	// Timers
+	float JumpPhaseTime = 0.0f;    // Tracks the sine wave
+	float WindowTimer = 0.0f;      // Tracks the 0.2s after landing
+	float ComboTimer = 0.0f;       // Tracks the "Streak" logic
+	float InputBufferTimer = 0.0f; // Tracks pre-press forgiveness
 
-	bool bIsWaveActive = false;
-	float WavePhase = 0.0f;
-	float SmoothedAltitude = 0.0f;
-	float CurrentJumpPeak = 0.0f;
-
-	void ApplySkaterMovement(float DeltaTime);
+	// Logic Helpers
+	void UpdateSkaterPhysics(float DeltaTime);
+	void UpdateJumpLogic(float DeltaTime);
+	void PerformJump(bool bIsPerfect);
 };

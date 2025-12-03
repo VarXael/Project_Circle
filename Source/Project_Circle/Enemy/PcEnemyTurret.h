@@ -33,7 +33,7 @@ public:
 	UPcGravityMovementComponent* GravityComp;
 
 	// --- COMBAT ---
-	UPROPERTY(EditAnywhere, Category = "Combat")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
 
 	UPROPERTY(EditAnywhere, Category = "Combat")
@@ -47,8 +47,8 @@ public:
 	float StopDistance = 800.0f; // Stop moving if close to player
 
 	// Add this temporary function
-	UFUNCTION(BlueprintCallable, Category = "Debug")
-	void DebugLaunch();
+	// UFUNCTION(BlueprintCallable, Category = "Debug")
+	// void DebugLaunch();
 	
 private:
 	FTimerHandle TimerHandle_Shoot;

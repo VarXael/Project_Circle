@@ -2,8 +2,8 @@
 #include "Project_Circle/GravitySystem/PcGravityMovementComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "PcPlayerCharacter.h"
 #include "Project_Circle/Enemy/PcEnemyTurret.h"
+#include "Project_Circle/PcPlayer/PcPlayerCharacter.h"
 
 APcProjectile::APcProjectile()
 {
@@ -19,7 +19,6 @@ APcProjectile::APcProjectile()
 	MeshComp->SetupAttachment(CollisionComp);
 	MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// Create the Motor
 	MovementComp = CreateDefaultSubobject<UPcGravityMovementComponent>(TEXT("MovementComp"));
 }
 
@@ -27,14 +26,11 @@ void APcProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// Configure for Bullet behavior
+	// Configure Component for "Space Flight"
 	if (MovementComp)
 	{
 		MovementComp->MovementMode = EPcMovementMode::Projectile;
-		MovementComp->MaxSpeed = 10000.0f; // High cap
-		
-		// Important: Projectiles don't need to hover relative to feet. 
-		// They fly where they are spawned.
+		MovementComp->MaxSpeed = 10000.0f; 
 		MovementComp->PivotOffset = 0.0f; 
 		MovementComp->HoverHeight = 0.0f; 
 	}
@@ -46,9 +42,13 @@ void APcProjectile::InitializeProjectile(FVector ShootDirection, APcPlanet* InPl
 
 	if (MovementComp)
 	{
-		// Set the initial velocity. The component will keep this magnitude 
-		// and rotate it around the world automatically.
+		// 1. SET VELOCITY
 		MovementComp->SetVelocity(ShootDirection.GetSafeNormal() * Speed);
+		
+		// 2. LOCK ORBIT (CRITICAL FIX)
+		// This tells the component: "Whatever distance I am from the center right now, stay there."
+		// This prevents the projectile from sinking or drifting.
+		MovementComp->LockCurrentAltitudeAsOrbit();
 	}
 }
 
@@ -56,19 +56,12 @@ void APcProjectile::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// 1. LIFETIME MANAGEMENT
+	// Lifetime
 	TimeAlive += DeltaTime;
 	if (TimeAlive > LifeSpan) 
 	{
 		Destroy();
 		return;
-	}
-
-	// 2. VISUALS
-	// The Component moves the actor. We just align the mesh to the velocity.
-	if (MovementComp && !MovementComp->GetCurrentVelocity().IsZero())
-	{
-		SetActorRotation(MovementComp->GetCurrentVelocity().Rotation());
 	}
 }
 
@@ -81,10 +74,11 @@ void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other
 		// HIT ENEMY
 		if (auto* Enemy = Cast<APcEnemyTurret>(OtherActor))
 		{
-			// Example: Knockback test using the Component
-			if (MovementComp)
+			// Apply Physics Impulse to Enemy
+			if (MovementComp && Enemy->GravityComp)
 			{
-				Enemy->GravityComp->AddImpulse(MovementComp->GetCurrentVelocity().GetSafeNormal() * 2000.0f);
+				FVector ImpactDir = MovementComp->GetCurrentVelocity().GetSafeNormal();
+				Enemy->GravityComp->AddImpulse(ImpactDir * 2000.0f);
 			}
 			Destroy();
 		}

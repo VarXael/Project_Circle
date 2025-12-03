@@ -21,7 +21,6 @@ void UPcGravityMovementComponent::BeginPlay()
 	}
 
 	UpdateSurfaceInfo();
-	// Only snap if we actually found a floor
 	if (bSurfaceFound && GetOwner())
 	{
 		FVector SnapPos = SurfaceHitLocation + (CurrentSurfaceNormal * (PivotOffset + HoverHeight));
@@ -36,16 +35,19 @@ void UPcGravityMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 
 	float SafeDelta = FMath::Min(DeltaTime, 0.05f);
 
+	// SAFETY: Sanitize Inputs
+	if (Velocity.ContainsNaN()) Velocity = FVector::ZeroVector;
+	if (CurrentInput.ContainsNaN()) CurrentInput = FVector::ZeroVector;
+
 	UpdateSurfaceInfo();
 	ApplyPhysics(SafeDelta);
 
-	// Reset Input
 	CurrentInput = FVector::ZeroVector;
 }
 
 void UPcGravityMovementComponent::AddInputVector(FVector WorldInputDirection)
 {
-	if (!WorldInputDirection.IsZero())
+	if (!WorldInputDirection.IsZero() && !WorldInputDirection.ContainsNaN())
 	{
 		CurrentInput = WorldInputDirection.GetSafeNormal();
 	}
@@ -53,97 +55,106 @@ void UPcGravityMovementComponent::AddInputVector(FVector WorldInputDirection)
 
 void UPcGravityMovementComponent::AddImpulse(FVector Impulse)
 {
-	Velocity += Impulse;
+	if (!Impulse.ContainsNaN())
+	{
+		Velocity += Impulse;
+	}
 }
 
 void UPcGravityMovementComponent::SetVelocity(FVector NewVelocity)
 {
-	Velocity = NewVelocity;
+	if (!NewVelocity.ContainsNaN())
+	{
+		Velocity = NewVelocity;
+	}
+}
+
+void UPcGravityMovementComponent::LockCurrentAltitudeAsOrbit()
+{
+	if (CurrentPlanet && GetOwner())
+	{
+		FixedRadius = FVector::Dist(GetOwner()->GetActorLocation(), CurrentPlanet->GetActorLocation());
+		bUseFixedRadius = true;
+	}
 }
 
 void UPcGravityMovementComponent::UpdateSurfaceInfo()
 {
 	AActor* Owner = GetOwner();
-	FVector MyLoc = Owner->GetActorLocation();
+	if (!Owner) return;
 
-	// 1. SINGULARITY CHECK (The Void)
-	bool bInSingularity = false;
-	if (CurrentPlanet)
+	FVector MyLoc = Owner->GetActorLocation();
+	FVector PlanetCenter = FVector::ZeroVector;
+	float PlanetRadius = 10000.0f; 
+
+	if (CurrentPlanet) 
 	{
-		float Dist = FVector::Dist(MyLoc, CurrentPlanet->GetActorLocation());
-		if (Dist < MinGravityDistance)
-		{
-			bInSingularity = true;
-		}
+		PlanetCenter = CurrentPlanet->GetActorLocation();
+		PlanetRadius = CurrentPlanet->SurfaceRadius;
 	}
 
-	if (bInSingularity)
+	// 1. DETERMINE STATE
+	FVector FromCenter = MyLoc - PlanetCenter;
+	float DistToCenter = FromCenter.Size();
+	float VoidThreshold = PlanetRadius * 0.5f;
+
+	if (DistToCenter < VoidThreshold)
 	{
-		// ZERO-G MODE:
-		// We define "Up" as whatever the actor is currently doing, to prevent spinning.
-		CurrentSurfaceNormal = Owner->GetActorUpVector();
+		// VOID STATE (Inside Center)
 		bSurfaceFound = false;
-		// We intentionally do NOT return here. We let the rest of the logic run 
-		// so bIsFalling gets set correctly later.
+		
+		// Inertial Coasting: Keep normal consistent to prevent flipping
+		if (DistToCenter > 10.0f)
+		{
+			CurrentSurfaceNormal = -(FromCenter / DistToCenter);
+		}
+		return;
+	}
+
+	// 2. SHELL STATE (Near Surface)
+	FVector DirOutwards = FromCenter / DistToCenter;
+	CurrentSurfaceNormal = -DirOutwards; // Points Inwards
+
+	// Trace from Center -> Outwards
+	FVector TraceStart = PlanetCenter + (DirOutwards * VoidThreshold); 
+	FVector TraceEnd = PlanetCenter + (DirOutwards * (PlanetRadius * 1.5f));
+
+	FHitResult Hit;
+	FCollisionQueryParams P;
+	P.AddIgnoredActor(Owner);
+
+	bSurfaceFound = GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, P);
+
+	if (bSurfaceFound)
+	{
+		SurfaceHitLocation = Hit.Location;
 	}
 	else
 	{
-		// STANDARD GRAVITY
-		FVector GravityDir = FVector::DownVector;
-		if (CurrentPlanet)
-		{
-			GravityDir = CurrentPlanet->GetGravityDirection(MyLoc);
-			if (GravityDir.IsZero()) GravityDir = FVector::DownVector;
-		}
-		CurrentSurfaceNormal = -GravityDir; 
-
-		// ROBUST TRACE
-		FVector TraceStart = MyLoc - (GravityDir * 2000.0f);
-		FVector TraceEnd = MyLoc + (GravityDir * 2000.0f);
-
-		FHitResult Hit;
-		FCollisionQueryParams P;
-		P.AddIgnoredActor(Owner);
-
-		bSurfaceFound = GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, P);
-
-		if (bSurfaceFound)
-		{
-			SurfaceHitLocation = Hit.Location;
-		}
-		else if (CurrentPlanet)
-		{
-			// Fallback Math Sphere
-			FVector ToCenter = MyLoc - CurrentPlanet->GetActorLocation();
-			SurfaceHitLocation = CurrentPlanet->GetActorLocation() + (ToCenter.GetSafeNormal() * CurrentPlanet->SurfaceRadius);
-			// Note: We don't set bSurfaceFound=true here for the Fallback.
-			// This allows the "Falling" logic to kick in if we are over a hole.
-			// But for simplicity, let's say:
-			bSurfaceFound = true;
-		}
+		SurfaceHitLocation = PlanetCenter + (DirOutwards * PlanetRadius);
+		bSurfaceFound = true; // Fallback
 	}
 }
 
 void UPcGravityMovementComponent::ApplyPhysics(float DeltaTime)
 {
 	AActor* Owner = GetOwner();
-	
-	// Store state BEFORE moving
 	FVector StartNormal = CurrentSurfaceNormal;
-	float StartDistToCenter = 0.0f;
-	if (CurrentPlanet)
-	{
-		StartDistToCenter = FVector::Dist(Owner->GetActorLocation(), CurrentPlanet->GetActorLocation());
-	}
 
 	// --- A. DECOMPOSE ---
 	float VerticalSpeed = FVector::DotProduct(Velocity, CurrentSurfaceNormal);
 	FVector TangentVel = FVector::VectorPlaneProject(Velocity, CurrentSurfaceNormal);
 
-	// --- B. CHECK FALLING ---
-	if (!bSurfaceFound)
+	// --- B. CHECK FALLING (Modified for Jump Sync) ---
+	// If the script is forcing a specific height (Jumping), we are NOT falling.
+	// We are on a "Rail". This prevents Gravity from fighting the Sine Wave.
+	if (bSnapToHoverHeight && bSurfaceFound)
 	{
-		bIsFalling = true;
+		bIsFalling = false;
+	}
+	else if (!bSurfaceFound)
+	{
+		bIsFalling = true; // Void State
 	}
 	else
 	{
@@ -155,7 +166,7 @@ void UPcGravityMovementComponent::ApplyPhysics(float DeltaTime)
 		else if (DistToFloor <= SnapDistance && VerticalSpeed <= 0.0f) bIsFalling = false;
 	}
 
-	// --- C. APPLY INPUT ---
+	// --- C. HORIZONTAL PHYSICS ---
 	FVector TangentInput = FVector::VectorPlaneProject(CurrentInput, CurrentSurfaceNormal).GetSafeNormal();
 	
 	if (MovementMode == EPcMovementMode::Skater || MovementMode == EPcMovementMode::GroundUnit)
@@ -166,6 +177,7 @@ void UPcGravityMovementComponent::ApplyPhysics(float DeltaTime)
 		}
 		else if (!bIsFalling) 
 		{
+			// Friction (Only on ground)
 			float Speed = TangentVel.Size();
 			float Drop = Deceleration * DeltaTime;
 			float NewSpeed = FMath::Max(0.0f, Speed - Drop);
@@ -178,112 +190,124 @@ void UPcGravityMovementComponent::ApplyPhysics(float DeltaTime)
 		TangentVel = TangentVel.GetSafeNormal() * MaxSpeed;
 	}
 
-	// --- D. APPLY GRAVITY ---
+	// --- D. VERTICAL PHYSICS ---
 	if (MovementMode != EPcMovementMode::Projectile)
 	{
-		if (bIsFalling && bSurfaceFound)
+		if (bIsFalling)
 		{
-			VerticalSpeed -= GravityScale * DeltaTime;
+			if (bSurfaceFound) VerticalSpeed -= GravityScale * DeltaTime;
 		}
 		else
 		{
-			VerticalSpeed = 0.0f; 
+			VerticalSpeed = 0.0f; // Grounded = No vertical momentum
 		}
 	}
 
-	// --- E. MOVE (INTEGRATE) ---
+	// --- E. INTEGRATE ---
 	Velocity = TangentVel + (CurrentSurfaceNormal * VerticalSpeed);
+	
+	if (Velocity.SizeSquared() > 50000.0f * 50000.0f) Velocity = Velocity.GetSafeNormal() * 50000.0f;
+
 	if (!Velocity.IsZero())
 	{
 		Owner->AddActorWorldOffset(Velocity * DeltaTime);
 	}
 
-	// =========================================================
-	//   FIX 1: ORBITAL DRIFT CORRECTION (Projectiles Only)
-	// =========================================================
-	// Moving linearly in a hollow sphere brings you closer to the wall (radius increases).
-	// We push the projectile back towards the center to maintain its original orbital altitude.
-	if (MovementMode == EPcMovementMode::Projectile && CurrentPlanet && StartDistToCenter > 0.0f)
+	// --- F. ORBITAL CORRECTION (Projectile Only) ---
+	if (MovementMode == EPcMovementMode::Projectile && CurrentPlanet)
 	{
-		FVector NewLoc = Owner->GetActorLocation();
-		FVector PlanetCenter = CurrentPlanet->GetActorLocation();
-		FVector ToNewLoc = NewLoc - PlanetCenter;
-		
-		// If we drifted further out (or in), snap back to the radius we had at the start of the frame
-		// This keeps the bullet flying "parallel" to the curve.
-		FVector CorrectedLoc = PlanetCenter + (ToNewLoc.GetSafeNormal() * StartDistToCenter);
-		Owner->SetActorLocation(CorrectedLoc);
+		if (bUseFixedRadius && FixedRadius > 0.0f)
+		{
+			FVector NewLoc = Owner->GetActorLocation();
+			FVector PlanetCenter = CurrentPlanet->GetActorLocation();
+			FVector ToNewLoc = NewLoc - PlanetCenter;
+			
+			// Hard Snap to Fixed Radius
+			FVector CorrectedLoc = PlanetCenter + (ToNewLoc.GetSafeNormal() * FixedRadius);
+			Owner->SetActorLocation(CorrectedLoc);
+		}
 	}
 
-
-	// --- F. HEIGHT CORRECTION (Units Only) ---
+	// --- G. HEIGHT SMOOTHING (Grounded Only) ---
 	if (!bIsFalling && bSurfaceFound && MovementMode != EPcMovementMode::Projectile)
 	{
 		FVector PostMoveFeet = Owner->GetActorLocation() - (CurrentSurfaceNormal * PivotOffset);
 		float CurrentHeight = FVector::DotProduct(PostMoveFeet - SurfaceHitLocation, CurrentSurfaceNormal);
 		float TargetHeight = HoverHeight;
 
-		float NextHeight = FMath::FInterpTo(CurrentHeight, TargetHeight, DeltaTime, VerticalSmoothing);
+		float NextHeight = 0.0f;
+
+		// DIRECT DRIVE (Jump Logic)
+		if (bSnapToHoverHeight)
+		{
+			NextHeight = TargetHeight; // Instant Snap (No Lag)
+		}
+		else
+		{
+			NextHeight = FMath::FInterpTo(CurrentHeight, TargetHeight, DeltaTime, VerticalSmoothing); // Smooth Water Feel
+		}
+		
 		float Adjustment = NextHeight - CurrentHeight;
 		
-		if (FMath::Abs(Adjustment) > 0.01f)
+		// Sanity Check
+		if (FMath::Abs(Adjustment) > 0.01f && FMath::Abs(Adjustment) < 500.0f)
 		{
 			Owner->AddActorWorldOffset(CurrentSurfaceNormal * Adjustment);
 		}
 	}
 
-	// =========================================================
-	//   FIX 2: VELOCITY TRANSPORT
-	// =========================================================
-	FVector NewLocation = Owner->GetActorLocation();
-	FVector EndNormal = StartNormal; 
-	if (CurrentPlanet)
+	// --- H. ROTATION ---
+	if (bSurfaceFound) 
 	{
-		FVector GravityDir = CurrentPlanet->GetGravityDirection(NewLocation);
-		if (!GravityDir.IsZero()) EndNormal = -GravityDir;
-	}
-
-	// Rotate velocity to match the new surface angle
-	if (!StartNormal.Equals(EndNormal, 0.0001f))
-	{
-		FQuat TransportRot = FQuat::FindBetweenNormals(StartNormal, EndNormal);
-		Velocity = TransportRot.RotateVector(Velocity);
-	}
-	CurrentSurfaceNormal = EndNormal;
-
-	// =========================================================
-	//   FIX 3: ROTATION (AIMING)
-	// =========================================================
-	FQuat TargetRot;
-	
-	if (MovementMode == EPcMovementMode::Projectile)
-	{
-		// FIX: Just face the velocity! 
-		// Don't try to align to the floor, or you can't shoot up/down.
-		if (!Velocity.IsZero())
-		{
-			TargetRot = FRotationMatrix::MakeFromX(Velocity).ToQuat();
-			Owner->SetActorRotation(TargetRot);
-		}
-	}
-	else
-	{
-		// Characters align to floor + velocity
-		FQuat CurrentRot = Owner->GetActorQuat();
-		FVector MyUp = Owner->GetActorUpVector();
+		FVector NewLocation = Owner->GetActorLocation();
+		FVector EndNormal = StartNormal; 
 		
-		FQuat AlignRot = FQuat::FindBetweenNormals(MyUp, EndNormal);
-		TargetRot = AlignRot * CurrentRot;
-
-		if (TangentVel.SizeSquared() > 100.0f)
+		if (CurrentPlanet)
 		{
-			FVector FlatFwd = FVector::VectorPlaneProject(Owner->GetActorForwardVector(), EndNormal).GetSafeNormal();
-			FVector FlatVel = TangentVel.GetSafeNormal();
-			FQuat FaceVelRot = FQuat::FindBetweenNormals(FlatFwd, FlatVel);
-			float TurnAlpha = FMath::Min(1.0f, TurnRate * DeltaTime * 0.01f); 
-			TargetRot = FQuat::Slerp(TargetRot, FaceVelRot * TargetRot, TurnAlpha);
+			FVector FromCenter = NewLocation - CurrentPlanet->GetActorLocation();
+			float D = FromCenter.Size();
+			if (D > 10.0f) EndNormal = -(FromCenter / D);
 		}
-		
-		Owner->SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 15.0f * DeltaTime));
+		CurrentSurfaceNormal = EndNormal;
+
+		// Velocity Transport
+		if (!StartNormal.Equals(EndNormal, 0.0001f) && (StartNormal | EndNormal) > -0.99f)
+		{
+			FQuat TransportRot = FQuat::FindBetweenNormals(StartNormal, EndNormal);
+			Velocity = TransportRot.RotateVector(Velocity);
+		}
+
+		// Actor Rotation
+		FQuat TargetRot;
+		if (MovementMode == EPcMovementMode::Projectile)
+		{
+			if (!Velocity.IsZero())
+			{
+				TargetRot = FRotationMatrix::MakeFromX(Velocity).ToQuat();
+				Owner->SetActorRotation(TargetRot);
+			}
+		}
+		else
+		{
+			FQuat CurrentRot = Owner->GetActorQuat();
+			FVector MyUp = Owner->GetActorUpVector();
+			
+			FQuat AlignRot = FQuat::Identity;
+			if ((MyUp | EndNormal) > -0.99f) AlignRot = FQuat::FindBetweenNormals(MyUp, EndNormal);
+			TargetRot = AlignRot * CurrentRot;
+
+			if (bOrientRotationToMovement && TangentVel.SizeSquared() > 100.0f)
+			{
+				FVector CurrentFlatFwd = FVector::VectorPlaneProject(Owner->GetActorForwardVector(), EndNormal).GetSafeNormal();
+				FVector FlatVel = TangentVel.GetSafeNormal();
+				if (!CurrentFlatFwd.IsZero() && !FlatVel.IsZero())
+				{
+					FQuat FaceVelRot = FQuat::FindBetweenNormals(CurrentFlatFwd, FlatVel);
+					float TurnAlpha = FMath::Min(1.0f, TurnRate * DeltaTime * 0.01f); 
+					TargetRot = FQuat::Slerp(TargetRot, FaceVelRot * TargetRot, TurnAlpha);
+				}
+			}
+			Owner->SetActorRotation(FQuat::Slerp(CurrentRot, TargetRot, 15.0f * DeltaTime));
+		}
 	}
 }
