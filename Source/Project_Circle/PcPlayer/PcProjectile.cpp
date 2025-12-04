@@ -51,12 +51,15 @@ void APcProjectile::InitializeProjectile(FVector ShootDirection, APcPlanet* InPl
 
 	if (MovementComp)
 	{
-		// Set Velocity
-		MovementComp->SetVelocity(ShootDirection.GetSafeNormal() * Speed);
+		float ExtraSpeed = 0.0f;
+		if (auto* PC = Cast<APcPlayerCharacter>(GetOwner()))
+		{
+			// Get the scalar speed (Length of the velocity vector)
+			if (PC->GravityComp) ExtraSpeed = PC->GravityComp->GetCurrentVelocity().Size();
+		}
 
-		// NOTE: We do NOT call LockCurrentAltitudeAsOrbit().
-		// This ensures the projectile is affected by Gravity/Vertical Smoothing,
-		// creating the "Arc down to floor" behavior you wanted.
+		// Multiply the Aim Direction by (Base Speed + Player Current Speed)
+		MovementComp->SetVelocity(ShootDirection.GetSafeNormal() * (Speed + ExtraSpeed));
 	}
 }
 

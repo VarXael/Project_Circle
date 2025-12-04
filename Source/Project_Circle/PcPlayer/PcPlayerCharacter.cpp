@@ -104,7 +104,7 @@ void APcPlayerCharacter::Input_Look(FVector2D Value)
 
 	// 2. PITCH (Mouse Y) -> Rotate the Spring Arm locally.
 	// We manually track pitch to clamp it (prevent somersaulting the camera).
-	float NewPitch = CameraPitch + (Value.Y * -1.0f); // Invert Y
+	float NewPitch = CameraPitch + Value.Y;
 	NewPitch = FMath::Clamp(NewPitch, -89.0f, 89.0f);
 	
 	float PitchDelta = NewPitch - CameraPitch;
