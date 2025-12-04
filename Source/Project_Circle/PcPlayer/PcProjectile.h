@@ -5,8 +5,8 @@
 #include "PcProjectile.generated.h"
 
 class USphereComponent;
-class UPcGravityMovementComponent; // Universal Motor
-class APcPlanet;
+class UPcGravityMovementComponent; // The Universal Motor
+class APcPlanet; // Kept for function signature compatibility
 
 UCLASS()
 class PROJECT_CIRCLE_API APcProjectile : public AActor
@@ -17,10 +17,9 @@ public:
 	APcProjectile();
 
 	/** 
-	 * Initializes the projectile's velocity and locks its orbit.
-	 * @param ShootDirection: World space direction.
-	 * @param InPlanet: Ignored (Component finds it automatically).
-	 * @param bIsPlayerOwned: Used for collision logic.
+	 * Fired by Weapon. 
+	 * @param ShootDirection: The world direction to fly.
+	 * @param InPlanet: Ignored (Component finds Zone automatically).
 	 */
 	void InitializeProjectile(FVector ShootDirection, APcPlanet* InPlanet, bool bIsPlayerOwned);
 

@@ -4,14 +4,14 @@
 #include "Components/ActorComponent.h"
 #include "PcGravityMovementComponent.generated.h"
 
-class APcPlanet;
+class APcGravityZone;
 
 UENUM(BlueprintType)
 enum class EPcMovementMode : uint8
 {
 	Skater      UMETA(DisplayName = "Skater (Momentum, Carving)"),
 	GroundUnit  UMETA(DisplayName = "Ground Unit (High Friction, Snappy)"),
-	Projectile  UMETA(DisplayName = "Projectile (No Gravity, Constant Speed)"),
+	Projectile  UMETA(DisplayName = "Projectile (Gravity Enabled, No Friction)"), 
 	Hover       UMETA(DisplayName = "Hover/Stationary")
 };
 
@@ -28,65 +28,61 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 public:
-	// --- MOVEMENT CONFIG ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	// --- CONFIG ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	EPcMovementMode MovementMode = EPcMovementMode::GroundUnit;
 
-	/** If true, character rotates to face velocity. If false (Player), they face Mouse/Input. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	bool bOrientRotationToMovement = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
+	float RotationInterpSpeed = 50.0f; 
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	float MaxSpeed = 1200.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	float Acceleration = 2000.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	float Deceleration = 2000.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Config")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Config")
 	float TurnRate = 360.0f;
 
-	// --- PHYSICS SETTINGS ---
-	/** Positive = Pulls down to surface. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
+	// --- PHYSICS ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Physics")
 	float GravityScale = 1000.0f;
 
-	/** Distance to snap to floor. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Physics")
 	float SnapDistance = 100.0f;
 
-	// --- ORBITAL LOCK (Projectiles) ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
+	/** If true, forces the object to stay at 'FixedRadius' distance from the zone center. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Physics")
 	bool bUseFixedRadius = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Physics")
+	/** The distance from the center of the Gravity Zone to lock to (if bUseFixedRadius is true). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Physics")
 	float FixedRadius = 0.0f;
 
-	/** Call this on spawn to lock the projectile to its current distance from center. */
-	UFUNCTION(BlueprintCallable, Category = "Physics")
-	void LockCurrentAltitudeAsOrbit();
-
 	// --- POSITIONING ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Positioning")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Positioning")
 	float HoverHeight = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Positioning")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Positioning")
 	float PivotOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Positioning")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Gravity Positioning")
 	float VerticalSmoothing = 10.0f;
 
-	/** If true, bypasses smoothing and sets height instantly (For Jumping). */
-	UPROPERTY(BlueprintReadWrite, Category = "Positioning")
+	UPROPERTY(BlueprintReadWrite, Category = "Project Circle | Gravity Positioning")
 	bool bSnapToHoverHeight = false;
 
 	// --- DEBUG ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Project Circle | Debug")
 	bool bDrawDebug = false;
 
-	// --- INPUT INTERFACE ---
+	// --- API ---
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void AddInputVector(FVector WorldInputDirection);
 
@@ -95,6 +91,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Input")
 	void SetVelocity(FVector NewVelocity);
+
+	/** Automatically calculates PivotOffset based on Capsule or Mesh bounds. */
+	UFUNCTION(BlueprintCallable, Category = "Setup")
+	void AutoCalibratePivot();
 
 	UFUNCTION(BlueprintPure)
 	FVector GetCurrentVelocity() const { return Velocity; }
@@ -106,15 +106,14 @@ public:
 	bool IsFalling() const { return bIsFalling; }
 
 private:
-	// --- STATE ---
 	FVector Velocity = FVector::ZeroVector;
 	FVector CurrentInput = FVector::ZeroVector;
-	
 	bool bIsFalling = false;
+	bool bInZeroG = false;
 	
-	// Surface Data
 	UPROPERTY()
-	APcPlanet* CurrentPlanet;
+	APcGravityZone* CurrentZone;
+
 	FVector CurrentSurfaceNormal = FVector::UpVector;
 	FVector SurfaceHitLocation = FVector::ZeroVector;
 	bool bSurfaceFound = false;

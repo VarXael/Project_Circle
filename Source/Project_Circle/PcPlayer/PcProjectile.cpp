@@ -26,12 +26,21 @@ void APcProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	// Configure Component for "Space Flight"
 	if (MovementComp)
 	{
+		// 1. Set Mode
+		// "Projectile" mode disables Friction, so it slides forever once it hits the ground.
 		MovementComp->MovementMode = EPcMovementMode::Projectile;
 		MovementComp->MaxSpeed = 10000.0f; 
-		MovementComp->PivotOffset = 0.0f; 
+		
+		// 2. FIX SINKING (Auto-Size)
+		// We set the pivot offset to exactly the radius of the sphere collision.
+		// This tells the physics engine: "The floor is 15 units below my center."
+		if (CollisionComp)
+		{
+			MovementComp->PivotOffset = CollisionComp->GetScaledSphereRadius();
+		}
+		
 		MovementComp->HoverHeight = 0.0f; 
 	}
 }
@@ -42,13 +51,12 @@ void APcProjectile::InitializeProjectile(FVector ShootDirection, APcPlanet* InPl
 
 	if (MovementComp)
 	{
-		// 1. SET VELOCITY
+		// Set Velocity
 		MovementComp->SetVelocity(ShootDirection.GetSafeNormal() * Speed);
-		
-		// 2. LOCK ORBIT (CRITICAL FIX)
-		// This tells the component: "Whatever distance I am from the center right now, stay there."
-		// This prevents the projectile from sinking or drifting.
-		MovementComp->LockCurrentAltitudeAsOrbit();
+
+		// NOTE: We do NOT call LockCurrentAltitudeAsOrbit().
+		// This ensures the projectile is affected by Gravity/Vertical Smoothing,
+		// creating the "Arc down to floor" behavior you wanted.
 	}
 }
 
@@ -56,13 +64,15 @@ void APcProjectile::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Lifetime
 	TimeAlive += DeltaTime;
 	if (TimeAlive > LifeSpan) 
 	{
 		Destroy();
 		return;
 	}
+
+	// Visual Rotation: Spin or face velocity?
+	// The component handles "Face Velocity" automatically if MovementMode is Projectile.
 }
 
 void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -71,10 +81,9 @@ void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other
 
 	if (bIsPlayerProjectile)
 	{
-		// HIT ENEMY
+		// Hit Enemy
 		if (auto* Enemy = Cast<APcEnemyTurret>(OtherActor))
 		{
-			// Apply Physics Impulse to Enemy
 			if (MovementComp && Enemy->GravityComp)
 			{
 				FVector ImpactDir = MovementComp->GetCurrentVelocity().GetSafeNormal();
@@ -85,7 +94,7 @@ void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other
 	}
 	else
 	{
-		// HIT PLAYER
+		// Hit Player
 		if (auto* Player = Cast<APcPlayerCharacter>(OtherActor))
 		{
 			if (!Player->IsInRhythmWindow()) 

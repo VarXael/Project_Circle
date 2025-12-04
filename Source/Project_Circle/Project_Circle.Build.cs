@@ -8,17 +8,39 @@ public class Project_Circle : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "Niagara" });
+		// Core Runtime Modules
+		PublicDependencyModuleNames.AddRange(new string[] { 
+			"Core", 
+			"CoreUObject", 
+			"Engine", 
+			"InputCore", 
+			"EnhancedInput", 
+			"Niagara",
+			"UMG" // Moved UMG here as it is often needed at runtime for HUDs
+		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "MetasoundEngine", "MetasoundFrontend" });
+		// Audio / Metasound
+		PrivateDependencyModuleNames.AddRange(new string[] { 
+			"MetasoundEngine", 
+			"MetasoundFrontend" 
+		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "EditorStyle", "Blutility", "UMG", "UnrealEd", "AssetTools" });
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+		// UI - Runtime
+		PrivateDependencyModuleNames.AddRange(new string[] { 
+			"Slate", 
+			"SlateCore" 
+		});
 
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+		// EDITOR ONLY MODULES
+		// These must be wrapped or the game will fail to package.
+		if (Target.Type == TargetType.Editor)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[] { 
+				"UnrealEd", 
+				"AssetTools", 
+				"Blutility", 
+				"EditorStyle" 
+			});
+		}
 	}
 }

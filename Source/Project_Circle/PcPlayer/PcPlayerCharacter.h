@@ -5,6 +5,7 @@
 #include "PcPlayerCharacter.generated.h"
 
 class UCameraComponent;
+class USpringArmComponent;
 class APcWeapon;
 class UPcGravityMovementComponent; 
 
@@ -26,97 +27,102 @@ public:
 	void Input_Move(FVector2D Value);
 	
 	UFUNCTION(BlueprintCallable)
-	void Input_Look(FVector2D Value);
+	void Input_Look(FVector2D Value); // The logic changes here
 	
 	UFUNCTION(BlueprintCallable)
 	void Input_JumpTrigger();
-
-	// --- COMBAT ---
+	
 	UFUNCTION(BlueprintCallable)
 	void Input_StartAttack();
 	UFUNCTION(BlueprintCallable)
 	void Input_StopAttack();
 	UFUNCTION(BlueprintCallable)
-	void Input_FireLaser();
+	void Input_FireLaser(); // KEPT LASER
 	UFUNCTION(BlueprintCallable)
 	void TakeHit();
 
-	// --- DEBUG ---
+	// --- HUD GETTERS ---
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	float GetFuseFraction() const;
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	int32 GetFlowStacks() const { return FlowStacks; }
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	float GetCurrentSpeed() const { return CurrentSpeed; }
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	float GetTargetMaxSpeed() const { return BaseMoveSpeed + (FlowStacks * BonusSpeedPerStack); }
+	UFUNCTION(BlueprintCallable, Category = "Debug")
+	bool IsInRhythmWindow() const { return bInPerfectWindow; }
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	FString GetDebugInfo() const;
 
 public:
 	// --- COMPONENTS ---
 	UPROPERTY(VisibleAnywhere, Category = "Components")
+	USpringArmComponent* SpringArmComp;
+
+	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcGravityMovementComponent* GravityComp;
 
-	UPROPERTY(EditAnywhere, Category = "Combat")
+	UPROPERTY(EditAnywhere, Category = "Components")
 	TSubclassOf<APcWeapon> StartingWeaponClass;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "Combat")
+	UPROPERTY(BlueprintReadOnly, Category = "Components")
 	APcWeapon* CurrentWeapon;
 
-	// --- MOVEMENT PHYSICS ---
-	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
-	float BaseMoveSpeed = 600.0f;
-	
-	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
-	float MaxSkimSpeed = 2500.0f;
-	
-	UPROPERTY(EditAnywhere, Category = "Movement | Speed")
+	// --- CONFIG ---
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float BaseMoveSpeed = 800.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float MaxSkimSpeed = 2500.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float BonusSpeedPerStack = 250.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement")
 	float SteeringRate = 300.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float CarveAcceleration = 600.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float PassiveDrag = 20.0f; 
 
-	UPROPERTY(EditAnywhere, Category = "Movement | Physics")
-	float CarveAcceleration = 1200.0f; 
-	
-	UPROPERTY(EditAnywhere, Category = "Movement | Physics")
-	float PassiveDrag = 400.0f; 
-
-	// --- JUMP SETTINGS ---
-	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
+	UPROPERTY(EditAnywhere, Category = "Jump")
 	float JumpPeakHeight = 200.0f; 
-	
-	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
-	float JumpBoostSpeed = 800.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Movement | Jump")
+	UPROPERTY(EditAnywhere, Category = "Jump")
+	float JumpImpulse = 400.0f; 
+	UPROPERTY(EditAnywhere, Category = "Jump")
 	float WaveDuration = 0.6f; 
 
-	// --- RHYTHM SYSTEM ---
-	/** How long after landing does the "Perfect" window last? */
-	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
+	UPROPERTY(EditAnywhere, Category = "Flow")
+	float FuseDuration = 2.0f;
+	UPROPERTY(EditAnywhere, Category = "Flow")
+	int32 MaxStacks = 3;
+	UPROPERTY(EditAnywhere, Category = "Flow")
 	float PerfectWindowDuration = 0.2f;
-
-	/** How forgiving is the input? (Allows pressing space slightly before landing) */
-	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
+	UPROPERTY(EditAnywhere, Category = "Flow")
 	float InputBufferAllowance = 0.15f;
-
-	/** Time allowed between jumps to keep the streak (e.g. 2x jump time) */
-	UPROPERTY(EditAnywhere, Category = "Movement | Rhythm")
-	float MaxComboTime = 1.2f;
-	
-	bool IsInRhythmWindow() const;
 
 private:
 	// --- INTERNAL STATE ---
 	FVector CurrentInput = FVector::ZeroVector;
 	float CurrentSpeed = 0.0f;
 	
-	// Jump State
-	bool bIsJumping = false;
-	bool bInPerfectWindow = false; // True immediately after landing
-	
-	// Timers
-	float JumpPhaseTime = 0.0f;    // Tracks the sine wave
-	float WindowTimer = 0.0f;      // Tracks the 0.2s after landing
-	float ComboTimer = 0.0f;       // Tracks the "Streak" logic
-	float InputBufferTimer = 0.0f; // Tracks pre-press forgiveness
+	// CAMERA STATE
+	float CameraPitch = 0.0f; // Track looking up/down locally
 
-	// Logic Helpers
+	int32 FlowStacks = 0;
+	float FuseTimer = 0.0f;
+	float SpeedLockTimer = 0.0f; 
+	bool bIsInvulnerable = false; 
+	bool bIsJumping = false;
+	bool bInPerfectWindow = false; 
+	float JumpPhaseTime = 0.0f;    
+	float WindowTimer = 0.0f;      
+	float InputBufferTimer = 0.0f; 
+
 	void UpdateSkaterPhysics(float DeltaTime);
 	void UpdateJumpLogic(float DeltaTime);
+	void UpdateFlowFuse(float DeltaTime);
 	void PerformJump(bool bIsPerfect);
+	void PushStyleMessage(FString Msg, uint8 Type);
 };
