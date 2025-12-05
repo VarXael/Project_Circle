@@ -10,59 +10,56 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "FlowSystem/PcFlowMechanicComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 APcPlayerCharacter::APcPlayerCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// 1. SPRING ARM SETUP
 	SpringArmComp = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArmComp"));
 	SpringArmComp->SetupAttachment(GetCapsuleComponent());
-	SpringArmComp->SetRelativeLocation(FVector(0, 0, 60.0f)); // Head Height
-	SpringArmComp->TargetArmLength = 0.0f; // FPS View
-	
-	// Critical Settings for Sphere Navigation
-	SpringArmComp->bDoCollisionTest = false; // Prevent camera jumping when backing into curved walls
-	
-	// FIX: Set to FALSE. We handle rotation manually to keep camera aligned with gravity.
+	SpringArmComp->SetRelativeLocation(FVector(0, 0, 60.0f)); 
+	SpringArmComp->TargetArmLength = 0.0f; 
+	SpringArmComp->bDoCollisionTest = false; 
 	SpringArmComp->bUsePawnControlRotation = false; 
-	
 	SpringArmComp->bInheritPitch = true;
 	SpringArmComp->bInheritYaw = true;
-	SpringArmComp->bInheritRoll = true; // Essential for walking on walls/ceilings
+	SpringArmComp->bInheritRoll = true; 
+	SpringArmComp->bEnableCameraRotationLag = false;
 
-	// 2. CAMERA SETUP
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComp"));
 	CameraComp->SetupAttachment(SpringArmComp);
-	CameraComp->bUsePawnControlRotation = false; // Camera strictly follows the SpringArm
+	CameraComp->bUsePawnControlRotation = false; 
 
-	// 3. DISABLE STANDARD MOVEMENT
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->GravityScale = 0.0f;
 		GetCharacterMovement()->DefaultLandMovementMode = MOVE_Flying;
 	}
 
-	// 4. GRAVITY COMPONENT
 	GravityComp = CreateDefaultSubobject<UPcGravityMovementComponent>(TEXT("GravityComp"));
+	FlowComp = CreateDefaultSubobject<UPcFlowMechanicComponent>(TEXT("FlowComp"));
+
+	DriftSparksComp = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DriftSparksComp"));
+	DriftSparksComp->SetupAttachment(GetCapsuleComponent());
+	DriftSparksComp->SetRelativeLocation(FVector(0, 0, -80.0f)); 
+	DriftSparksComp->bAutoActivate = false; 
 }
 
 void APcPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
 	CurrentSpeed = BaseMoveSpeed;
-	FuseTimer = 0.0f; 
-
-	// --- UNLOCK CAMERA LIMITS ---
-	// We allow full 360 rotation on Pitch and Roll.
+	
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		if (PC->PlayerCameraManager)
 		{
 			PC->PlayerCameraManager->ViewPitchMin = -179.9f;
 			PC->PlayerCameraManager->ViewPitchMax = 179.9f;
-			
 			PC->PlayerCameraManager->ViewRollMin = -179.9f;
 			PC->PlayerCameraManager->ViewRollMax = 179.9f;
 		}
@@ -75,6 +72,7 @@ void APcPlayerCharacter::BeginPlay()
 		GravityComp->MaxSpeed = 10000.0f; 
 		GravityComp->Acceleration = 10000.0f;
 		GravityComp->Deceleration = 0.0f; 
+		GravityComp->RotationInterpSpeed = 10.0f;
 	}
 
 	if (StartingWeaponClass)
@@ -95,104 +93,76 @@ void APcPlayerCharacter::Input_Move(FVector2D Value)
 void APcPlayerCharacter::Input_Look(FVector2D Value)
 {
 	if (Value.IsZero()) return;
-
-	// FIX: Manual Local Rotation Implementation
-	
-	// 1. YAW (Mouse X) -> Rotate the Actor Capsule around its local Z axis (Up).
-	// Because the GravityComponent keeps "Up" aligned with the planet, this turns us "Left/Right" correctly.
 	AddActorLocalRotation(FRotator(0.0f, Value.X, 0.0f));
-
-	// 2. PITCH (Mouse Y) -> Rotate the Spring Arm locally.
-	// We manually track pitch to clamp it (prevent somersaulting the camera).
 	float NewPitch = CameraPitch + Value.Y;
 	NewPitch = FMath::Clamp(NewPitch, -89.0f, 89.0f);
-	
 	float PitchDelta = NewPitch - CameraPitch;
 	SpringArmComp->AddLocalRotation(FRotator(PitchDelta, 0.0f, 0.0f));
-	
 	CameraPitch = NewPitch;
-
-	// 3. Weapon Sway
 	if (CurrentWeapon) CurrentWeapon->ApplyInputForSway(Value);
+}
+
+void APcPlayerCharacter::Input_StartDrift() 
+{ 
+	bIsDrifting = true; 
+	
+	// LANDING COMBO (The Drop-In)
+	if (bCanComboLand && LandWindowTimer > 0.0f)
+	{
+		FlowComp->InjectFlow(50.0f); 
+		CurrentSpeed += 400.0f; 
+		bCanComboLand = false;
+		
+		FOVImpulse = BoostFOVImpulse; 
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
+				HUD->AddStyleMessage("PERFECT LANDING!", EStyleEventType::Good);
+	}
+}
+
+void APcPlayerCharacter::Input_StopDrift() 
+{ 
+	bIsDrifting = false; 
 }
 
 void APcPlayerCharacter::Input_StartAttack() { if (CurrentWeapon) CurrentWeapon->StartPrimaryFire(); }
 void APcPlayerCharacter::Input_StopAttack() { if (CurrentWeapon) CurrentWeapon->StopPrimaryFire(); }
 void APcPlayerCharacter::Input_FireLaser() { if (CurrentWeapon) CurrentWeapon->FireLaserAttack(); }
-
-void APcPlayerCharacter::TakeHit() 
-{ 
-	if (bIsInvulnerable) return;
-
-	if (FlowStacks > 0)
-	{
-		PushStyleMessage("HIT! STACKS LOST", 1); 
-		FlowStacks = 0;
-		CurrentSpeed = BaseMoveSpeed;
-	}
-}
+void APcPlayerCharacter::TakeHit() { /* Placeholder */ }
 
 void APcPlayerCharacter::Input_JumpTrigger()
 {
-	if (bInPerfectWindow)
-	{
-		PerformJump(true); 
-		return;
-	}
-
+	// Strict Check: Only jump if actually grounded/not jumping
 	if (!bIsJumping)
 	{
-		PerformJump(false); 
-		return;
+		PerformJump(); 
 	}
-
-	// Buffer input if mid-air
-	if (bIsJumping) InputBufferTimer = InputBufferAllowance;
+	else
+	{
+		InputBufferTimer = 0.2f; 
+	}
 }
 
-void APcPlayerCharacter::PerformJump(bool bIsPerfect)
+// --- JUMP IMPLEMENTATION (SINE WAVE) ---
+
+void APcPlayerCharacter::PerformJump()
 {
-	if (FlowStacks < MaxStacks)
-	{
-		FlowStacks++;	
-	} 
-	
+	if (!GravityComp) return;
+
 	bIsJumping = true;
 	JumpPhaseTime = 0.0f;
-	bInPerfectWindow = false;
-	WindowTimer = 0.0f;
-	InputBufferTimer = 0.0f;
+	bCanComboLand = false;
+	
+	// SINE WAVE LOGIC:
+	// We force the hover height to snap to our math curve.
+	GravityComp->bSnapToHoverHeight = true; 
+	GravityComp->VerticalSmoothing = 0.0f; // Instant snap (Visuals will hide this)
 
-	if (bIsPerfect)
-	{
-		PushStyleMessage("PERFECT BOOST!", 0); 
-		FuseTimer = FuseDuration;
-		CurrentSpeed += JumpImpulse; 
-		SpeedLockTimer = 0.5f; 
-		bIsInvulnerable = true;
-	}
-}
+	// FLOW: Just Freeze.
+	if (FlowComp) FlowComp->SetFrozen(true);
 
-float APcPlayerCharacter::GetFuseFraction() const
-{
-	if (FuseDuration <= 0.0f) return 0.0f;
-	return FMath::Clamp(FuseTimer / FuseDuration, 0.0f, 1.0f);
-}
-
-void APcPlayerCharacter::PushStyleMessage(FString Msg, uint8 Type)
-{
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-		{
-			HUD->AddStyleMessage(Msg, (EStyleEventType)Type);
-		}
-	}
-}
-
-FString APcPlayerCharacter::GetDebugInfo() const
-{
-	return FString::Printf(TEXT("SPD: %.0f / MAX: %.0f\nSTACKS: %d"), CurrentSpeed, GetTargetMaxSpeed(), FlowStacks);
+	// VFX
+	if (JumpLaunchFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), JumpLaunchFX, GetActorLocation());
 }
 
 // --- GAMEPLAY LOOP ---
@@ -200,162 +170,247 @@ FString APcPlayerCharacter::GetDebugInfo() const
 void APcPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	if (!GravityComp) return;
+	if (!GravityComp || !FlowComp) return;
 
 	if (InputBufferTimer > 0.0f) InputBufferTimer -= DeltaTime;
 
-	if (SpeedLockTimer > 0.0f)
-	{
-		SpeedLockTimer -= DeltaTime;
-		bIsInvulnerable = true;
-		if (SpeedLockTimer <= 0.0f) bIsInvulnerable = false;
-	}
-
-	UpdateFlowFuse(DeltaTime);
-	UpdateSkaterPhysics(DeltaTime);
 	UpdateJumpLogic(DeltaTime);
+	UpdateSkaterPhysics(DeltaTime);
+	UpdateVisuals(DeltaTime);
 }
 
-void APcPlayerCharacter::UpdateFlowFuse(float DeltaTime)
+void APcPlayerCharacter::UpdateVisuals(float DeltaTime)
 {
-	if (bIsJumping || bInPerfectWindow) return; // Frozen
+	// 1. DYNAMIC FOV
+	float TargetRestingFOV = BaseFOV + (FlowComp->CurrentTier * FOVPerTier);
+	CurrentFOVMod = FMath::FInterpTo(CurrentFOVMod, TargetRestingFOV - BaseFOV, DeltaTime, 2.0f);
+	FOVImpulse = FMath::FInterpTo(FOVImpulse, 0.0f, DeltaTime, 5.0f);
 
-	if (FuseTimer > 0.0f)
+	// 2. STEADYCAM (Hides the Sine Wave Snap)
+	// We calculate where the camera *wants* to be (TargetCameraSink).
+	// But we move SmoothedCameraHeight slowly.
+	
+	// If bouncing up/down rapidly, SmoothedCameraHeight won't keep up, creating a natural lag.
+	// We apply the difference to the camera Z.
+	
+	SmoothedCameraHeight = FMath::FInterpTo(SmoothedCameraHeight, TargetCameraSink, DeltaTime, VerticalCameraLagSpeed);
+
+	if (CameraComp)
 	{
-		FuseTimer -= DeltaTime;
-		if (FuseTimer <= 0.0f)
+		CameraComp->SetFieldOfView(BaseFOV + CurrentFOVMod + FOVImpulse);
+		
+		FVector NewLoc = CameraComp->GetRelativeLocation();
+		// Apply the smoothed sink value
+		NewLoc.Z = -SmoothedCameraHeight; 
+		CameraComp->SetRelativeLocation(NewLoc);
+	}
+}
+
+void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
+{
+	// Combo Window
+	if (bCanComboLand)
+	{
+		LandWindowTimer -= DeltaTime;
+		if (LandWindowTimer <= 0.0f)
 		{
-			if (FlowStacks > 0)
-			{
-				FlowStacks--;
-				PushStyleMessage("DECAY", 2); 
-				FuseTimer = FuseDuration; 
-			}
-			else FuseTimer = 0.0f;
+			bCanComboLand = false;
+			FlowComp->SetFrozen(false); 
 		}
+	}
+
+	if (bIsJumping)
+	{
+		JumpPhaseTime += DeltaTime;
+		
+		// SINE WAVE MATH
+		// 0 to 1 over WaveDuration
+		float Alpha = (JumpPhaseTime / WaveDuration); 
+		
+		if (Alpha >= 1.0f)
+		{
+			// === LANDED ===
+			bIsJumping = false;
+			JumpPhaseTime = 0.0f;
+			GravityComp->HoverHeight = 0.0f;
+			
+			OnLandedHit(); 
+		}
+		else
+		{
+			// === IN AIR ===
+			// Calculate Height: sin(0 to PI) * Peak
+			float SineVal = FMath::Sin(Alpha * UE_PI); 
+			GravityComp->HoverHeight = SineVal * JumpPeakHeight;
+			
+			// Force Snap so physics matches math
+			GravityComp->bSnapToHoverHeight = true; 
+		}
+	}
+	else
+	{
+		// Walking Logic
+		GravityComp->bSnapToHoverHeight = false; 
+		GravityComp->VerticalSmoothing = 10.0f; 
+		GravityComp->HoverHeight = FMath::FInterpTo(GravityComp->HoverHeight, 0.0f, DeltaTime, 5.0f);
+		
+		// VISUALS: Relax the camera sink back to 0
+		TargetCameraSink = 0.0f;
+	}
+}
+
+void APcPlayerCharacter::OnLandedHit()
+{
+	// Open Combo Window
+	bCanComboLand = true;
+	LandWindowTimer = LandComboWindow;
+	
+	// VISUALS: The Dunk Trigger
+	// We set the target deep, smoothing will catch up then recover
+	TargetCameraSink = LandingSinkAmount; 
+	FOVImpulse = BoostFOVImpulse;
+	
+	if (LandingShake) UGameplayStatics::PlayWorldCameraShake(GetWorld(), LandingShake, GetActorLocation(), 0.0f, 500.0f);
+
+	// PHYSICS: Rotational Throw
+	FVector CurrentVelDir = GravityComp->GetCurrentVelocity().GetSafeNormal();
+	FVector SurfaceNormal = GravityComp->GetSurfaceNormal();
+	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
+	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
+	FVector InputDir = (CamFwd * CurrentInput.X) + (CamRight * CurrentInput.Y);
+
+	if (!InputDir.IsZero())
+	{
+		float Dot = FVector::DotProduct(CurrentVelDir, InputDir);
+		float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
+		FVector Cross = FVector::CrossProduct(CurrentVelDir, InputDir);
+		float Direction = (FVector::DotProduct(Cross, SurfaceNormal) > 0) ? 1.0f : -1.0f;
+
+		if (AngleDeg > 15.0f)
+		{
+			CurrentAngularVelocity = AngleDeg * Direction * LandingSpinBoost;
+			CurrentAngularVelocity = FMath::Clamp(CurrentAngularVelocity, -350.0f, 350.0f);
+		}
+	}
+
+	// CHECK BUFFER
+	if (InputBufferTimer > 0.0f)
+	{
+		InputBufferTimer = 0.0f;
+		PerformJump();
 	}
 }
 
 void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 {
-	float TargetMaxSpeed = BaseMoveSpeed + (FlowStacks * BonusSpeedPerStack);
-
+	float MaxSpeedForTier = BaseMoveSpeed + (FlowComp->CurrentTier * SpeedPerTier);
+	float DriftSpeedCap = MaxSpeedForTier * 1.2f; 
+	
 	FVector CurrentVel = GravityComp->GetCurrentVelocity();
 	FVector SurfaceNormal = GravityComp->GetSurfaceNormal();
-	FVector CurrentDir = CurrentVel.GetSafeNormal();
-	if (CurrentVel.SizeSquared() < 1.0f) CurrentDir = GetActorForwardVector();
+	FVector CurrentVelDir = CurrentVel.GetSafeNormal();
+	if (CurrentVel.SizeSquared() < 1.0f) CurrentVelDir = GetActorForwardVector();
 
-	// FIX: Use Camera Component vectors instead of Control Rotation
-	// Since we disabled Control Rotation mapping, we must ask the Camera where it is looking.
-	FVector CamFwd = CameraComp->GetForwardVector();
-	FVector CamRight = CameraComp->GetRightVector();
-
-	// Project vectors onto the surface plane so inputs are relative to the "Floor"
-	CamFwd = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
-	CamRight = FVector::VectorPlaneProject(CamRight, SurfaceNormal).GetSafeNormal();
-	
+	// Calculate Input
+	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
+	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
 	FVector InputDir = (CamFwd * CurrentInput.X) + (CamRight * CurrentInput.Y);
 	InputDir.Normalize();
 
-	// Speed Logic
-	if (SpeedLockTimer > 0.0f)
+	DebugLastVelocityDir = CurrentVelDir;
+	DebugLastInputDir = InputDir;
+
+	bool bEffectiveDrift = false;
+	
+	// STOP LOGIC (Only on ground)
+	// Note: We don't check IsFalling() here because Sine Wave handles Z.
+	// We only check bIsJumping to know if we are airborne.
+	if (InputDir.IsZero() && !bIsDrifting && CurrentAngularVelocity == 0.0f && !bIsJumping)
 	{
-		// During Boost/Lock, only change direction, ignore drag/caps
-		if (!InputDir.IsZero())
-		{
-			FVector NewDir = FMath::VInterpNormalRotationTo(CurrentDir, InputDir, DeltaTime, SteeringRate);
-			CurrentDir = NewDir;
-		}
+		CurrentSpeed -= 1500.0f * DeltaTime; 
+		if (CurrentSpeed < 0.0f) CurrentSpeed = 0.0f;
 	}
 	else
 	{
-		if (InputDir.IsZero())
+		if (bIsDrifting)
 		{
-			CurrentSpeed -= PassiveDrag * 2.0f * DeltaTime;
-			if (CurrentSpeed <= 10.0f) 
+			// === DRIFT MODE ===
+			
+			// 1. Angular Velocity
+			float TurnInput = 0.0f;
+			if (!InputDir.IsZero())
 			{
-				CurrentSpeed = 0.0f;
-				GravityComp->SetVelocity(FVector::ZeroVector);
-				return; 
+				FVector Cross = FVector::CrossProduct(CurrentVelDir, InputDir);
+				float Sign = FVector::DotProduct(Cross, SurfaceNormal);
+				TurnInput = (Sign > 0) ? 1.0f : -1.0f;
+				if (FVector::DotProduct(CurrentVelDir, InputDir) > 0.99f) TurnInput = 0.0f; 
+			}
+
+			float TargetSpin = TurnInput * 150.0f; 
+			CurrentAngularVelocity = FMath::FInterpTo(CurrentAngularVelocity, TargetSpin, DeltaTime, 5.0f);
+			if (TurnInput == 0.0f) CurrentAngularVelocity = FMath::FInterpTo(CurrentAngularVelocity, 0.0f, DeltaTime, RotationalDrag);
+
+			CurrentVelDir = CurrentVelDir.RotateAngleAxis(CurrentAngularVelocity * DeltaTime, SurfaceNormal);
+
+			// 2. Efficiency
+			float Dot = FVector::DotProduct(CurrentVelDir, InputDir);
+			float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
+			DebugSlipAngle = AngleDeg;
+
+			if (AngleDeg > 25.0f && AngleDeg < 85.0f)
+			{
+				bEffectiveDrift = true;
+				
+				float Efficiency = (AngleDeg - 25.0f) / 60.0f;
+				Efficiency = FMath::Clamp(Efficiency, 0.0f, 1.0f);
+
+				// VISUALS: Set Drift Sink
+				// If we carve deep, target sink increases
+				TargetCameraSink = DriftCameraSinkAmount * Efficiency;
+
+				if (!bIsJumping && CurrentSpeed < DriftSpeedCap)
+				{
+					CurrentSpeed += DriftAcceleration * Efficiency * DeltaTime;
+				}
+				
+				if (FlowComp->CurrentState == EFlowState::Frozen) FlowComp->SetFrozen(false);
+				float FlowReward = 10.0f + (Efficiency * 50.0f); 
+				FlowComp->InjectFlow(FlowReward * DeltaTime); 
+			}
+			else
+			{
+				// Penalty
+				if (!bIsJumping) 
+				{
+					float Drag = (AngleDeg >= 85.0f) ? 600.0f : 150.0f;
+					CurrentSpeed -= Drag * DeltaTime;
+				}
+				// Reset sink if not drifting efficiently
+				TargetCameraSink = 0.0f;
 			}
 		}
 		else
 		{
-			// Quick Turn vs Wide Carve
-			if (CurrentSpeed < 100.0f)
-			{
-				CurrentDir = InputDir;
-				CurrentSpeed = BaseMoveSpeed * 0.5f;
-			}
-			else
-			{
-				FVector NewDir = FMath::VInterpNormalRotationTo(CurrentDir, InputDir, DeltaTime, SteeringRate);
-				CurrentDir = NewDir;
-			}
-
-			// Carving Bonus
-			float Dot = (CurrentDir | InputDir);
-			if (Dot < 0.95f) 
-			{
-				float TurnIntensity = (1.0f - Dot); 
-				CurrentSpeed += (CarveAcceleration * 0.5f) * TurnIntensity * DeltaTime;
-			}
-			else
-			{
-				if (CurrentSpeed < BaseMoveSpeed) CurrentSpeed += CarveAcceleration * DeltaTime; 
-				else CurrentSpeed -= 20.0f * DeltaTime; 
-			}
+			// === GRIP MODE ===
+			CurrentAngularVelocity = 0.0f; 
+			CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, GripSteeringRate);
+			DebugSlipAngle = 0.0f;
+			TargetCameraSink = 0.0f; // Reset Visuals
+			
+			if (CurrentSpeed > MaxSpeedForTier) CurrentSpeed = FMath::FInterpTo(CurrentSpeed, MaxSpeedForTier, DeltaTime, 0.5f);
+			else CurrentSpeed = FMath::FInterpTo(CurrentSpeed, MaxSpeedForTier, DeltaTime, 2.0f);
 		}
 	}
+	
+	if (bEffectiveDrift) { if (!DriftSparksComp->IsActive()) DriftSparksComp->Activate(); }
+	else { if (DriftSparksComp->IsActive()) DriftSparksComp->Deactivate(); }
 
-	if (SpeedLockTimer <= 0.0f)
-	{
-		if (CurrentSpeed > TargetMaxSpeed)
-		{
-			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, TargetMaxSpeed, DeltaTime, 1.0f); 
-		}
-		CurrentSpeed = FMath::Clamp(CurrentSpeed, 0.0f, MaxSkimSpeed); 
-	}
-
-	GravityComp->SetVelocity(CurrentDir * CurrentSpeed);
+	// --- FINAL VELOCITY ---
+	// We only set Horizontal Speed. 
+	// The Gravity Component applies HoverHeight (Z) AFTER this function runs.
+	GravityComp->SetVelocity(CurrentVelDir * CurrentSpeed);
+	
+	FlowComp->UpdateFlowLogic(DeltaTime, bEffectiveDrift);
 }
 
-void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
-{
-	if (bIsJumping)
-	{
-		JumpPhaseTime += DeltaTime;
-		GravityComp->bSnapToHoverHeight = true; 
-
-		if (JumpPhaseTime >= WaveDuration)
-		{
-			// Landed
-			bIsJumping = false;
-			JumpPhaseTime = 0.0f;
-			bInPerfectWindow = true; 
-			WindowTimer = 0.0f;
-			GravityComp->HoverHeight = 0.0f;
-			if (InputBufferTimer > 0.0f) PerformJump(true);
-			return;
-		}
-
-		// Calculate Arc
-		float Alpha = (JumpPhaseTime / WaveDuration); 
-		float SineVal = FMath::Sin(Alpha * PI); 
-		GravityComp->HoverHeight = SineVal * JumpPeakHeight;
-		return;
-	}
-
-	if (bInPerfectWindow)
-	{
-		GravityComp->bSnapToHoverHeight = true;
-		WindowTimer += DeltaTime;
-
-		if (WindowTimer >= PerfectWindowDuration) bInPerfectWindow = false;
-		return;
-	}
-
-	GravityComp->bSnapToHoverHeight = false; 
-	GravityComp->HoverHeight = FMath::FInterpTo(GravityComp->HoverHeight, 0.0f, DeltaTime, 5.0f);
-}
+float APcPlayerCharacter::GetCurrentSpeed() const { return CurrentSpeed; }

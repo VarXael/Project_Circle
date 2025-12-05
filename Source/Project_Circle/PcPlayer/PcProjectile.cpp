@@ -100,11 +100,8 @@ void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other
 		// Hit Player
 		if (auto* Player = Cast<APcPlayerCharacter>(OtherActor))
 		{
-			if (!Player->IsInRhythmWindow()) 
-			{
-				Player->TakeHit(); 
-				Destroy();
-			}
+			Player->TakeHit(); 
+			Destroy();
 		}
 	}
 }

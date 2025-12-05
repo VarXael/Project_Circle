@@ -42,13 +42,13 @@ void APcEnemyTurret::Tick(float DeltaTime)
 	{
 		float Dist = FVector::Dist(GetActorLocation(), Player->GetActorLocation());
 		
-		// DEBUG: Print status to screen to see why it stops
-		if (GEngine) 
-		{
-			FString Status = (Dist > StopDistance) ? TEXT("MOVING") : TEXT("STOPPED (In Range)");
-			FString VelInfo = FString::Printf(TEXT("Vel: %.1f"), GravityComp->GetCurrentVelocity().Size());
-			GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("[%s] %s - Dist: %.0f - %s"), *GetName(), *Status, Dist, *VelInfo));
-		}
+		// // DEBUG: Print status to screen to see why it stops
+		// if (GEngine) 
+		// {
+		// 	FString Status = (Dist > StopDistance) ? TEXT("MOVING") : TEXT("STOPPED (In Range)");
+		// 	FString VelInfo = FString::Printf(TEXT("Vel: %.1f"), GravityComp->GetCurrentVelocity().Size());
+		// 	GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("[%s] %s - Dist: %.0f - %s"), *GetName(), *Status, Dist, *VelInfo));
+		// }
 
 		if (Dist > StopDistance)
 		{
