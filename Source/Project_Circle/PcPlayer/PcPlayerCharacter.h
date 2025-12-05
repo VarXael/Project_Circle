@@ -79,11 +79,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float LandingSinkAmount = 60.0f; 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
-	float DriftCameraSinkAmount = 30.0f; 
-	
-	// NEW: How fast the camera catches up vertically (Lower = Smoother/Laggier)
-	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
-	float VerticalCameraLagSpeed = 15.0f; 
+	float LandingSinkSpeed = 5.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Shake")
 	TSubclassOf<UCameraShakeBase> LandingShake;
@@ -100,20 +96,16 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
 	float GripSteeringRate = 300.0f; 
 
-	// Rotational Momentum Settings
+	// Blade Physics Settings
 	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
-	float RotationalDrag = 2.0f; 
-	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
-	float LandingSpinBoost = 5.0f; 
-	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
-	float DriftAcceleration = 1500.0f; 
+	float DriftAcceleration = 2000.0f; // Power of the stroke
 
-	// --- JUMP CONFIG (SINE WAVE) ---
+	// --- JUMP CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Jump")
-	float JumpPeakHeight = 200.0f; // Height in Units
+	float JumpPeakHeight = 200.0f; 
 	
 	UPROPERTY(EditAnywhere, Category = "Jump")
-	float WaveDuration = 0.6f; // Time in Seconds (Matches Beat)
+	float WaveDuration = 0.6f; 
 	
 	UPROPERTY(EditAnywhere, Category = "Jump")
 	float LandComboWindow = 0.25f; 
@@ -133,18 +125,18 @@ private:
 	float CurrentFOVMod = 0.0f; 
 	float FOVImpulse = 0.0f;    
 	
-	// Steadycam State (To hide Sine Wave Snap)
-	float SmoothedCameraHeight = 0.0f; // Tracks relative height
-	float TargetCameraSink = 0.0f;     // The "Dunk" target
+	// Tracks the camera dunk offset
+	float CurrentCameraSink = 0.0f; 
 
 	// Physics State
-	float CurrentAngularVelocity = 0.0f;
 	bool bIsDrifting = false;
+	float DriftSteeringRate = 150.0;
 	
 	// Jump Logic
 	bool bIsJumping = false;
 	float JumpPhaseTime = 0.0f;
 	
+	bool bWasFalling = false; // Detects landing
 	float LandWindowTimer = 0.0f;      
 	bool bCanComboLand = false;
 
@@ -157,5 +149,5 @@ private:
 	void UpdateVisuals(float DeltaTime); 
 	
 	void PerformJump();
-	void OnLandedHit();
+	void OnLandedHit(); // Helper for landing logic
 };
