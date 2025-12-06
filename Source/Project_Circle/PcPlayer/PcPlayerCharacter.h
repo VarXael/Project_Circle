@@ -1,8 +1,4 @@
-﻿// ==========================================
-// FILE: PcPlayerCharacter.h
-// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcPlayerCharacter.h
-// ==========================================
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
@@ -80,6 +76,10 @@ public:
 	float LandingSinkAmount = 60.0f; 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float LandingSinkSpeed = 5.0f; 
+	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
+	float DriftCameraSinkAmount = 30.0f; 
+	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
+	float CameraSinkSmoothing = 5.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Shake")
 	TSubclassOf<UCameraShakeBase> LandingShake;
@@ -93,20 +93,31 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Movement|Base")
 	float SpeedPerTier = 600.0f; 
 
+	// GRIP MODE
 	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
 	float GripSteeringRate = 300.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
+	float GroundAcceleration = 1500.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
+	float InertiaThreshold = 250.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
+	float BrakingDeceleration = 2500.0f; 
 
-	// Blade Physics Settings
+	// DRIFT MODE (Blade Physics)
 	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
-	float DriftAcceleration = 2000.0f; // Power of the stroke
+	float DriftBodyTurnRate = 140.0f; // Heavy Steering
+	
+	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
+	float DriftAcceleration = 2000.0f; 
+	
+	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
+	float DriftLinearDrag = 600.0f; 
 
-	// --- JUMP CONFIG ---
+	// --- JUMP CONFIG (Sine Wave) ---
 	UPROPERTY(EditAnywhere, Category = "Jump")
 	float JumpPeakHeight = 200.0f; 
-	
 	UPROPERTY(EditAnywhere, Category = "Jump")
 	float WaveDuration = 0.6f; 
-	
 	UPROPERTY(EditAnywhere, Category = "Jump")
 	float LandComboWindow = 0.25f; 
 
@@ -114,6 +125,8 @@ public:
 	FVector DebugLastVelocityDir;
 	FVector DebugLastInputDir;
 	float DebugSlipAngle; 
+	float DriftScoreAccumulator = 0.0f;
+	bool bIsAirborneDebug = false;
 
 private:
 	// --- INTERNAL STATE ---
@@ -124,30 +137,29 @@ private:
 	// Visuals State
 	float CurrentFOVMod = 0.0f; 
 	float FOVImpulse = 0.0f;    
-	
-	// Tracks the camera dunk offset
 	float CurrentCameraSink = 0.0f; 
 
 	// Physics State
 	bool bIsDrifting = false;
-	float DriftSteeringRate = 150.0;
 	
 	// Jump Logic
 	bool bIsJumping = false;
 	float JumpPhaseTime = 0.0f;
 	
-	bool bWasFalling = false; // Detects landing
+	bool bWasFalling = false; 
 	float LandWindowTimer = 0.0f;      
 	bool bCanComboLand = false;
 
-	// Input Buffer
 	float InputBufferTimer = 0.0f;
 
 	// Internal Functions
 	void UpdateSkaterPhysics(float DeltaTime);
+	void ApplyGripPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne);
+	bool ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne, float MaxSpeedForTier);
+
 	void UpdateJumpLogic(float DeltaTime);
 	void UpdateVisuals(float DeltaTime); 
 	
 	void PerformJump();
-	void OnLandedHit(); // Helper for landing logic
+	void OnLandedHit(); 
 };

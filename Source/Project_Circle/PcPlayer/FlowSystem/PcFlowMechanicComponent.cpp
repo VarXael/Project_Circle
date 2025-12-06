@@ -1,3 +1,7 @@
+// ==========================================
+// FILE: PcFlowMechanicComponent.cpp
+// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcFlowMechanicComponent.cpp
+// ==========================================
 #include "PcFlowMechanicComponent.h"
 
 UPcFlowMechanicComponent::UPcFlowMechanicComponent()
@@ -15,7 +19,6 @@ void UPcFlowMechanicComponent::BeginPlay()
 void UPcFlowMechanicComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	// Logic is handled via UpdateFlowLogic called by the Player to ensure sync order
 }
 
 void UPcFlowMechanicComponent::UpdateFlowLogic(float DeltaTime, bool bIsDrifting)
@@ -23,21 +26,39 @@ void UPcFlowMechanicComponent::UpdateFlowLogic(float DeltaTime, bool bIsDrifting
 	if (CurrentState == EFlowState::Frozen) return;
 
 	// 1. DETERMINE STATE
-	if (bIsDrifting) CurrentState = EFlowState::Charging;
-	else if (CurrentTier > 0 || FlowPercent > 0.0f) CurrentState = EFlowState::Draining;
-	else CurrentState = EFlowState::Stable;
+	if (bIsDrifting) 
+	{
+		CurrentState = EFlowState::Charging;
+		DecayDelayTimer = DecayDelay; // Reset timer while charging
+	}
+	else if (CurrentTier > 0 || FlowPercent > 0.0f) 
+	{
+		// Check Delay
+		if (DecayDelayTimer > 0.0f)
+		{
+			DecayDelayTimer -= DeltaTime;
+			CurrentState = EFlowState::Stable; // Holding steady
+		}
+		else
+		{
+			CurrentState = EFlowState::Draining;
+		}
+	}
+	else 
+	{
+		CurrentState = EFlowState::Stable;
+	}
 
-	// 2. HANDLE PANIC (0% Logic)
+	// 2. HANDLE PANIC
 	if (FlowPercent <= 0.0f && CurrentTier > 0)
 	{
 		CurrentState = EFlowState::Panic;
 		PanicTimer -= DeltaTime;
 		
-		// Rescue!
 		if (bIsDrifting) 
 		{
-			InjectFlow(5.0f * DeltaTime); // Slow recharge from panic
-			PanicTimer = PanicDuration; // Reset timer
+			InjectFlow(5.0f * DeltaTime); 
+			PanicTimer = PanicDuration; 
 		}
 		else if (PanicTimer <= 0.0f)
 		{
@@ -47,21 +68,21 @@ void UPcFlowMechanicComponent::UpdateFlowLogic(float DeltaTime, bool bIsDrifting
 	}
 
 	// 3. NORMAL LOGIC
-	PanicTimer = PanicDuration; // Reset panic if we have flow
+	PanicTimer = PanicDuration; 
 
 	if (bIsDrifting)
 	{
-		// Charge logic is usually handled by InjectFlow calls from physics, 
-		// but we can have a passive trickle here if desired. 
-		// For now, we rely on physics to call InjectFlow based on Angle.
+		// Charge is handled via explicit InjectFlow calls from Physics
 	}
 	else
 	{
-		// DECAY
-		// Higher tiers decay faster
-		float TierMult = 1.0f + (CurrentTier * 0.5f);
-		float Drop = BaseDecayRate * TierMult * DeltaTime;
-		FlowPercent = FMath::Clamp(FlowPercent - Drop, 0.0f, 100.0f);
+		// Only decay if timer ran out
+		if (DecayDelayTimer <= 0.0f)
+		{
+			float TierMult = 1.0f + (CurrentTier * 0.5f);
+			float Drop = BaseDecayRate * TierMult * DeltaTime;
+			FlowPercent = FMath::Clamp(FlowPercent - Drop, 0.0f, 100.0f);
+		}
 	}
 }
 
@@ -70,6 +91,10 @@ void UPcFlowMechanicComponent::InjectFlow(float Amount)
 	if (CurrentState == EFlowState::Frozen) return;
 	
 	FlowPercent += Amount;
+	
+	// Reset decay timer whenever we get flow
+	DecayDelayTimer = DecayDelay;
+
 	if (FlowPercent >= 100.0f)
 	{
 		PromoteTier();
@@ -83,14 +108,10 @@ void UPcFlowMechanicComponent::SetFrozen(bool bFreeze)
 
 void UPcFlowMechanicComponent::ApplyJumpBonus()
 {
-	// Instead of TIER UP, we just give fuel.
-	// We do NOT check for frozen here, because we want this to happen 
-	// exactly when the jump starts.
-	
-	float Bonus = 15.0f; // Give 15% bar instantly
+	float Bonus = 15.0f; 
 	FlowPercent = FMath::Clamp(FlowPercent + Bonus, 0.0f, 100.0f);
+	DecayDelayTimer = DecayDelay; // Reset delay on jump too
 	
-	// If this bonus pushes us over 100%, we promote naturally
 	if (FlowPercent >= 100.0f)
 	{
 		PromoteTier();
@@ -102,12 +123,11 @@ void UPcFlowMechanicComponent::PromoteTier()
 	if (CurrentTier < MaxTiers)
 	{
 		CurrentTier++;
-		FlowPercent = 5.0f; // THE 5% RULE. Sink or swim.
-		// Visual FX/Sound should trigger here
+		FlowPercent = 5.0f; // Sink or Swim
 	}
 	else
 	{
-		FlowPercent = 100.0f; // Cap at max
+		FlowPercent = 100.0f; 
 	}
 }
 
@@ -116,6 +136,6 @@ void UPcFlowMechanicComponent::DemoteTier()
 	if (CurrentTier > 0)
 	{
 		CurrentTier--;
-		FlowPercent = 50.0f; // Grace buffer in lower tier
+		FlowPercent = 50.0f; 
 	}
 }
