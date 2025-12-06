@@ -172,39 +172,57 @@ void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
 		if (LandWindowTimer <= 0.0f) { bCanComboLand = false; FlowComp->SetFrozen(false); }
 	}
 
+	// 1. PHYSICAL LANDING CHECK
+	// We rely on the GravityComponent to tell us when we hit the floor.
 	bool bIsFallingNow = GravityComp->IsFalling();
-	if (bIsJumping) JumpPhaseTime += DeltaTime;
-	bool bSafeToLand = (JumpPhaseTime > 0.15f); 
-
-	if (bWasFalling && !bIsFallingNow && bSafeToLand && !bIsJumping)
+	
+	// If we were falling/jumping, and now we are not, we landed.
+	// We check !bIsJumping to ensure we don't trigger this mid-air if the raycast hits a wall momentarily
+	// But mostly we rely on the fact that while jumping, we are high up.
+	
+	// FIX: We rely purely on physics state transitions to trigger the Land Event.
+	if (bWasFalling && !bIsFallingNow)
 	{
-		OnLandedHit();
+		// Safety: Don't trigger land instantly on launch (0.1s buffer)
+		if (JumpPhaseTime > 0.1f)
+		{
+			OnLandedHit();
+			bIsJumping = false; // Ensure state is synced
+		}
 	}
 	bWasFalling = bIsFallingNow;
 
 	if (bIsJumping)
 	{
+		JumpPhaseTime += DeltaTime;
 		float Alpha = (JumpPhaseTime / WaveDuration); 
 		
 		if (Alpha >= 1.0f)
 		{
+			// === TIMER ENDED ===
+			// RELEASE THE SNAP.
+			// We do NOT force OnLandedHit here.
+			// We just stop forcing the height. Gravity takes over.
+			// The block above (Physical Landing Check) will fire when we actually touch grass.
 			bIsJumping = false;
+			
 			GravityComp->HoverHeight = 0.0f; 
 			GravityComp->bSnapToHoverHeight = false; 
-			GravityComp->VerticalSmoothing = 10.0f; 
-			
-			OnLandedHit();
+			GravityComp->VerticalSmoothing = 10.0f; // Smooth out the remaining distance
 		}
 		else
 		{
+			// === IN AIR ===
 			float SineVal = FMath::Sin(Alpha * UE_PI); 
 			GravityComp->HoverHeight = SineVal * JumpPeakHeight;
+			
 			GravityComp->bSnapToHoverHeight = true; 
 			GravityComp->VerticalSmoothing = 0.0f;
 		}
 	}
 	else
 	{
+		// Visual Recovery
 		CurrentCameraSink = FMath::FInterpTo(CurrentCameraSink, 0.0f, DeltaTime, LandingSinkSpeed);
 		if (CameraComp)
 		{
