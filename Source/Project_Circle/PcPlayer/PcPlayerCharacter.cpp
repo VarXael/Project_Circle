@@ -1,4 +1,8 @@
-﻿#include "PcPlayerCharacter.h"
+﻿// ==========================================
+// FILE: PcPlayerCharacter.cpp
+// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcPlayerCharacter.cpp
+// ==========================================
+#include "PcPlayerCharacter.h"
 #include "PcDebugHUD.h"
 #include "Project_Circle/GravitySystem/PcGravityMovementComponent.h"
 #include "Project_Circle/Weapon/PcWeapon.h"
@@ -70,7 +74,6 @@ void APcPlayerCharacter::BeginPlay()
 		GravityComp->Deceleration = 0.0f; 
 		GravityComp->RotationInterpSpeed = 10.0f;
 		
-		// Defaults
 		DriftBodyTurnRate = 140.0f;
 	}
 
@@ -105,17 +108,7 @@ void APcPlayerCharacter::Input_StartDrift()
 { 
 	bIsDrifting = true; 
 	DriftScoreAccumulator = 0.0f;
-	
-	if (bCanComboLand && LandWindowTimer > 0.0f)
-	{
-		FlowComp->InjectFlow(50.0f); 
-		CurrentSpeed += 400.0f; 
-		bCanComboLand = false;
-		FOVImpulse = BoostFOVImpulse; 
-		if (APlayerController* PC = Cast<APlayerController>(GetController()))
-			if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-				HUD->AddStyleMessage("PERFECT LANDING!", EStyleEventType::Good);
-	}
+	DriftBufferTimer = 0.2f; // Buffer for Perfect Land
 }
 
 void APcPlayerCharacter::Input_StopDrift() 
@@ -137,12 +130,13 @@ void APcPlayerCharacter::TakeHit() { /* Placeholder */ }
 
 void APcPlayerCharacter::Input_JumpTrigger()
 {
+	// Strict Check: Only jump if grounded or valid
 	if (!bIsJumping) PerformJump(); 
 	else InputBufferTimer = 0.2f; 
 }
 
 // ==========================================
-// JUMP LOGIC (SINE WAVE)
+// JUMP LOGIC (Sine Wave + Squash + Probe)
 // ==========================================
 
 void APcPlayerCharacter::PerformJump()
@@ -153,6 +147,10 @@ void APcPlayerCharacter::PerformJump()
 	JumpPhaseTime = 0.0f;
 	bCanComboLand = false;
 	
+	// Start at full height
+	CurrentJumpPeak = JumpPeakHeight;
+	
+	// Enable Hover Snap Logic
 	GravityComp->bSnapToHoverHeight = true; 
 	GravityComp->VerticalSmoothing = 0.0f; 
 
@@ -166,29 +164,19 @@ void APcPlayerCharacter::PerformJump()
 
 void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
 {
+	// Combo Window Decay
 	if (bCanComboLand)
 	{
 		LandWindowTimer -= DeltaTime;
 		if (LandWindowTimer <= 0.0f) { bCanComboLand = false; FlowComp->SetFrozen(false); }
 	}
 
-	// 1. PHYSICAL LANDING CHECK
-	// We rely on the GravityComponent to tell us when we hit the floor.
+	// 1. PHYSICAL LANDING CHECK (Fallback for falling off ledges)
+	// We still check this in case you walk off a cliff without jumping.
 	bool bIsFallingNow = GravityComp->IsFalling();
-	
-	// If we were falling/jumping, and now we are not, we landed.
-	// We check !bIsJumping to ensure we don't trigger this mid-air if the raycast hits a wall momentarily
-	// But mostly we rely on the fact that while jumping, we are high up.
-	
-	// FIX: We rely purely on physics state transitions to trigger the Land Event.
-	if (bWasFalling && !bIsFallingNow)
+	if (bWasFalling && !bIsFallingNow && !bIsJumping)
 	{
-		// Safety: Don't trigger land instantly on launch (0.1s buffer)
-		if (JumpPhaseTime > 0.1f)
-		{
-			OnLandedHit();
-			bIsJumping = false; // Ensure state is synced
-		}
+		OnLandedHit();
 	}
 	bWasFalling = bIsFallingNow;
 
@@ -200,19 +188,43 @@ void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
 		if (Alpha >= 1.0f)
 		{
 			// === TIMER ENDED ===
-			// RELEASE THE SNAP.
-			// We do NOT force OnLandedHit here.
-			// We just stop forcing the height. Gravity takes over.
-			// The block above (Physical Landing Check) will fire when we actually touch grass.
-			bIsJumping = false;
 			
-			GravityComp->HoverHeight = 0.0f; 
+			// 1. Check if the floor is actually there (Deterministic Landing)
+			FVector TraceStart = GetActorLocation();
+			FVector Down = -GravityComp->GetSurfaceNormal();
+			
+			// Distance: Capsule Half Height + Small Buffer (e.g. 20 units)
+			float CheckDist = 100.0f; 
+			if (UCapsuleComponent* Cap = GetCapsuleComponent()) CheckDist = Cap->GetScaledCapsuleHalfHeight() + 20.0f;
+
+			FHitResult Hit;
+			FCollisionQueryParams Params;
+			Params.AddIgnoredActor(this);
+			
+			bool bHitFloor = GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceStart + (Down * CheckDist), ECC_WorldStatic, Params);
+
+			// 2. Resolve State
+			bIsJumping = false;
 			GravityComp->bSnapToHoverHeight = false; 
-			GravityComp->VerticalSmoothing = 10.0f; // Smooth out the remaining distance
+			GravityComp->VerticalSmoothing = 10.0f;
+			GravityComp->HoverHeight = 0.0f;
+
+			// 3. Trigger Landing
+			if (bHitFloor)
+			{
+				// We are close enough to the ground math-wise, and physics confirms it.
+				// Snap the last inch and trigger the event.
+				OnLandedHit();
+			}
+			else
+			{
+				// We finished the sine wave, but there is no floor (jumped over a cliff).
+				// Do NOT trigger landing. Just let the player fall naturally.
+			}
 		}
 		else
 		{
-			// === IN AIR ===
+			// === IN AIR (SINE WAVE) ===
 			float SineVal = FMath::Sin(Alpha * UE_PI); 
 			GravityComp->HoverHeight = SineVal * JumpPeakHeight;
 			
@@ -235,14 +247,57 @@ void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
 
 void APcPlayerCharacter::OnLandedHit()
 {
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	APcDebugHUD* HUD = PC ? Cast<APcDebugHUD>(PC->GetHUD()) : nullptr;
+
 	bCanComboLand = true;
 	LandWindowTimer = LandComboWindow;
-	CurrentCameraSink += LandingSinkAmount; 
-	FOVImpulse = BoostFOVImpulse;
-	
+
+	// DECISION TREE
+
+	if (InputBufferTimer > 0.0f)
+	{
+		// BUNNY HOP
+		InputBufferTimer = 0.0f;
+		if (HUD) HUD->AddStyleMessage("Bunny Hop!", EStyleEventType::Good);
+		PerformJump();
+		return;
+	}
+
+	if (DriftBufferTimer > 0.0f)
+	{
+		// PERFECT LAND
+		CurrentSpeed += PerfectLandSpeedBoost;
+		FlowComp->InjectFlow(30.0f);
+		CurrentCameraSink += 10.0f; 
+		FOVImpulse = BoostFOVImpulse;
+		if (HUD) HUD->AddStyleMessage("+ Perfect Land", EStyleEventType::Good);
+	}
+	else if (bIsDrifting)
+	{
+		// SOFT LAND
+		CurrentSpeed -= SoftLandPenalty;
+		CurrentCameraSink += LandingSinkAmount * 0.5f; 
+		if (HUD) HUD->AddStyleMessage("~ Soft Land", EStyleEventType::Neutral);
+	}
+	else
+	{
+		// CRASH (The Punishment)
+		// 1. Dead Stop
+		CurrentSpeed = 50.0f; 
+		
+		// 2. Kill the Flow (Optional: Reset to Tier 0?)
+		// FlowComp->ForceReset(); // If you want to be truly mean
+		
+		// 3. Visuals
+		CurrentCameraSink += LandingSinkAmount; 
+		if (HUD) HUD->AddStyleMessage("- CRASHED", EStyleEventType::Bad);
+	}
+
+	if (FlowComp) FlowComp->SetFrozen(false);
 	if (LandingShake) UGameplayStatics::PlayWorldCameraShake(GetWorld(), LandingShake, GetActorLocation(), 0.0f, 500.0f);
-	if (InputBufferTimer > 0.0f) { InputBufferTimer = 0.0f; PerformJump(); }
 }
+
 
 // ==========================================
 // MAIN PHYSICS LOOP
@@ -254,6 +309,7 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 	if (!GravityComp || !FlowComp) return;
 
 	if (InputBufferTimer > 0.0f) InputBufferTimer -= DeltaTime;
+	if (DriftBufferTimer > 0.0f) DriftBufferTimer -= DeltaTime;
 
 	UpdateJumpLogic(DeltaTime);
 	UpdateSkaterPhysics(DeltaTime);
@@ -280,13 +336,12 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	FVector CurrentVelDir = CurrentVel.GetSafeNormal();
 	if (CurrentVel.SizeSquared() < 1.0f) CurrentVelDir = GetActorForwardVector();
 
-	// --- 1. CALCULATE INPUT ---
+	// 1. INPUT
 	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
 	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
 	
-	// FIX: Y=Forward, X=Right. This aligns with Standard UE5 Enhanced Input
+	// FIXED AXES: X=Forward, Y=Right
 	FVector RawInputDir = (CamFwd * CurrentInput.X) + (CamRight * CurrentInput.Y);
-
 	
 	FVector InputDir = FVector::ZeroVector;
 	if (RawInputDir.SizeSquared() > 0.01f) InputDir = RawInputDir.GetSafeNormal();
@@ -299,7 +354,7 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	bool bIsAirborne = bIsJumping || bIsPhysicallyFalling;
 	bIsAirborneDebug = bIsAirborne;
 
-	// --- 2. PHYSICS BRANCHING ---
+	// 2. PHYSICS
 	if (InputDir.IsZero())
 	{
 		// STOPPING
@@ -313,26 +368,24 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	}
 	else if (bIsDrifting)
 	{
-		// DRIFTING (Heavy WASD)
 		bEffectiveDrift = ApplyDriftPhysics(DeltaTime, InputDir, CurrentVelDir, bIsAirborne, MaxSpeedForTier);
 	}
 	else
 	{
-		// GRIP
 		ApplyGripPhysics(DeltaTime, InputDir, CurrentVelDir, bIsAirborne);
 		if (DriftSparksComp->IsActive()) DriftSparksComp->Deactivate();
 		FlowComp->UpdateFlowLogic(DeltaTime, false);
 	}
 
-	// --- 3. APPLY VELOCITY ---
+	// 3. APPLY
 	if (bIsJumping)
 	{
-		FVector OldVel = GravityComp->GetCurrentVelocity();
-		float VertSpeed = FVector::DotProduct(OldVel, SurfaceNormal);
-		GravityComp->SetVelocity((CurrentVelDir * CurrentSpeed) + (SurfaceNormal * VertSpeed));
+		// SINE WAVE OVERRIDE (Horizontal only)
+		GravityComp->SetVelocity(CurrentVelDir * CurrentSpeed);
 	}
 	else if (bIsPhysicallyFalling)
 	{
+		// FALLING (Preserve Vertical)
 		FVector CurrentPhysVel = GravityComp->GetCurrentVelocity();
 		float VerticalMag = FVector::DotProduct(CurrentPhysVel, SurfaceNormal);
 		FVector VerticalVec = SurfaceNormal * VerticalMag;
@@ -340,6 +393,7 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	}
 	else
 	{
+		// GROUND
 		GravityComp->SetVelocity(CurrentVelDir * CurrentSpeed);
 	}
 
@@ -348,6 +402,7 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 
 // --- MODULAR PHYSICS ---
 
+// 1. GRIP PHYSICS (Heavier Start)
 void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne)
 {
 	CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, GripSteeringRate);
@@ -355,18 +410,23 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 
 	if (CurrentSpeed > BaseMoveSpeed)
 	{
+		// Overspeed Drag
 		float ExcessSpeed = CurrentSpeed - BaseMoveSpeed;
 		float DragFactor = 1.0f + (ExcessSpeed / 500.0f); 
-		// Low drag for coasting
 		float CoastDrag = 20.0f;
 		if (bIsAirborne) CoastDrag = 5.0f;
-		
 		CurrentSpeed -= CoastDrag * DeltaTime;
 	}
 	else
 	{
+		// INERTIA CURVE (The "Heavy Cart")
 		float AccelMult = 1.0f;
-		if (CurrentSpeed < InertiaThreshold) AccelMult = 0.3f; 
+		
+		// TUNING: Harder to start
+		// Was 250.0f, now 400.0f (Need more speed to break free)
+		// Was 0.3f, now 0.15f (Pushing is harder)
+		if (CurrentSpeed < 400.0f) AccelMult = 0.15f; 
+		
 		CurrentSpeed += GroundAcceleration * AccelMult * DeltaTime;
 		if (CurrentSpeed > BaseMoveSpeed) CurrentSpeed = BaseMoveSpeed;
 	}
@@ -376,14 +436,14 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 {
 	bool bInPocket = false;
 
-	// 1. STEERING (Heavy)
+	// Steering
 	CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, DriftBodyTurnRate);
 
-	// 2. DRAG (Grinding)
+	// Drag
 	float DragForce = 200.0f; 
 	if (!bIsAirborne) CurrentSpeed -= DragForce * DeltaTime;
 
-	// 3. ACCELERATION (Base)
+	// Acceleration Base
 	if (CurrentSpeed < BaseMoveSpeed)
 	{
 		CurrentSpeed += GroundAcceleration * DeltaTime;
@@ -393,7 +453,7 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, 0.5f);
 	}
 
-	// 4. CHECK POCKET
+	// Pocket Check
 	float Dot = FVector::DotProduct(CurrentVelDir, InputDir.GetSafeNormal());
 	float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
 	DebugSlipAngle = AngleDeg;
@@ -402,10 +462,14 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 	{
 		bInPocket = true;
 		
-		// REWARD: Curve Boost
-		if (!bIsAirborne && CurrentSpeed < MaxSpeedForTier * 1.3f)
+		// REWARD
+		if (CurrentSpeed < MaxSpeedForTier * 1.3f)
 		{
 			float CurveQuality = FMath::Clamp((AngleDeg - 10.0f) / 35.0f, 0.0f, 1.0f);
+			
+			// FIX: ALLOW AIR ACCELERATION (The Glide)
+			// We remove the !bIsAirborne check here.
+			// We apply full power. If you want air to be weaker, multiply by 0.5f.
 			CurrentSpeed += DriftAcceleration * CurveQuality * DeltaTime;
 		}
 
@@ -429,5 +493,6 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 
 	return bInPocket;
 }
+
 
 float APcPlayerCharacter::GetCurrentSpeed() const { return CurrentSpeed; }
