@@ -1,6 +1,10 @@
+// ==========================================
+// FILE: PcDebugHUD.cpp
+// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcDebugHUD.cpp
+// ==========================================
 #include "PcDebugHUD.h"
 #include "PcPlayerCharacter.h"
-#include "FlowSystem/PcFlowMechanicComponent.h" // Corrected Path
+#include "FlowSystem/PcFlowMechanicComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/World.h" 
 
@@ -14,7 +18,6 @@ void APcDebugHUD::AddStyleMessage(FString Message, EStyleEventType Type)
 	// Add to start (Newest messages at index 0)
 	MessageLog.Insert(NewMsg, 0);
 	
-	// Cap log size so it doesn't span the whole screen
 	if (MessageLog.Num() > 10) MessageLog.Pop();
 }
 
@@ -27,10 +30,7 @@ void APcDebugHUD::DrawHUD()
 	APcPlayerCharacter* Player = Cast<APcPlayerCharacter>(OwningPawn);
 	if (!Player || !Player->FlowComp) return;
 
-	// 1. Draw Center Vectors (Physics Tuning)
 	DrawPhysicsDebug(Player);
-
-	// 2. Draw Right-Side Dashboard (Bar + Stats + Log)
 	DrawFlowDashboard(Player);
 }
 
@@ -39,28 +39,19 @@ void APcDebugHUD::DrawPhysicsDebug(APcPlayerCharacter* Player)
 	float CX = Canvas->ClipX * 0.5f;
 	float CY = Canvas->ClipY * 0.5f;
 
-	// Yellow = Input (Look), Cyan = Velocity (Slide)
 	FVector InputDir = Player->DebugLastInputDir;
 	FVector VelDir = Player->DebugLastVelocityDir;
-
-	// Scale lines for visibility
 	float LineLen = 80.0f;
 
-	// Draw Input (Aim)
+	// Draw Input (Yellow)
 	DrawLine(CX, CY, CX + (InputDir.Y * LineLen), CY - (InputDir.X * LineLen), FLinearColor::Yellow, 2.0f);
 	
-	// Draw Velocity (Movement) - FColor::Cyan converts implicitly to FLinearColor
+	// Draw Velocity (Cyan)
 	DrawLine(CX, CY, CX + (VelDir.Y * LineLen), CY - (VelDir.X * LineLen), FColor::Cyan, 2.0f);
 
-	// Slip Angle Text
+	// Angle Text
 	FString AngleText = FString::Printf(TEXT("%.0f"), Player->DebugSlipAngle);
-	FLinearColor AngleColor = FLinearColor::White;
-	
-	// Color Code the Angle
-	if (Player->DebugSlipAngle > 20 && Player->DebugSlipAngle < 90) AngleColor = FLinearColor::Green; // Sweet Spot
-	else if (Player->DebugSlipAngle > 90) AngleColor = FLinearColor::Red; // Spinout
-	else if (Player->DebugSlipAngle > 0) AngleColor = FLinearColor(0.5f, 0.5f, 0.5f); // Boring straight
-
+	FLinearColor AngleColor = (Player->DebugSlipAngle > 20 && Player->DebugSlipAngle < 90) ? FLinearColor::Green : FLinearColor::White;
 	DrawText(AngleText, AngleColor, CX + 10, CY - 40, nullptr, 1.2f);
 }
 
@@ -69,61 +60,67 @@ void APcDebugHUD::DrawFlowDashboard(APcPlayerCharacter* Player)
 	UPcFlowMechanicComponent* Flow = Player->FlowComp;
 	if (!Flow) return;
 
+	// CONFIG
 	float RightEdge = Canvas->ClipX - 50.0f;
-	float BarAnchorY = Canvas->ClipY * 0.75f; // 75% down the screen
-	float BarLeft = RightEdge - BarWidth;
+	float BottomAnchorY = Canvas->ClipY * 0.85f; 
+	float BarW = 300.0f;
+	float BarH = 20.0f;
+	float BarLeft = RightEdge - BarW;
+	float Gap = 10.0f;
 
-	// --- 1. THE ACTION LOG (Above the Bar) ---
-	DrawActionLog(BarAnchorY - 10.0f, RightEdge);
-
-	// --- 2. THE BAR BACKGROUND ---
-	FLinearColor BgColor = FLinearColor(0.1f, 0.1f, 0.1f, 0.8f);
-	DrawRect(BgColor, BarLeft, BarAnchorY, BarWidth, BarHeight);
-
-	// --- 3. THE BAR FILL ---
-	float FillPercent = FMath::Clamp(Flow->FlowPercent / 100.0f, 0.0f, 1.0f);
-	// Invert the fill direction so it fills Right-to-Left (decays Left-to-Right)
-	// Or standard Left-to-Right. Standard is simpler. 
-	// To Decay Right-to-Left (visualize losing ground):
-	float FillWidth = BarWidth * FillPercent;
-
-	FLinearColor FillColor = FLinearColor::Yellow; // Default
-
-	// State-Based Colors
-	switch (Flow->CurrentState)
-	{
-	case EFlowState::Stable:   FillColor = FLinearColor::Yellow; break;
-	case EFlowState::Draining: FillColor = FLinearColor(1.0f, 0.5f, 0.0f); break; // Orange
-	case EFlowState::Charging: FillColor = FLinearColor::Green; break;
-	case EFlowState::Frozen:   FillColor = FColor::Cyan; break; // Use FColor::Cyan
-	case EFlowState::Panic:    
-		// Flash Red/White
-		float Pulse = FMath::Sin(GetWorld()->GetTimeSeconds() * 20.0f); 
-		FillColor = (Pulse > 0) ? FLinearColor::Red : FLinearColor::White;
-		break;
-	}
-
-	if (FillWidth > 1.0f)
-	{
-		DrawRect(FillColor, BarLeft, BarAnchorY, FillWidth, BarHeight);
-	}
-
-	// --- 4. TEXT INFO (Under the Bar) ---
-	float TextY = BarAnchorY + BarHeight + 8.0f;
+	// --- 1. FLOW BAR (Bottom) ---
+	float FlowY = BottomAnchorY;
 	
-	// Left side: TIER
-	FString TierStr = FString::Printf(TEXT("TIER %d"), Flow->CurrentTier);
-	DrawText(TierStr, FLinearColor::White, BarLeft, TextY, nullptr, 1.5f);
-
-	// Right side: SPEED / CAP
-	// We need to calculate the Cap based on Tier to show context
-	float SpeedCap = 800.0f + (Flow->CurrentTier * 600.0f); // Hardcoded visual ref based on Player.cpp
-	FString SpdStr = FString::Printf(TEXT("%.0f / %.0f"), Player->GetCurrentSpeed(), SpeedCap);
+	// Bg
+	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), BarLeft, FlowY, BarW, BarH);
 	
-	// Measure string to right-align it
-	float SpdLen, SpdH;
-	Canvas->StrLen(GEngine->GetSmallFont(), SpdStr, SpdLen, SpdH); // FIX: Use Canvas directly
-	DrawText(SpdStr, FLinearColor::White, RightEdge - (SpdLen * 1.5f), TextY, nullptr, 1.5f);
+	// Fill
+	float FlowPct = FMath::Clamp(Flow->FlowPercent / 100.0f, 0.0f, 1.0f);
+	FLinearColor FlowColor = FLinearColor::Yellow; 
+	if (Flow->CurrentState == EFlowState::Charging) FlowColor = FLinearColor::Green;
+	else if (Flow->CurrentState == EFlowState::Frozen) FlowColor = FColor::Cyan;
+	else if (Flow->CurrentState == EFlowState::Panic) FlowColor = FLinearColor::Red;
+	
+	DrawRect(FlowColor, BarLeft, FlowY, BarW * FlowPct, BarH);
+
+	// Stats Text (Under Flow)
+	float TextY = FlowY + BarH + 5.0f;
+	DrawText(FString::Printf(TEXT("TIER %d"), Flow->CurrentTier), FLinearColor::White, BarLeft, TextY, nullptr, 1.2f);
+	
+	FString SpdStr = FString::Printf(TEXT("%.0f"), Player->GetCurrentSpeed());
+	float SpdW, SpdH; Canvas->StrLen(GEngine->GetSmallFont(), SpdStr, SpdW, SpdH);
+	DrawText(SpdStr, FLinearColor::White, RightEdge - SpdW * 1.2f, TextY, nullptr, 1.2f);
+
+
+	// --- 2. STAMINA BAR (Middle) ---
+	float StaminaY = FlowY - BarH - Gap;
+	
+	// Bg
+	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), BarLeft, StaminaY, BarW, BarH);
+
+	// Fill
+	float StaminaPct = Player->GetDriftStamina() / 100.0f;
+	FLinearColor StaminaColor = FColor::Cyan;
+	if (StaminaPct <= 0.0f) StaminaColor = FLinearColor::Red;       // Burnout
+	else if (StaminaPct < 0.3f) StaminaColor = FColor::Orange;      // Low warning
+	
+	DrawRect(StaminaColor, BarLeft, StaminaY, BarW * StaminaPct, BarH);
+	DrawText(TEXT("STAMINA"), FLinearColor::White, BarLeft - 70.0f, StaminaY + 2.0f, nullptr, 1.0f);
+
+
+	// --- 3. LIVE SCORE (Floating above Stamina) ---
+	// Only show if we are actively accumulating drift points
+	/*
+	if (Player->DriftScoreAccumulator > 10.0f)
+	{
+		FString LiveScore = FString::Printf(TEXT("+ %.0f"), Player->DriftScoreAccumulator);
+		DrawText(LiveScore, FLinearColor::Yellow, BarLeft, StaminaY - 25.0f, nullptr, 1.5f);
+	}
+	*/
+
+	// --- 4. ACTION LOG (Top Stack) ---
+	// Anchored above the Stamina Bar
+	DrawActionLog(StaminaY - 20.0f, RightEdge);
 }
 
 void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
@@ -131,7 +128,6 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 	float CurrentY = BottomAnchorY;
 	float DeltaTime = GetWorld()->GetDeltaSeconds();
 
-	// Iterate backwards (Draw newest at bottom, pushing older ones up)
 	for (int32 i = 0; i < MessageLog.Num(); ++i)
 	{
 		FStyleLogMessage& Msg = MessageLog[i];
@@ -141,11 +137,11 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 		if (Msg.TimeRemaining <= 0.0f)
 		{
 			MessageLog.RemoveAt(i);
-			i--; // Adjust index
+			i--; // Adjust index after removal
 			continue;
 		}
 
-		// Calculate Alpha (Fade out last 0.5s)
+		// Fade out
 		float Alpha = FMath::Clamp(Msg.TimeRemaining / 0.5f, 0.0f, 1.0f);
 		
 		FLinearColor TextColor = FLinearColor::White;
@@ -153,6 +149,7 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 		
 		if (Msg.Type == EStyleEventType::Good) { TextColor = FLinearColor::Green; Prefix = "+ "; }
 		else if (Msg.Type == EStyleEventType::Bad) { TextColor = FLinearColor::Red; Prefix = "- "; }
+		else { TextColor = FLinearColor(0.8f, 0.8f, 0.8f); } // Neutral Grey
 		
 		TextColor.A = Alpha;
 
@@ -160,12 +157,12 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 		
 		// Align Right
 		float XL, YL;
-		Canvas->StrLen(GEngine->GetSmallFont(), FullText, XL, YL); // FIX: Use Canvas directly
-		// Scale 1.2
-		XL *= 1.2f; YL *= 1.2f;
+		Canvas->StrLen(GEngine->GetSmallFont(), FullText, XL, YL);
+		XL *= 1.2f; YL *= 1.2f; // Scale
 
 		DrawText(FullText, TextColor, RightAnchorX - XL, CurrentY - YL, nullptr, 1.2f);
 		
-		CurrentY -= (YL + 5.0f); // Move Up
+		// Move cursor up for next message
+		CurrentY -= (YL + 5.0f); 
 	}
 }

@@ -13,6 +13,7 @@ class USpringArmComponent;
 class APcWeapon;
 class UPcGravityMovementComponent; 
 class UPcFlowMechanicComponent;
+class UPcSkateComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class UCameraShakeBase;
@@ -46,12 +47,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	float GetCurrentSpeed() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Flow")
+	float GetDriftStamina() const { return DriftStamina; }
+
 	// --- COMPONENTS ---
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USpringArmComponent* SpringArmComp;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
+
+	// The Hoverboard (ViewModel)
+	UPROPERTY(VisibleAnywhere, Category = "Components")
+	UPcSkateComponent* SkateComp; 
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcGravityMovementComponent* GravityComp;
@@ -85,6 +93,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float CameraSinkSmoothing = 5.0f; 
 
+	// Camera Banking (Roll)
+	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
+	float CameraTiltAmount = 2.5f; 
+	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
+	float CameraTiltSpeed = 3.0f;
+
 	UPROPERTY(EditAnywhere, Category = "Feedback|Shake")
 	TSubclassOf<UCameraShakeBase> LandingShake;
 	
@@ -107,13 +121,25 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
 	float BrakingDeceleration = 2500.0f; 
 
-	// DRIFT MODE (Blade Physics)
+	// DRIFT MODE
 	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
 	float DriftBodyTurnRate = 140.0f; 
 	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
 	float DriftAcceleration = 2000.0f; 
 	UPROPERTY(EditAnywhere, Category = "Movement|Drift")
 	float DriftLinearDrag = 600.0f; 
+
+	// STAMINA
+	UPROPERTY(EditAnywhere, Category = "Movement|Stamina")
+	float MaxDriftStamina = 100.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement|Stamina")
+	float StaminaDrainRate = 80.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement|Stamina")
+	float StaminaRegenGround = 5.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement|Stamina")
+	float StaminaRegenAir = 15.0f; 
+	UPROPERTY(EditAnywhere, Category = "Movement|Stamina")
+	float StaminaRegenTurnBonus = 30.0f;
 
 	// --- JUMP CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Jump")
@@ -123,13 +149,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Jump")
 	float LandComboWindow = 0.25f; 
 
-	// NEW: Air Drift / Squash Settings
+	// TECH / REWARDS
 	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
-	float SquashedJumpHeight = 100.0f; // Height when drifting in air (The Flatten)
-	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
-	float LandingProbeDist = 20.0f;    // Distance to check for floor
-
-	// NEW: Landing Penalties/Rewards
+	float PerfectLandStaminaBuffer = 0.5f; 
 	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
 	float PerfectLandSpeedBoost = 400.0f;
 	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
@@ -145,31 +167,34 @@ public:
 	bool bIsAirborneDebug = false;
 
 private:
-	// --- INTERNAL STATE ---
 	FVector CurrentInput = FVector::ZeroVector;
 	float CurrentSpeed = 0.0f;
 	float CameraPitch = 0.0f; 
 
-	// Visuals State
+	// Visuals
 	float CurrentFOVMod = 0.0f; 
 	float FOVImpulse = 0.0f;    
 	float CurrentCameraSink = 0.0f; 
+	float CurrentCameraRoll = 0.0f; 
+	float VisualDistToFloor = -1.0f; 
 
-	// Physics State
+	// Physics
 	bool bIsDrifting = false;
-	
+	float DriftStamina = 100.0f; 
+	float InfiniteStaminaTimer = 0.0f; 
+
 	// Jump Logic
 	bool bIsJumping = false;
 	float JumpPhaseTime = 0.0f;
-	float CurrentJumpPeak = 0.0f; // Dynamic target height
+	float CurrentJumpPeak = 0.0f; 
 	
 	bool bWasFalling = false; 
 	float LandWindowTimer = 0.0f;      
 	bool bCanComboLand = false;
 
-	// Input Buffers
-	float InputBufferTimer = 0.0f; // Spacebar buffer
-	float DriftBufferTimer = 0.0f; // Shift buffer (for perfect land)
+	// Buffers
+	float InputBufferTimer = 0.0f; 
+	float DriftBufferTimer = 0.0f; 
 
 	// Internal Functions
 	void UpdateSkaterPhysics(float DeltaTime);
@@ -180,5 +205,5 @@ private:
 	void UpdateVisuals(float DeltaTime); 
 	
 	void PerformJump();
-	void OnLandedHit(); // The Decision Tree
+	void OnLandedHit(); 
 };
