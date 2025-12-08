@@ -30,44 +30,52 @@ void UPcSkateComponent::BeginPlay()
 
 void UPcSkateComponent::UpdateBoardState(float DeltaTime, float CurrentSpeed, FVector VelocityDir, float RawSteerInput, float RawFwdInput, bool bIsDrifting, bool bIsJumping, float DistToFloor, float CameraPitch)
 {
+    // =========================================================================
+    // 0. INPUT SMOOTHING
+    // =========================================================================
+    // Use Air speed if jumping, otherwise Ground speed.
+    // Both should be low (e.g. 3.0) to get that "Water Flow" feel.
+    float TargetInputInterp = bIsJumping ? AirInputInterpSpeed : InputInterpSpeed;
+
+    CurrentSteer = FMath::FInterpTo(CurrentSteer, RawSteerInput, DeltaTime, TargetInputInterp);
+    CurrentFwd   = FMath::FInterpTo(CurrentFwd, RawFwdInput, DeltaTime, TargetInputInterp);
+
     FRotator TargetRot = FRotator::ZeroRotator;
     FVector TargetPos = DefaultViewPosition;
 
     // --- 1. LATERAL SWAY (Position) ---
-    // Drag Logic: Steer Right (D) -> Board lags Left (-Y).
     float IntensityMult = bIsDrifting ? 1.5f : 1.0f;
-    TargetPos.Y = -RawSteerInput * MaxStrafeSway * IntensityMult; 
+    TargetPos.Y = -CurrentSteer * MaxStrafeSway * IntensityMult; 
 
     // --- 2. ROLL (Banking) ---
-    // THE FIX: Removed the "if (RawFwdInput < -0.1f)" check.
-    // Now, Steer Input (A/D) maps directly to Roll, regardless of Forward/Backward movement.
-    // W + A = Bank Left.
-    // S + A = Bank Left.
-    
-    TargetRot.Roll = RawSteerInput * MaxRollLean * IntensityMult;
+    TargetRot.Roll = CurrentSteer * MaxRollLean * IntensityMult;
 
     // --- 3. YAW (Carve) ---
     if (bIsDrifting)
     {
-        TargetRot.Yaw = RawSteerInput * MaxDriftYaw;
+        TargetRot.Yaw = CurrentSteer * MaxDriftYaw;
     }
 
-    // --- 4. PITCH (Acceleration / Jump) ---
-    // W = Nose Down. S = Nose Up.
-    TargetRot.Pitch = -RawFwdInput * MaxPitchLean;
+    // --- 4. PITCH (Throttle) ---
+    // Calculate the Base Pitch from input (W = Down, S = Up)
+    float InputPitch = -CurrentFwd * MaxPitchLean;
 
-    // Braking Override (Extra Nose Up when moving back)
-    if (RawFwdInput < -0.1f)
+    if (RawFwdInput < -0.1f) // Braking override
     {
-        TargetRot.Pitch = MaxPitchBrake; 
+        // Smoothly blend to brake angle using the smoothed input
+        InputPitch = FMath::Abs(CurrentFwd) * MaxPitchBrake; 
     }
 
+    // Apply Pitch based on State
     if (bIsJumping)
     {
-        TargetRot.Pitch = JumpPitchAngle;
+        // AIR LOGIC:
+        // Combine the "Jump Pose" (Nose Up) with your Input.
+        // This allows you to "Dive" (press W) or "Pull Up" (press S) while mid-air.
+        TargetRot.Pitch = JumpPitchAngle + InputPitch;
         TargetPos.Z += JumpLiftHeight;
 
-        // Flare Logic
+        // Flare Logic (Landing Anticipation)
         if (DistToFloor >= 0.0f && DistToFloor < LandingProbeDist)
         {
             float Proximity = 1.0f - (DistToFloor / LandingProbeDist);
@@ -77,12 +85,19 @@ void UPcSkateComponent::UpdateBoardState(float DeltaTime, float CurrentSpeed, FV
             TargetPos.Z -= BraceExtendAmount * FlareAlpha;
         }
     }
+    else
+    {
+        // GROUND LOGIC:
+        TargetRot.Pitch = InputPitch;
+    }
 
     // --- 5. APPLY ---
-    float CurrentSmooth = (bIsJumping) ? 25.0f : VisualInterpSpeed;
-
-    CurrentRotation = FMath::RInterpTo(CurrentRotation, TargetRot, DeltaTime, CurrentSmooth);
-    CurrentLocation = FMath::VInterpTo(CurrentLocation, TargetPos, DeltaTime, CurrentSmooth);
+    // THE FIX: Use VisualInterpSpeed even in air. 
+    // This makes the transition from "Ground" to "Jump Pose" slow and fluid,
+    // instead of snapping instantly.
+    
+    CurrentRotation = FMath::RInterpTo(CurrentRotation, TargetRot, DeltaTime, VisualInterpSpeed);
+    CurrentLocation = FMath::VInterpTo(CurrentLocation, TargetPos, DeltaTime, VisualInterpSpeed);
 
     SetRelativeLocationAndRotation(CurrentLocation, BaseOffset + CurrentRotation);
 }

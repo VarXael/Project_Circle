@@ -49,6 +49,41 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Skate Config|Anim")
 	float MaxPitchLean = 5.0f; 
 	
+	UPROPERTY(EditAnywhere, Category = "Skate Config")
+	float InputInterpSpeed = 3.0f;
+
+	// How fast inputs shift in the air.
+	// Usually slightly higher than ground (e.g. 5.0) to feel like you have "Air Control",
+	// but keep it low (3.0) if you want it to feel exactly like water.
+	UPROPERTY(EditAnywhere, Category = "Skate Config")
+	float AirInputInterpSpeed = 6.0f;
+	
+	// --- DYNAMIC FEEL SETTINGS ---
+
+	// At this speed, the board reaches its maximum responsiveness (Snappiest).
+	UPROPERTY(EditAnywhere, Category = "Skate Config|Feel")
+	float ReferenceMaxSpeed = 1500.0f;
+
+	// --- INPUT SMOOTHING (The "Driver") ---
+    
+	// Smoothing speed when standing still or moving slow (Heavy/Floaty).
+	UPROPERTY(EditAnywhere, Category = "Skate Config|Feel")
+	float InputInterpMin = 2.0f;
+
+	// Smoothing speed when moving at Max Speed (Responsive).
+	UPROPERTY(EditAnywhere, Category = "Skate Config|Feel")
+	float InputInterpMax = 8.0f;
+
+	// --- VISUAL SMOOTHING (The "Board") ---
+
+	// Board lag when slow.
+	UPROPERTY(EditAnywhere, Category = "Skate Config|Feel")
+	float VisualInterpMin = 3.0f;
+
+	// Board lag when fast.
+	UPROPERTY(EditAnywhere, Category = "Skate Config|Feel")
+	float VisualInterpMax = 15.0f;
+	
 	// --- JUMP / LANDING ---
 
 	// Extra pitch up when jumping
@@ -69,7 +104,7 @@ public:
 
 	// How far to push the board down (visually extending legs) before landing
 	UPROPERTY(EditAnywhere, Category = "Skate Config|Land")
-	float BraceExtendAmount = 25.0f; 
+	float BraceExtendAmount = 25.0f;
 
 	// --- API ---
 	// Note: I removed the unused args (CameraPitch) based on your cpp, 
@@ -77,6 +112,9 @@ public:
 	void UpdateBoardState(float DeltaTime, float CurrentSpeed, FVector VelocityDir, float RawSteerInput, float RawFwdInput, bool bIsDrifting, bool bIsJumping, float DistToFloor, float CameraPitch);
 
 private:
+	// Internal state for input smoothing
+	float CurrentSteer = 0.0f;
+	float CurrentFwd = 0.0f;
 	FRotator CurrentRotation = FRotator::ZeroRotator;
 	FVector CurrentLocation = FVector::ZeroVector;
 };
