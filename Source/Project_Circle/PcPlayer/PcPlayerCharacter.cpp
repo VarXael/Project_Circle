@@ -315,53 +315,6 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 	// UPDATE BOARD
 	if (SkateComp && CameraComp && GravityComp)
 	{
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
 		// 1. Get Velocity Direction safely
 		FVector VelocityDir = GravityComp->GetCurrentVelocity().GetSafeNormal();
 		if (VelocityDir.IsZero()) VelocityDir = GetActorForwardVector();
@@ -385,7 +338,7 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 
 void APcPlayerCharacter::UpdateVisuals(float DeltaTime)
 {
-	float TargetRestingFOV = BaseFOV + (FlowComp->CurrentTier * FOVPerTier);
+	float TargetRestingFOV = BaseFOV; //+ (FlowComp->CurrentTier * FOVPerTier);
 	CurrentFOVMod = FMath::FInterpTo(CurrentFOVMod, TargetRestingFOV - BaseFOV, DeltaTime, 2.0f);
 	FOVImpulse = FMath::FInterpTo(FOVImpulse, 0.0f, DeltaTime, 5.0f);
 

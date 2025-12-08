@@ -82,7 +82,7 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
 	float FOVPerTier = 10.0f; 
 	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
-	float BoostFOVImpulse = 10.0f; 
+	float BoostFOVImpulse = 5.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float LandingSinkAmount = 60.0f; 
