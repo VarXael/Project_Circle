@@ -19,7 +19,7 @@ APcWeapon::APcWeapon()
 	
 	MuzzleLocation = CreateDefaultSubobject<USceneComponent>(TEXT("Muzzle"));
 	MuzzleLocation->SetupAttachment(WeaponMesh);
-	MuzzleLocation->SetRelativeLocation(FVector(60.0f, 0.0f, 10.0f)); 
+	MuzzleLocation->SetRelativeLocation(MuzzleOffset); 
 }
 
 void APcWeapon::BeginPlay()
@@ -34,7 +34,7 @@ void APcWeapon::AttachToPlayer(APcPlayerCharacter* TargetPlayer)
 	if (OwningPlayer && OwningPlayer->CameraComp)
 	{
 		this->AttachToComponent(OwningPlayer->CameraComp, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-		SetActorRelativeLocation(FVector(40.0f, 20.0f, -20.0f)); 
+		SetActorRelativeLocation(WeaponOffset);
 		SetActorRelativeRotation(FRotator(0, 0, 0));
 	}
 }

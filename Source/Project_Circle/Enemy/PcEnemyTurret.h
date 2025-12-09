@@ -1,3 +1,6 @@
+// ==========================================
+// FILE: PcEnemyTurret.h
+// ==========================================
 #pragma once
 
 #include "CoreMinimal.h"
@@ -5,7 +8,6 @@
 #include "PcEnemyTurret.generated.h"
 
 class APcProjectile;
-// KEY CHANGE: We use the new Movement Component
 class UPcGravityMovementComponent; 
 
 UCLASS()
@@ -28,7 +30,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USceneComponent* MuzzleLoc;
 
-	/** The Universal Movement Motor */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcGravityMovementComponent* GravityComp;
 
@@ -41,20 +42,13 @@ public:
 
 	// --- AI SETTINGS ---
 	UPROPERTY(EditAnywhere, Category = "AI")
-	float MovementSpeed = 400.0f;
+	float StopDistance = 800.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "AI")
-	float StopDistance = 800.0f; // Stop moving if close to player
+	float TurretRotationSpeed = 5.0f;
 
-	// Add this temporary function
-	// UFUNCTION(BlueprintCallable, Category = "Debug")
-	// void DebugLaunch();
-	
 private:
-	FTimerHandle TimerHandle_Shoot;
 	
-	UFUNCTION(BlueprintCallable, Category = "Combat")
+	UFUNCTION(BlueprintCallable)
 	void Shoot();
-	
-	
 };

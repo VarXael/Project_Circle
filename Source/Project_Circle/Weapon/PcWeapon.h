@@ -35,7 +35,13 @@ protected:
 
 	UPROPERTY(VisibleAnywhere)
 	USceneComponent* MuzzleLocation;
-
+	
+	UPROPERTY(EditAnywhere,BlueprintReadWrite)
+	FVector WeaponOffset = FVector(40.0f, 20.0f, -20.0f);
+	
+	UPROPERTY(EditAnywhere,BlueprintReadWrite)
+	FVector MuzzleOffset = FVector(60.0f, 0.0f, 10.0f);
+	
 	// --- CONFIG PROJECTILE ---
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
