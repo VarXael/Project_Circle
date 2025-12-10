@@ -1,6 +1,6 @@
 ﻿// ==========================================
 // FILE: PcPlayerCharacter.h
-// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcPlayerCharacter.h
+// PATH: Source/Project_Circle/PcPlayer/PcPlayerCharacter.h
 // ==========================================
 #pragma once
 
@@ -8,9 +8,10 @@
 #include "GameFramework/Character.h"
 #include "PcPlayerCharacter.generated.h"
 
+// Forward Declarations
 class UCameraComponent;
 class USpringArmComponent;
-class APcWeapon;
+class APcWeapon; 
 class UPcGravityMovementComponent; 
 class UPcFlowMechanicComponent;
 class UPcSkateComponent;
@@ -45,7 +46,7 @@ public:
 	UFUNCTION(BlueprintCallable) void TakeHit();
 
 	UFUNCTION(BlueprintCallable, Category = "Flow")
-	float GetCurrentSpeed() const;
+	float GetCurrentSpeed() const { return CurrentSpeed; }
 
 	UFUNCTION(BlueprintCallable, Category = "Flow")
 	float GetDriftStamina() const { return DriftStamina; }
@@ -57,7 +58,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UCameraComponent* CameraComp;
 
-	// The Hoverboard (ViewModel)
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UPcSkateComponent* SkateComp; 
 
@@ -70,19 +70,45 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	UNiagaraComponent* DriftSparksComp;
 
+	// --- WEAPON (ACTOR BASED) ---
 	UPROPERTY(EditAnywhere, Category = "Components")
 	TSubclassOf<APcWeapon> StartingWeaponClass;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Components")
 	APcWeapon* CurrentWeapon;
 
+	// --- LANDING LOGIC CONFIG ---
+	UPROPERTY(EditAnywhere, Category = "Landing Logic")
+	float PreLandBufferTime = 0.2f; // How long before landing a click counts as Perfect
+
+	UPROPERTY(EditAnywhere, Category = "Landing Logic")
+	float PostLandPerfectWindow = 0.2f; // Coyote time AFTER landing for Perfect
+
+	UPROPERTY(EditAnywhere, Category = "Landing Logic")
+	float BunnyHopWindow = 0.3f;    
+
+	UPROPERTY(EditAnywhere, Category = "Landing Logic")
+	float SafeSlideWindow = 0.4f; // Time before window closes completely
+
+	// --- DAMAGE & PUNISHMENT CONFIG ---
+	UPROPERTY(EditAnywhere, Category = "Damage Logic")
+	float WobbleDuration = 1.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Damage Logic")
+	float WipeoutSpinDuration = 1.0f; // Time to do full 360 spin
+
+	UPROPERTY(EditAnywhere, Category = "Damage Logic")
+	float WipeoutPushSpeed = 800.0f; // Force applied during wipeout
+
+	// NEW: How long (seconds) you are safe after getting hit
+	UPROPERTY(EditAnywhere, Category = "Damage Logic")
+	float InvulnerabilityDuration = 1.5f;
+
 	// --- VISUAL FEEDBACK CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
 	float BaseFOV = 90.0f;
 	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
-	float FOVPerTier = 10.0f; 
-	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
-	float BoostFOVImpulse = 5.0f; 
+	float BoostFOVImpulse = 10.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float LandingSinkAmount = 60.0f; 
@@ -90,17 +116,11 @@ public:
 	float LandingSinkSpeed = 5.0f; 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float DriftCameraSinkAmount = 30.0f; 
-	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
-	float CameraSinkSmoothing = 5.0f; 
 
-	// Camera Banking (Roll)
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float CameraTiltAmount = 2.5f; 
 	UPROPERTY(EditAnywhere, Category = "Feedback|Camera")
 	float CameraTiltSpeed = 3.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Feedback|Shake")
-	TSubclassOf<UCameraShakeBase> LandingShake;
 	
 	UPROPERTY(EditAnywhere, Category = "Feedback|VFX")
 	UNiagaraSystem* JumpLaunchFX; 
@@ -156,8 +176,6 @@ public:
 	float PerfectLandSpeedBoost = 400.0f;
 	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
 	float SoftLandPenalty = 150.0f;
-	UPROPERTY(EditAnywhere, Category = "Jump|Tech")
-	float HeavyLandPenalty = 600.0f; 
 
 	// --- DEBUG ---
 	FVector DebugLastVelocityDir;
@@ -178,7 +196,7 @@ private:
 	float CurrentCameraRoll = 0.0f; 
 	float VisualDistToFloor = -1.0f; 
 
-	// Physics
+	// Physics State
 	bool bIsDrifting = false;
 	float DriftStamina = 100.0f; 
 	float InfiniteStaminaTimer = 0.0f; 
@@ -187,14 +205,33 @@ private:
 	bool bIsJumping = false;
 	float JumpPhaseTime = 0.0f;
 	float CurrentJumpPeak = 0.0f; 
-	
 	bool bWasFalling = false; 
-	float LandWindowTimer = 0.0f;      
-	bool bCanComboLand = false;
-
+	
 	// Buffers
-	float InputBufferTimer = 0.0f; 
-	float DriftBufferTimer = 0.0f; 
+	float InputBufferTimer = 0.0f;      // Jump Queue
+	float DriftBufferTimer = 0.0f;      // (Legacy drift cooldown, kept for safety)
+	float DriftInputBufferTimer = 0.0f; // Pre-Land Perfect Input
+
+	// LANDING & DAMAGE STATE
+	bool bPendingLandingResolution = false;
+	float TimeSinceLanded = 0.0f;
+	
+	bool bIsWobbling = false;
+	float WobbleTimer = 0.0f;
+
+	bool bIsWipeout = false;
+	float WipeoutTimer = 0.0f;
+	float WipeoutMaxDuration = 0.0f;
+	
+	bool bIsInvulnerable = false;
+	float InvulnerabilityTimer = 0.0f;
+
+	// Helpers
+	void ResolvePerfectLand();
+	void ResolveBunnyHop();
+	void ResolveSoftLand(); // Changed from SafeSlide to SoftLand
+	void TriggerWobble();
+	void TriggerWipeout();
 
 	// Internal Functions
 	void UpdateSkaterPhysics(float DeltaTime);
