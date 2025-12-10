@@ -260,7 +260,7 @@ void APcPlayerCharacter::ResolvePerfectLand()
 	
 	DriftStamina = MaxDriftStamina;
 	InfiniteStaminaTimer = PerfectLandStaminaBuffer;
-d
+
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
 			HUD->AddStyleMessage("PERFECT LAND!", EStyleEventType::Good);
