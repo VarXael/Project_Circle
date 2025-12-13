@@ -37,6 +37,7 @@ public:
 	UFUNCTION(BlueprintCallable) void Input_Look(FVector2D Value);
 	UFUNCTION(BlueprintCallable) void Input_JumpTrigger();
 	
+	// Replaces Drift Toggle -> Now triggers Dash + Drift Chain
 	UFUNCTION(BlueprintCallable) void Input_StartDrift();
 	UFUNCTION(BlueprintCallable) void Input_StopDrift();
 	
@@ -79,30 +80,36 @@ public:
 
 	// --- LANDING LOGIC CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Landing Logic")
-	float PreLandBufferTime = 0.2f; // How long before landing a click counts as Perfect
+	float PreLandBufferTime = 0.2f; 
 
 	UPROPERTY(EditAnywhere, Category = "Landing Logic")
-	float PostLandPerfectWindow = 0.2f; // Coyote time AFTER landing for Perfect
+	float PostLandPerfectWindow = 0.2f; 
 
 	UPROPERTY(EditAnywhere, Category = "Landing Logic")
 	float BunnyHopWindow = 0.3f;    
 
 	UPROPERTY(EditAnywhere, Category = "Landing Logic")
-	float SafeSlideWindow = 0.4f; // Time before window closes completely
+	float SafeSlideWindow = 0.4f; 
 
 	// --- DAMAGE & PUNISHMENT CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Damage Logic")
 	float WobbleDuration = 1.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Damage Logic")
-	float WipeoutSpinDuration = 1.0f; // Time to do full 360 spin
+	float WipeoutSpinDuration = 1.0f; 
 
 	UPROPERTY(EditAnywhere, Category = "Damage Logic")
-	float WipeoutPushSpeed = 800.0f; // Force applied during wipeout
+	float WipeoutPushSpeed = 800.0f; 
 
-	// NEW: How long (seconds) you are safe after getting hit
 	UPROPERTY(EditAnywhere, Category = "Damage Logic")
 	float InvulnerabilityDuration = 1.5f;
+
+	// --- MOVEMENT: DASH CONFIG (NEW) ---
+	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
+	float DashImpulseStrength = 2000.0f; 
+
+	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
+	float DashCooldown = 1.0f;
 
 	// --- VISUAL FEEDBACK CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Feedback|FOV")
@@ -128,8 +135,7 @@ public:
 	// --- PHYSICS CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Movement|Base")
 	float BaseMoveSpeed = 800.0f;
-	UPROPERTY(EditAnywhere, Category = "Movement|Base")
-	float SpeedPerTier = 600.0f; 
+	// Removed SpeedPerTier (Deprecated)
 
 	// GRIP MODE
 	UPROPERTY(EditAnywhere, Category = "Movement|Grip")
@@ -181,30 +187,14 @@ public:
 	FVector DebugLastVelocityDir;
 	FVector DebugLastInputDir;
 	float DebugSlipAngle; 
-	float DriftScoreAccumulator = 0.0f;
 	bool bIsAirborneDebug = false;
-	
-	// --- DASH CONFIG (New) ---
-	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
-	float DashImpulseStrength = 2000.0f; // Speed added instantly
-
-	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
-	float DashCooldown = 1.0f;
-
 
 private:
 	FVector CurrentInput = FVector::ZeroVector;
+	FVector2D LastValidInput = FVector2D::ZeroVector; // New: Cache for Dash direction
 	float CurrentSpeed = 0.0f;
 	float CameraPitch = 0.0f; 
 
-private:
-	// --- DASH STATE ---
-	bool bCanDash = true;
-	FTimerHandle TimerHandle_DashCooldown;
-	FVector2D LastValidInput = FVector2D::ZeroVector; // Cache for Dash direction
-	void PerformDash();
-	void ResetDashCooldown();
-	
 	// Visuals
 	float CurrentFOVMod = 0.0f; 
 	float FOVImpulse = 0.0f;    
@@ -213,9 +203,13 @@ private:
 	float VisualDistToFloor = -1.0f; 
 
 	// Physics State
-	bool bIsDrifting = false;
+	bool bIsDrifting = false; // Logic handled by Fuse now, but maintained for State
 	float DriftStamina = 100.0f; 
 	float InfiniteStaminaTimer = 0.0f; 
+
+	// Dash State
+	bool bCanDash = true;
+	FTimerHandle TimerHandle_DashCooldown;
 
 	// Jump Logic
 	bool bIsJumping = false;
@@ -224,9 +218,9 @@ private:
 	bool bWasFalling = false; 
 	
 	// Buffers
-	float InputBufferTimer = 0.0f;      // Jump Queue
-	float DriftBufferTimer = 0.0f;      // (Legacy drift cooldown, kept for safety)
-	float DriftInputBufferTimer = 0.0f; // Pre-Land Perfect Input
+	float InputBufferTimer = 0.0f;      
+	float DriftBufferTimer = 0.0f;      
+	float DriftInputBufferTimer = 0.0f; 
 
 	// LANDING & DAMAGE STATE
 	bool bPendingLandingResolution = false;
@@ -245,14 +239,18 @@ private:
 	// Helpers
 	void ResolvePerfectLand();
 	void ResolveBunnyHop();
-	void ResolveSoftLand(); // Changed from SafeSlide to SoftLand
+	void ResolveSoftLand();
 	void TriggerWobble();
 	void TriggerWipeout();
+
+	// Dash Logic
+	void PerformDash();
+	void ResetDashCooldown();
 
 	// Internal Functions
 	void UpdateSkaterPhysics(float DeltaTime);
 	void ApplyGripPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne);
-	bool ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne, float MaxSpeedForTier);
+	bool ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne);
 
 	void UpdateJumpLogic(float DeltaTime);
 	void UpdateVisuals(float DeltaTime); 

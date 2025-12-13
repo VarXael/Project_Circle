@@ -1,3 +1,7 @@
+// ==========================================
+// FILE: PcDebugHUD.h
+// PATH: Source/Project_Circle/PcPlayer/PcDebugHUD.h
+// ==========================================
 #pragma once
 
 #include "CoreMinimal.h"
@@ -44,6 +48,4 @@ private:
 
 	// Settings
 	const float MessageLifetime = 3.0f; 
-	const float BarWidth = 300.0f;
-	const float BarHeight = 25.0f;
 };

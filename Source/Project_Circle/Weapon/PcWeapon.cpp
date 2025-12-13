@@ -5,8 +5,8 @@
 #include "Camera/CameraComponent.h"
 #include "Project_Circle/PcPlayer/PcPlayerCharacter.h"
 #include "Project_Circle/PcPlayer/PcProjectile.h"
-// Include the component header to access GetSurfaceNormal
 #include "Project_Circle/GravitySystem/PcGravityMovementComponent.h"
+#include "Project_Circle/PcPlayer/FlowSystem/PcFlowMechanicComponent.h"
 
 APcWeapon::APcWeapon()
 {
@@ -60,28 +60,35 @@ void APcWeapon::PerformStandardShot()
 {
 	CurrentRecoilLoc += FVector(-5.0f, 0, 0); 
 	
+	// --- GENERATE CHARGE ---
+	// "Trickle Regen": +0.05 Charge per shot
+	if (OwningPlayer && OwningPlayer->FlowComp)
+	{
+		OwningPlayer->FlowComp->AddCharge(0.05f);
+	}
+
+	// --- SPAWN PROJECTILE ---
 	if (ProjectileClass && OwningPlayer)
 	{
 		FVector SpawnLoc = MuzzleLocation->GetComponentLocation();
 		
-		// ERROR FIX: Use the Player's Component to find Up, not a raw variable.
 		FVector SurfaceNormal = FVector::UpVector;
 		if (OwningPlayer->GravityComp)
 		{
 			SurfaceNormal = OwningPlayer->GravityComp->GetSurfaceNormal();
 		}
 
-		// Flatten the shot parallel to the ground (Standard FPS logic)
+		// Flatten the shot parallel to the ground
 		FVector CamFwd = OwningPlayer->CameraComp->GetForwardVector();
 		FVector ShootDir = FVector::VectorPlaneProject(CamFwd, SurfaceNormal).GetSafeNormal();
 
-		FActorSpawnParameters P; P.Owner = OwningPlayer; P.Instigator = OwningPlayer;
+		FActorSpawnParameters P; 
+		P.Owner = OwningPlayer; 
+		P.Instigator = OwningPlayer;
 		
 		auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, ShootDir.Rotation(), P);
 		if (Proj) 
 		{
-			// We pass nullptr for Planet because the Projectile's own GravityComponent 
-			// will find the planet automatically in its BeginPlay.
 			Proj->InitializeProjectile(ShootDir, nullptr, true);
 		}
 	}

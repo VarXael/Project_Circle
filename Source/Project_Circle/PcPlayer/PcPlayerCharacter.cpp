@@ -124,7 +124,7 @@ void APcPlayerCharacter::Input_StartDrift()
 { 
 	if (bIsWipeout) return;
 
-	// --- 1. LANDING/BUFFER LOGIC (Keep this, it's good game feel) ---
+	// --- 1. LANDING/BUFFER LOGIC ---
 	if (bIsJumping || (GravityComp && GravityComp->IsFalling()))
 	{
 		DriftInputBufferTimer = PreLandBufferTime; 
@@ -139,30 +139,28 @@ void APcPlayerCharacter::Input_StartDrift()
 
 	if (bIsWobbling) return;
 
-	// --- 2. DRIFT LOGIC (DISABLED) ---
-	/* 
-	bIsDrifting = true; 
-	DriftScoreAccumulator = 0.0f;
-	DriftBufferTimer = 0.2f; 
-	*/
-
-	// --- 3. NEW DASH LOGIC ---
+	// --- 2. NEW DASH LOGIC (Consumes Charge) ---
 	PerformDash();
 }
 
 void APcPlayerCharacter::Input_StopDrift() 
 { 
-	// bIsDrifting = false; 
-	// if (DriftScoreAccumulator > 10.0f)
-	// {
-	// 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	// 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-	// 			HUD->AddStyleMessage(FString::Printf(TEXT("+ Drift %.0f"), DriftScoreAccumulator), EStyleEventType::Neutral);
-	// }
-	// DriftScoreAccumulator = 0.0f;
+	// FIX: Allow player to exit the drift state by releasing the button
+	bIsDrifting = false;
 }
 
-void APcPlayerCharacter::Input_StartAttack() { if (CurrentWeapon) CurrentWeapon->StartPrimaryFire(); }
+void APcPlayerCharacter::Input_StartAttack() 
+{ 
+	// FIX: Check both Physics Falling AND Logic Jumping
+	bool bIsAirborne = bIsJumping || (GravityComp && GravityComp->IsFalling());
+	
+	if (bIsAirborne)
+	{
+		return;
+	}
+
+	if (CurrentWeapon) CurrentWeapon->StartPrimaryFire(); 
+}
 void APcPlayerCharacter::Input_StopAttack() { if (CurrentWeapon) CurrentWeapon->StopPrimaryFire(); }
 void APcPlayerCharacter::Input_FireLaser() { if (CurrentWeapon) CurrentWeapon->FireLaserAttack(); }
 
@@ -192,16 +190,21 @@ void APcPlayerCharacter::TakeHit()
 
 	if (FlowComp) 
 	{ 
-		// ApplyDamage returns true if Tier drops to 0 (Fatal)
-		bool bIsFatal = FlowComp->ApplyDamage(); 
+		// NEW DAMAGE LOGIC: Lose Charge
+		float ChargePenalty = 1.0f;
 		
-		if (bIsFatal)
+		// If we are at 0 charge, a hit is fatal (Wipeout)
+		// Or if the penalty drops us below 0
+		if (FlowComp->CurrentCharge <= 0.01f)
 		{
 			TriggerWipeout();
 		}
 		else
 		{
-			// Tier Drop -> Trigger Instability
+			// Subtract charge (Add negative)
+			FlowComp->AddCharge(-ChargePenalty);
+
+			// Trigger Instability
 			TriggerWobble();
 			
 			// START COOLDOWN
@@ -210,7 +213,7 @@ void APcPlayerCharacter::TakeHit()
 
 			if (APlayerController* PC = Cast<APlayerController>(GetController()))
 				if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-					HUD->AddStyleMessage("HIT! (Invulnerable)", EStyleEventType::Bad);
+					HUD->AddStyleMessage("HIT! (-1 Charge)", EStyleEventType::Bad);
 		}
 	}
 }
@@ -223,7 +226,6 @@ void APcPlayerCharacter::TriggerWipeout()
 	bIsDrifting = false;
 	
 	// FORCE PUSH
-	// If moving, keep sliding. If stopped, push forward.
 	FVector PushDir = GravityComp->GetCurrentVelocity().GetSafeNormal();
 	if (PushDir.IsZero()) PushDir = GetActorForwardVector();
 	
@@ -239,32 +241,29 @@ void APcPlayerCharacter::TriggerWobble()
 {
 	bIsWobbling = true;
 	WobbleTimer = WobbleDuration;
-    
-	// PLAY CAMERA SHAKE
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		// You can use a default shake class or make a BP_Shake
-		//PC->ClientStartCameraShake(UCameraShakeBase::StaticClass(), 1.0f);
-	}
 }
 
 void APcPlayerCharacter::ResolvePerfectLand()
 {
 	bPendingLandingResolution = false;
+	
 	if (FlowComp) 
 	{
-		FlowComp->ForceTierUp();
+		// THE JACKPOT: +2.0 Charge
+		FlowComp->AddCharge(2.0f);
 		FlowComp->TriggerHitStop(GetWorld());
 	}
+
 	CurrentSpeed += PerfectLandSpeedBoost;
 	FOVImpulse = BoostFOVImpulse;
 	
+	// Reset Drift Stamina buffer for comboing
 	DriftStamina = MaxDriftStamina;
 	InfiniteStaminaTimer = PerfectLandStaminaBuffer;
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-			HUD->AddStyleMessage("PERFECT LAND!", EStyleEventType::Good);
+			HUD->AddStyleMessage("PERFECT LAND (+2.0)", EStyleEventType::Good);
 }
 
 void APcPlayerCharacter::ResolveBunnyHop()
@@ -302,9 +301,8 @@ void APcPlayerCharacter::ResolveBunnyHop()
 void APcPlayerCharacter::ResolveSoftLand()
 {
 	bPendingLandingResolution = false;
-	if (FlowComp) FlowComp->SetFrozen(false);
+	// if (FlowComp) FlowComp->SetFrozen(false); // No longer needed
 	
-	// Just a visual note, no mechanic change
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
 			HUD->AddStyleMessage("Soft Land", EStyleEventType::Neutral);
@@ -321,7 +319,6 @@ void APcPlayerCharacter::PerformJump()
 	GravityComp->bSnapToHoverHeight = true; 
 	GravityComp->VerticalSmoothing = 0.0f; 
 
-	if (FlowComp) FlowComp->SetFrozen(true);
 	if (JumpLaunchFX) UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), JumpLaunchFX, GetActorLocation());
 }
 
@@ -365,9 +362,7 @@ void APcPlayerCharacter::UpdateJumpLogic(float DeltaTime)
 
 void APcPlayerCharacter::OnLandedHit()
 {
-	// 1. BUFFERS (Intent BEFORE landing)
-	
-	// Buffered Drift? -> Perfect
+	// 1. BUFFERS
 	if (DriftInputBufferTimer > 0.0f)
 	{
 		ResolvePerfectLand();
@@ -376,7 +371,6 @@ void APcPlayerCharacter::OnLandedHit()
 		return;
 	}
 
-	// Buffered Jump? -> Bhop
 	if (InputBufferTimer > 0.0f)
 	{
 		ResolveBunnyHop();
@@ -384,18 +378,9 @@ void APcPlayerCharacter::OnLandedHit()
 		return;
 	}
 
-	// Holding Drift? -> Soft Land
-	if (bIsDrifting)
-	{
-		ResolveSoftLand();
-		return;
-	}
-
-	// 2. OPEN WINDOW (For intent AFTER landing)
+	// 2. OPEN WINDOW
 	bPendingLandingResolution = true;
 	TimeSinceLanded = 0.0f;
-	
-	if (FlowComp) FlowComp->SetFrozen(false);
 }
 
 // ==========================================
@@ -422,7 +407,6 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 	{
 		WipeoutTimer -= DeltaTime;
 		
-		// SPIN ANIMATION
 		float Alpha = 1.0f - (WipeoutTimer / WipeoutMaxDuration);
 		Alpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
 		float SpinAngle = FMath::InterpEaseOut(0.0f, 360.0f, Alpha, 2.0f);
@@ -432,7 +416,6 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 			SkateComp->SetRelativeRotation(FRotator(0, SpinAngle, 0));
 		}
 
-		// Apply Drag
 		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, 0.0f, DeltaTime, 1.0f);
 		GravityComp->SetVelocity(GravityComp->GetCurrentVelocity().GetSafeNormal() * CurrentSpeed);
 
@@ -443,7 +426,7 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 			if (SkateComp) SkateComp->SetRelativeRotation(FRotator::ZeroRotator);
 		}
 		CurrentInput = FVector::ZeroVector; 
-		return; // STOP HERE during wipeout
+		return;
 	}
 
 	// --- 2. LANDING WINDOW ---
@@ -452,7 +435,6 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 		TimeSinceLanded += DeltaTime;
 		if (TimeSinceLanded > SafeSlideWindow)
 		{
-			// Window expired -> Safe Land (No penalty)
 			bPendingLandingResolution = false;
 		}
 	}
@@ -468,24 +450,22 @@ void APcPlayerCharacter::Tick(float DeltaTime)
 		if (WobbleTimer <= 0.0f) bIsWobbling = false;
 	}
 
-	// --- 5. STANDARD UPDATES ---
+	// --- 5. STAMINA / DRIFT LOGIC (The Fuse) ---
 	if (DriftBufferTimer > 0.0f) DriftBufferTimer -= DeltaTime;
 	if (InfiniteStaminaTimer > 0.0f) InfiniteStaminaTimer -= DeltaTime;
 
-	float Regen = bIsJumping ? StaminaRegenAir : StaminaRegenGround;
-	if (!bIsDrifting && InfiniteStaminaTimer <= 0.0f)
+	// Note: Regen Logic is in ApplyGripPhysics & ApplyDriftPhysics.
+	// Here we handle the instant fuse reset when NOT drifting.
+	if (!bIsDrifting)
 	{
-		if (bIsJumping || GravityComp->IsFalling())
-		{
-			DriftStamina = FMath::Clamp(DriftStamina + (Regen * DeltaTime), 0.0f, MaxDriftStamina);
-		}
+		DriftStamina = MaxDriftStamina;
 	}
 
+	// --- 6. STANDARD UPDATES ---
 	UpdateJumpLogic(DeltaTime);
 	UpdateSkaterPhysics(DeltaTime);
 	UpdateVisuals(DeltaTime);
 
-	// UPDATE BOARD VISUALS
 	if (SkateComp && CameraComp && GravityComp)
 	{
 		FVector VelocityDir = GravityComp->GetCurrentVelocity().GetSafeNormal();
@@ -549,8 +529,6 @@ void APcPlayerCharacter::UpdateVisuals(float DeltaTime)
 
 void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 {
-	float MaxSpeedForTier = BaseMoveSpeed + (FlowComp->CurrentTier * SpeedPerTier);
-	
 	FVector CurrentVel = GravityComp->GetCurrentVelocity();
 	FVector SurfaceNormal = GravityComp->GetSurfaceNormal();
 	FVector CurrentVelDir = CurrentVel.GetSafeNormal();
@@ -566,7 +544,6 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	DebugLastVelocityDir = CurrentVelDir;
 	DebugLastInputDir = InputDir;
 
-	bool bEffectiveDrift = false;
 	bool bIsPhysicallyFalling = GravityComp->IsFalling();
 	bool bIsAirborne = bIsJumping || bIsPhysicallyFalling;
 	bIsAirborneDebug = bIsAirborne;
@@ -579,17 +556,16 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 		CurrentSpeed = FMath::Max(0.0f, CurrentSpeed);
 		
 		if (DriftSparksComp->IsActive()) DriftSparksComp->Deactivate();
-		FlowComp->UpdateFlowLogic(DeltaTime, false);
 	}
 	else if (bIsDrifting)
 	{
-		bEffectiveDrift = ApplyDriftPhysics(DeltaTime, InputDir, CurrentVelDir, bIsAirborne, MaxSpeedForTier);
+		// Updated call
+		ApplyDriftPhysics(DeltaTime, InputDir, CurrentVelDir, bIsAirborne);
 	}
 	else
 	{
 		ApplyGripPhysics(DeltaTime, InputDir, CurrentVelDir, bIsAirborne);
 		if (DriftSparksComp->IsActive()) DriftSparksComp->Deactivate();
-		FlowComp->UpdateFlowLogic(DeltaTime, false);
 	}
 
 	// APPLY
@@ -608,13 +584,13 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 	{
 		GravityComp->SetVelocity(CurrentVelDir * CurrentSpeed);
 	}
-
-	FlowComp->UpdateFlowLogic(DeltaTime, bEffectiveDrift);
+	
+	// FIX: Removed call to FlowComp->UpdateFlowLogic(...) as it no longer exists.
 }
 
 void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne)
 {
-	// --- STAMINA REGEN (Unchanged) ---
+	// --- STAMINA REGEN ---
 	if (!bIsAirborne && InfiniteStaminaTimer <= 0.0f)
 	{
 		float RegenRate = StaminaRegenGround;
@@ -626,12 +602,20 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 		DriftStamina = FMath::Clamp(DriftStamina + (RegenRate * DeltaTime), 0.0f, MaxDriftStamina);
 	}
 
+	// --- DETERMINE ACTIVE BASE SPEED ---
+	// If Overdrive -> 1200. If Normal -> 800.
+	float ActiveBaseSpeed = 800.0f;
+	if (FlowComp && FlowComp->IsOverdrive())
+	{
+		ActiveBaseSpeed = 1200.0f;
+	}
+
 	// =========================================================================
 	// STATE MACHINE: MOMENTUM vs CONTROL
 	// =========================================================================
 
-	// Are we moving faster than the engine allows by default? (e.g. Dashing, Ramps)
-	bool bIsOverspeed = CurrentSpeed > (BaseMoveSpeed + 10.0f); // Small epsilon
+	// Are we moving faster than the active base speed?
+	bool bIsOverspeed = CurrentSpeed > (ActiveBaseSpeed + 10.0f);
 
 	if (bIsOverspeed)
 	{
@@ -642,18 +626,16 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 		float DragFactor = 0.0f;
 		if (bIsAirborne)
 		{
-			// AIR: Low drag. Preserve the dash speed for a long time.
-			// 0.5f means it takes seconds to drop from 2500 to 800.
+			// AIR: Low drag. Preserve speed.
 			DragFactor = 0.5f; 
 		}
 		else
 		{
-			// GROUND: High drag. Slide to normal speed quickly.
-			// 5.0f means you slide for ~0.5 seconds.
+			// GROUND: High drag. Slide to normal speed.
 			DragFactor = 5.0f; 
 		}
 		
-		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, DragFactor);
+		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, ActiveBaseSpeed, DeltaTime, DragFactor);
 
 		// 2. STEERING (Redirect Momentum)
 		if (!InputDir.IsZero())
@@ -675,16 +657,13 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 	else
 	{
 		// === CONTROL MODE ===
-		// Standard movement. We are below or at 800.
-		// Logic: If input, be at 800. If no input, be at 0.
+		// Standard movement. We are below or at Base Speed.
 		
 		if (InputDir.IsZero())
 		{
 			// INSTANT STOP (Friction)
-			// On ground: Snap to 0. In Air: Drag to 0 slower? 
-			// You requested "Snappy" on ground, keep "Skater" air.
-			
-			float StopSpeed = bIsAirborne ? 1.0f : 15.0f; // Air drift vs Ground snap
+			// Air drifting vs Ground snap
+			float StopSpeed = bIsAirborne ? 1.0f : 15.0f; 
 			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, 0.0f, DeltaTime, StopSpeed);
 		}
 		else
@@ -694,7 +673,7 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 			// 1. Set Direction
 			if (bIsAirborne)
 			{
-				// Air turn (Smoother than ground)
+				// Air turn (Smoother)
 				float AirTurn = GripSteeringRate * 3.0f;
 				CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, AirTurn);
 			}
@@ -704,9 +683,9 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 				CurrentVelDir = InputDir;
 			}
 
-			// 2. Set Speed (Snap to 800)
-			float AccelSpeed = bIsAirborne ? 2.0f : 15.0f; // Ground is instant, Air is building up
-			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, AccelSpeed);
+			// 2. Set Speed (Snap to ActiveBaseSpeed)
+			float AccelSpeed = bIsAirborne ? 2.0f : 15.0f;
+			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, ActiveBaseSpeed, DeltaTime, AccelSpeed);
 		}
 	}
 
@@ -714,65 +693,82 @@ void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVe
 	DebugSlipAngle = 0.0f;
 }
 
-bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne, float MaxSpeedForTier)
+// FIX: Signature updated to match Header (4 arguments). Removed MaxSpeedForTier.
+bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne)
 {
-	// WOBBLE DAMPENING: Sluggish turn rate
-	float CurrentTurnRate = bIsWobbling ? DriftBodyTurnRate * 0.2f : DriftBodyTurnRate;
+	// --- 1. CONSTANT DRAIN (Requirement: Drain while holding button) ---
+	// We drain immediately, regardless of angle.
+	float Drain = StaminaDrainRate * DeltaTime;
+	DriftStamina = FMath::Clamp(DriftStamina - Drain, 0.0f, MaxDriftStamina);
 
-	bool bInPocket = false;
+	// --- 2. CALCULATE FADE (Requirement: Interpolate back to ground mode) ---
+	// Alpha 1.0 = Full Stamina (Slide)
+	// Alpha 0.0 = Empty Stamina (Grip)
+	float BlendAlpha = 0.0f;
+	if (MaxDriftStamina > 0.0f) BlendAlpha = DriftStamina / MaxDriftStamina;
 
-	if (DriftStamina <= 0.0f)
+	// If empty, force exit to Grip immediately
+	if (DriftStamina <= 0.001f)
 	{
 		CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, GripSteeringRate); 
-		CurrentSpeed -= DriftLinearDrag * 2.0f * DeltaTime; 
+		if (!bIsAirborne) CurrentSpeed -= DriftLinearDrag * 2.0f * DeltaTime;
 		CurrentSpeed = FMath::Max(0.0f, CurrentSpeed);
 		if (DriftSparksComp->IsActive()) DriftSparksComp->Deactivate();
 		return false; 
 	}
 
-	CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, CurrentTurnRate);
+	// --- 3. BLENDED STEERING ---
+	// Lerp between Grip (Snappy) and Drift (Loose) based on remaining stamina.
+	float TargetTurnRate = FMath::Lerp(GripSteeringRate, DriftBodyTurnRate, BlendAlpha);
 
+	// Wobble penalty (if hit)
+	if (bIsWobbling) TargetTurnRate *= 0.2f;
+
+	// Apply the blended steering
+	CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, TargetTurnRate);
+
+	// --- 4. SPEED MANAGEMENT ---
 	float DragForce = 200.0f; 
 	if (!bIsAirborne) CurrentSpeed -= DragForce * DeltaTime;
 
-	if (CurrentSpeed < BaseMoveSpeed)
+	// Internal Logic: Overdrive check
+	float TargetSpeed = FlowComp->IsOverdrive() ? 1200.0f : 800.0f;
+
+	if (CurrentSpeed < TargetSpeed)
 	{
 		CurrentSpeed += GroundAcceleration * DeltaTime;
 	}
 	else
 	{
-		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, 0.5f);
+		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, TargetSpeed, DeltaTime, 0.5f);
 	}
 
+	// --- 5. POCKET LOGIC (Refund Only) ---
 	float Dot = FVector::DotProduct(CurrentVelDir, InputDir.GetSafeNormal());
 	float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0f, 1.0f)));
 	DebugSlipAngle = AngleDeg;
 
+	bool bInPocket = false;
+	
+	// Pocket = Skill Check for Reward (Charge), NOT for Cost (Stamina)
 	if (AngleDeg > 10.0f && AngleDeg < 90.0f)
 	{
 		bInPocket = true;
 		
 		float CurveQuality = FMath::Clamp((AngleDeg - 10.0f) / 35.0f, 0.0f, 1.0f);
 		
-		if (InfiniteStaminaTimer <= 0.0f)
-		{
-			float Drain = StaminaDrainRate * CurveQuality * DeltaTime;
-			DriftStamina = FMath::Clamp(DriftStamina - Drain, 0.0f, 100.0f);
-		}
+		// REFUND CHARGE
+		float ChargeRegen = 0.8f * DeltaTime; 
+		FlowComp->AddCharge(ChargeRegen);
 
-		if (CurrentSpeed < MaxSpeedForTier * 1.3f)
+		// Physics Boost
+		if (CurrentSpeed < TargetSpeed * 1.3f)
 		{
 			float AirBoost = bIsAirborne ? 1.5f : 1.0f; 
 			CurrentSpeed += DriftAcceleration * CurveQuality * AirBoost * DeltaTime;
 		}
 
-		if (FlowComp->CurrentState == EFlowState::Frozen) FlowComp->SetFrozen(false);
-		
-		float FlowAmount = 30.0f + (AngleDeg * 0.5f); 
-		FlowComp->InjectFlow(FlowAmount * DeltaTime);
-
-		DriftScoreAccumulator += FlowAmount * DeltaTime;
-
+		// Camera Push
 		float PushStrength = (AngleDeg - 5.0f) / 60.0f;
 		float TargetSink = DriftCameraSinkAmount * PushStrength;
 		CurrentCameraSink = FMath::FInterpTo(CurrentCameraSink, TargetSink, DeltaTime, 5.0f);
@@ -790,23 +786,21 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 
 void APcPlayerCharacter::PerformDash()
 {
-	if (!bCanDash || !GravityComp) return;
+	if (!bCanDash || !GravityComp || !FlowComp) return;
 
-	// 1. Determine Input to use (Fix for "Always Forward" bug)
-	// If CurrentInput is zero (frame timing issue), try the cached one.
+	// --- 1. CHECK & SPEND COST ---
+	if (!FlowComp->TrySpendCharge(1.0f))
+	{
+		return;
+	}
+
+	// --- 2. CALCULATE DIRECTION ---
 	FVector2D InputToUse = FVector2D(CurrentInput.X, CurrentInput.Y);
 	if (CurrentInput.IsZero() && !LastValidInput.IsZero())
 	{
-		// Only use cached input if it was recent? 
-		// For now, assuming if you aren't pressing anything, LastValid is fine 
-		// or we default to forward if you truly stopped.
-		// Actually, let's trust CurrentInput if the player strictly stopped, 
-		// but if they are moving in air, CurrentInput SHOULD be valid. 
-		// The fallback helps if Input_StartDrift fires before Input_Move.
 		InputToUse = LastValidInput;
 	}
 
-	// 2. Calculate Direction
 	FVector SurfaceNormal = GravityComp->GetSurfaceNormal();
 	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
 	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
@@ -814,7 +808,7 @@ void APcPlayerCharacter::PerformDash()
 	FVector DashDir;
 	if (InputToUse.IsZero())
 	{
-		DashDir = CamFwd; // True fallback: Look direction
+		DashDir = CamFwd;
 	}
 	else
 	{
@@ -822,38 +816,42 @@ void APcPlayerCharacter::PerformDash()
 		DashDir.Normalize();
 	}
 
-	// 3. Apply Speed (Soft Cap Logic)
-	// Threshold: The speed we WANT to be at after a dash.
+	// --- 3. APPLY SPEED ---
 	float TargetDashSpeed = BaseMoveSpeed + DashImpulseStrength;
 
 	if (CurrentSpeed > TargetDashSpeed)
 	{
-		// CASE: SUPER SPEED (Already going 3000+)
-		// Do NOT add speed. Just redirect the momentum.
-		// We keep CurrentSpeed exactly as is.
+		// Maintain existing momentum if already super fast
 	}
 	else
 	{
-		// CASE: NORMAL / SLOW
-		// Snap to the dash speed.
 		CurrentSpeed = TargetDashSpeed;
 	}
 
-	// 4. Force Physics Update (Instant Redirect)
 	GravityComp->SetVelocity(DashDir * CurrentSpeed);
 
-	// 5. Visuals & Cooldown
+	// --- 4. ENTER DRIFT STATE (FIX) ---
+	// This is the key fix. The Dash is the entry point.
+	// As long as the player holds the button, they remain in this state.
+	bIsDrifting = true;
+
+	// --- 5. VISUALS ---
 	FOVImpulse = 20.0f;
 	TriggerWobble(); 
 	WobbleTimer = 0.15f;
-	if (DriftSparksComp) DriftSparksComp->Activate(true);
+	
+	if (DriftSparksComp) 
+	{
+		DriftSparksComp->Activate(true);
+	}
 
+	// --- 6. COOLDOWN ---
 	bCanDash = false;
 	GetWorld()->GetTimerManager().SetTimer(TimerHandle_DashCooldown, this, &APcPlayerCharacter::ResetDashCooldown, DashCooldown, false);
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-			HUD->AddStyleMessage("DASH!", EStyleEventType::Neutral);
+			HUD->AddStyleMessage("DASH (-1.0)", EStyleEventType::Neutral);
 }
 
 void APcPlayerCharacter::ResetDashCooldown()

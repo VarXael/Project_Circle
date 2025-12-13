@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: PcDebugHUD.cpp
-// PATH: E:\GameDev\Unreal Engine Projects\Project_Circle\Source\Project_Circle\PcPlayer\PcDebugHUD.cpp
+// PATH: Source/Project_Circle/PcPlayer/PcDebugHUD.cpp
 // ==========================================
 #include "PcDebugHUD.h"
 #include "PcPlayerCharacter.h"
@@ -60,67 +60,87 @@ void APcDebugHUD::DrawFlowDashboard(APcPlayerCharacter* Player)
 	UPcFlowMechanicComponent* Flow = Player->FlowComp;
 	if (!Flow) return;
 
-	// CONFIG
 	float RightEdge = Canvas->ClipX - 50.0f;
 	float BottomAnchorY = Canvas->ClipY * 0.85f; 
-	float BarW = 300.0f;
-	float BarH = 20.0f;
-	float BarLeft = RightEdge - BarW;
+
+	// =========================================================
+	// 1. CHARGE BARS (Bottom Right)
+	// =========================================================
+	float BarW = 80.0f; 
 	float Gap = 10.0f;
+	float BarH = 20.0f;
+	float TotalW = (BarW * 3) + (Gap * 2);
+	float StartX = RightEdge - TotalW;
 
-	// --- 1. FLOW BAR (Bottom) ---
-	float FlowY = BottomAnchorY;
-	
-	// Bg
-	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), BarLeft, FlowY, BarW, BarH);
-	
-	// Fill
-	float FlowPct = FMath::Clamp(Flow->FlowPercent / 100.0f, 0.0f, 1.0f);
-	FLinearColor FlowColor = FLinearColor::Yellow; 
-	if (Flow->CurrentState == EFlowState::Charging) FlowColor = FLinearColor::Green;
-	else if (Flow->CurrentState == EFlowState::Frozen) FlowColor = FColor::Cyan;
-	else if (Flow->CurrentState == EFlowState::Panic) FlowColor = FLinearColor::Red;
-	
-	DrawRect(FlowColor, BarLeft, FlowY, BarW * FlowPct, BarH);
+	// Draw Background Box
+	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), StartX - 5, BottomAnchorY - 5, TotalW + 10, BarH + 10);
 
-	// Stats Text (Under Flow)
-	float TextY = FlowY + BarH + 5.0f;
-	DrawText(FString::Printf(TEXT("TIER %d"), Flow->CurrentTier), FLinearColor::White, BarLeft, TextY, nullptr, 1.2f);
-	
-	FString SpdStr = FString::Printf(TEXT("%.0f"), Player->GetCurrentSpeed());
-	float SpdW, SpdH; Canvas->StrLen(GEngine->GetSmallFont(), SpdStr, SpdW, SpdH);
-	DrawText(SpdStr, FLinearColor::White, RightEdge - SpdW * 1.2f, TextY, nullptr, 1.2f);
-
-
-	// --- 2. STAMINA BAR (Middle) ---
-	float StaminaY = FlowY - BarH - Gap;
-	
-	// Bg
-	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), BarLeft, StaminaY, BarW, BarH);
-
-	// Fill
-	float StaminaPct = Player->GetDriftStamina() / 100.0f;
-	FLinearColor StaminaColor = FColor::Cyan;
-	if (StaminaPct <= 0.0f) StaminaColor = FLinearColor::Red;       // Burnout
-	else if (StaminaPct < 0.3f) StaminaColor = FColor::Orange;      // Low warning
-	
-	DrawRect(StaminaColor, BarLeft, StaminaY, BarW * StaminaPct, BarH);
-	DrawText(TEXT("STAMINA"), FLinearColor::White, BarLeft - 70.0f, StaminaY + 2.0f, nullptr, 1.0f);
-
-
-	// --- 3. LIVE SCORE (Floating above Stamina) ---
-	// Only show if we are actively accumulating drift points
-	/*
-	if (Player->DriftScoreAccumulator > 10.0f)
+	// Draw 3 Segments
+	for (int32 i = 0; i < 3; i++)
 	{
-		FString LiveScore = FString::Printf(TEXT("+ %.0f"), Player->DriftScoreAccumulator);
-		DrawText(LiveScore, FLinearColor::Yellow, BarLeft, StaminaY - 25.0f, nullptr, 1.5f);
-	}
-	*/
+		// Calculate fill for this specific segment (i=0 is 0-1, i=1 is 1-2, etc)
+		float SegmentValue = Flow->CurrentCharge - i; 
+		float FillPct = FMath::Clamp(SegmentValue, 0.0f, 1.0f);
 
-	// --- 4. ACTION LOG (Top Stack) ---
-	// Anchored above the Stamina Bar
-	DrawActionLog(StaminaY - 20.0f, RightEdge);
+		float MyX = StartX + (i * (BarW + Gap));
+	
+		// Empty Slot Background
+		DrawRect(FLinearColor(0.2f, 0.2f, 0.2f, 1.0f), MyX, BottomAnchorY, BarW, BarH);
+	
+		// Fill
+		if (FillPct > 0.0f)
+		{
+			// Cyan if full, Yellow if filling
+			FLinearColor Color = (FillPct >= 0.99f) ? FColor::Cyan : FLinearColor::Yellow;
+			DrawRect(Color, MyX, BottomAnchorY, BarW * FillPct, BarH);
+		}
+	}
+
+	// Draw Overdrive Line (Thin Red Bar on top)
+	float OD_Y = BottomAnchorY - 10.0f;
+	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), StartX, OD_Y, TotalW, 4.0f); // BG
+	
+	if (Flow->IsOverdrive())
+	{
+		DrawRect(FLinearColor::Red, StartX, OD_Y, TotalW, 4.0f);
+	}
+
+	// =========================================================
+	// 2. DRIFT STAMINA (Vertical Left)
+	// =========================================================
+	float StaminaW = 15.0f;
+	float StaminaH = 200.0f;
+	float StaminaX = 50.0f;
+	float StaminaY = Canvas->ClipY * 0.5f - (StaminaH * 0.5f);
+
+	// Background
+	DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.5f), StaminaX, StaminaY, StaminaW, StaminaH);
+
+	// Calculate Fill (From Bottom)
+	float CurrentStamina = Player->GetDriftStamina();
+	float MaxStamina = Player->MaxDriftStamina;
+	
+	if (MaxStamina > 0.0f)
+	{
+		float StaminaPct = FMath::Clamp(CurrentStamina / MaxStamina, 0.0f, 1.0f);
+		float FillH = StaminaH * StaminaPct;
+		float FillY = StaminaY + (StaminaH - FillH); 
+
+		if (StaminaPct > 0.0f)
+		{
+			FLinearColor FuseColor = FLinearColor::Green;
+			if (StaminaPct < 0.25f) FuseColor = FLinearColor::Red; // Low warning
+			DrawRect(FuseColor, StaminaX, FillY, StaminaW, FillH);
+		}
+	}
+	
+	// Label
+	DrawText(TEXT("FUSE"), FLinearColor::White, StaminaX, StaminaY + StaminaH + 5.0f, nullptr, 1.0f);
+
+	// =========================================================
+	// 3. ACTION LOG (Above Charge Bars)
+	// =========================================================
+	DrawActionLog(BottomAnchorY - 30.0f, RightEdge);
 }
 
 void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
@@ -137,7 +157,7 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 		if (Msg.TimeRemaining <= 0.0f)
 		{
 			MessageLog.RemoveAt(i);
-			i--; // Adjust index after removal
+			i--; 
 			continue;
 		}
 
@@ -149,7 +169,7 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 		
 		if (Msg.Type == EStyleEventType::Good) { TextColor = FLinearColor::Green; Prefix = "+ "; }
 		else if (Msg.Type == EStyleEventType::Bad) { TextColor = FLinearColor::Red; Prefix = "- "; }
-		else { TextColor = FLinearColor(0.8f, 0.8f, 0.8f); } // Neutral Grey
+		else { TextColor = FLinearColor(0.8f, 0.8f, 0.8f); } 
 		
 		TextColor.A = Alpha;
 
@@ -162,7 +182,7 @@ void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)
 
 		DrawText(FullText, TextColor, RightAnchorX - XL, CurrentY - YL, nullptr, 1.2f);
 		
-		// Move cursor up for next message
+		// Move cursor up
 		CurrentY -= (YL + 5.0f); 
 	}
 }
