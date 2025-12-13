@@ -98,7 +98,13 @@ void APcPlayerCharacter::BeginPlay()
 void APcPlayerCharacter::Input_Move(FVector2D Value) 
 { 
 	if (bIsWipeout) { CurrentInput = FVector::ZeroVector; return; }
-	CurrentInput = FVector(Value.X, Value.Y, 0.0f); 
+	CurrentInput = FVector(Value.X, Value.Y, 0.0f);
+	
+	// Cache non-zero input for the Dash logic
+	if (!Value.IsZero())
+	{
+		LastValidInput = Value;
+	}
 }
 
 void APcPlayerCharacter::Input_Look(FVector2D Value)
@@ -118,47 +124,42 @@ void APcPlayerCharacter::Input_StartDrift()
 { 
 	if (bIsWipeout) return;
 
-	// 1. INPUT BUFFER (Pre-Land)
-	// If Airborne, store intent to drift
+	// --- 1. LANDING/BUFFER LOGIC (Keep this, it's good game feel) ---
 	if (bIsJumping || (GravityComp && GravityComp->IsFalling()))
 	{
 		DriftInputBufferTimer = PreLandBufferTime; 
 	}
-
-	// 2. LANDING RESOLUTION (Post-Land)
-	// If in Coyote Window
+	
 	if (bPendingLandingResolution)
 	{
-		if (TimeSinceLanded <= PostLandPerfectWindow)
-		{
-			ResolvePerfectLand();
-		}
-		else
-		{
-			// Late click = Normal Drift (Safe/Soft)
-			ResolveSoftLand();
-		}
-		// Window closed by action
+		if (TimeSinceLanded <= PostLandPerfectWindow) ResolvePerfectLand();
+		else ResolveSoftLand();
 		bPendingLandingResolution = false; 
 	}
 
-	if (bIsWobbling) return; // Cannot start drift while unstable
+	if (bIsWobbling) return;
 
+	// --- 2. DRIFT LOGIC (DISABLED) ---
+	/* 
 	bIsDrifting = true; 
 	DriftScoreAccumulator = 0.0f;
 	DriftBufferTimer = 0.2f; 
+	*/
+
+	// --- 3. NEW DASH LOGIC ---
+	PerformDash();
 }
 
 void APcPlayerCharacter::Input_StopDrift() 
 { 
-	bIsDrifting = false; 
-	if (DriftScoreAccumulator > 10.0f)
-	{
-		if (APlayerController* PC = Cast<APlayerController>(GetController()))
-			if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-				HUD->AddStyleMessage(FString::Printf(TEXT("+ Drift %.0f"), DriftScoreAccumulator), EStyleEventType::Neutral);
-	}
-	DriftScoreAccumulator = 0.0f;
+	// bIsDrifting = false; 
+	// if (DriftScoreAccumulator > 10.0f)
+	// {
+	// 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	// 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
+	// 			HUD->AddStyleMessage(FString::Printf(TEXT("+ Drift %.0f"), DriftScoreAccumulator), EStyleEventType::Neutral);
+	// }
+	// DriftScoreAccumulator = 0.0f;
 }
 
 void APcPlayerCharacter::Input_StartAttack() { if (CurrentWeapon) CurrentWeapon->StartPrimaryFire(); }
@@ -243,7 +244,7 @@ void APcPlayerCharacter::TriggerWobble()
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		// You can use a default shake class or make a BP_Shake
-		PC->ClientStartCameraShake(UCameraShakeBase::StaticClass(), 1.0f);
+		//PC->ClientStartCameraShake(UCameraShakeBase::StaticClass(), 1.0f);
 	}
 }
 
@@ -613,38 +614,104 @@ void APcPlayerCharacter::UpdateSkaterPhysics(float DeltaTime)
 
 void APcPlayerCharacter::ApplyGripPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne)
 {
-	// WOBBLE DAMPENING: Reduced steering authority if hit recently
-	float CurrentSteerRate = bIsWobbling ? GripSteeringRate * 0.2f : GripSteeringRate;
-
-	// Regen (Air handled in Tick, this handles Ground Regen logic)
+	// --- STAMINA REGEN (Unchanged) ---
 	if (!bIsAirborne && InfiniteStaminaTimer <= 0.0f)
 	{
 		float RegenRate = StaminaRegenGround;
-		float Dot = FVector::DotProduct(CurrentVelDir, InputDir.GetSafeNormal());
-		if (Dot < 0.98f) RegenRate += StaminaRegenTurnBonus;
+		if (!InputDir.IsZero())
+		{
+			float Dot = FVector::DotProduct(CurrentVelDir, InputDir.GetSafeNormal());
+			if (Dot < 0.98f) RegenRate += StaminaRegenTurnBonus;
+		}
 		DriftStamina = FMath::Clamp(DriftStamina + (RegenRate * DeltaTime), 0.0f, MaxDriftStamina);
 	}
 
-	CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, CurrentSteerRate);
-	DebugSlipAngle = 0.0f;
+	// =========================================================================
+	// STATE MACHINE: MOMENTUM vs CONTROL
+	// =========================================================================
 
-	if (CurrentSpeed > BaseMoveSpeed)
+	// Are we moving faster than the engine allows by default? (e.g. Dashing, Ramps)
+	bool bIsOverspeed = CurrentSpeed > (BaseMoveSpeed + 10.0f); // Small epsilon
+
+	if (bIsOverspeed)
 	{
-		float ExcessSpeed = CurrentSpeed - BaseMoveSpeed;
-		float DragFactor = 1.0f + (ExcessSpeed / 500.0f); 
-		float CoastDrag = (bIsAirborne) ? 5.0f : 20.0f;
-		CurrentSpeed -= CoastDrag * DeltaTime;
+		// === MOMENTUM MODE ===
+		// The player is gliding/flying. Input STEERS, but does not stop/start speed.
+		
+		// 1. DRAG (Bleed off speed)
+		float DragFactor = 0.0f;
+		if (bIsAirborne)
+		{
+			// AIR: Low drag. Preserve the dash speed for a long time.
+			// 0.5f means it takes seconds to drop from 2500 to 800.
+			DragFactor = 0.5f; 
+		}
+		else
+		{
+			// GROUND: High drag. Slide to normal speed quickly.
+			// 5.0f means you slide for ~0.5 seconds.
+			DragFactor = 5.0f; 
+		}
+		
+		CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, DragFactor);
+
+		// 2. STEERING (Redirect Momentum)
+		if (!InputDir.IsZero())
+		{
+			if (bIsAirborne)
+			{
+				// AIR: High control to redirect jumps
+				float AirTurn = GripSteeringRate * 3.0f; 
+				if (bIsWobbling) AirTurn *= 0.2f;
+				CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, AirTurn);
+			}
+			else
+			{
+				// GROUND: Snap turn (Doom style), but preserving the slide speed
+				CurrentVelDir = InputDir;
+			}
+		}
 	}
 	else
 	{
-		float AccelMult = (CurrentSpeed < InertiaThreshold) ? 0.15f : 1.0f;
-		// WOBBLE DAMPENING: Harder to accelerate
-		if (bIsWobbling) AccelMult *= 0.5f;
+		// === CONTROL MODE ===
+		// Standard movement. We are below or at 800.
+		// Logic: If input, be at 800. If no input, be at 0.
 		
-		CurrentSpeed += GroundAcceleration * AccelMult * DeltaTime;
-		if (CurrentSpeed > BaseMoveSpeed) CurrentSpeed = BaseMoveSpeed;
+		if (InputDir.IsZero())
+		{
+			// INSTANT STOP (Friction)
+			// On ground: Snap to 0. In Air: Drag to 0 slower? 
+			// You requested "Snappy" on ground, keep "Skater" air.
+			
+			float StopSpeed = bIsAirborne ? 1.0f : 15.0f; // Air drift vs Ground snap
+			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, 0.0f, DeltaTime, StopSpeed);
+		}
+		else
+		{
+			// INSTANT GO
+			
+			// 1. Set Direction
+			if (bIsAirborne)
+			{
+				// Air turn (Smoother than ground)
+				float AirTurn = GripSteeringRate * 3.0f;
+				CurrentVelDir = FMath::VInterpNormalRotationTo(CurrentVelDir, InputDir, DeltaTime, AirTurn);
+			}
+			else
+			{
+				// Ground turn (Instant)
+				CurrentVelDir = InputDir;
+			}
+
+			// 2. Set Speed (Snap to 800)
+			float AccelSpeed = bIsAirborne ? 2.0f : 15.0f; // Ground is instant, Air is building up
+			CurrentSpeed = FMath::FInterpTo(CurrentSpeed, BaseMoveSpeed, DeltaTime, AccelSpeed);
+		}
 	}
+
 	CurrentSpeed = FMath::Max(0.0f, CurrentSpeed);
+	DebugSlipAngle = 0.0f;
 }
 
 bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FVector& CurrentVelDir, bool bIsAirborne, float MaxSpeedForTier)
@@ -719,4 +786,77 @@ bool APcPlayerCharacter::ApplyDriftPhysics(float DeltaTime, FVector InputDir, FV
 
 	CurrentSpeed = FMath::Max(0.0f, CurrentSpeed);
 	return bInPocket;
+}
+
+void APcPlayerCharacter::PerformDash()
+{
+	if (!bCanDash || !GravityComp) return;
+
+	// 1. Determine Input to use (Fix for "Always Forward" bug)
+	// If CurrentInput is zero (frame timing issue), try the cached one.
+	FVector2D InputToUse = FVector2D(CurrentInput.X, CurrentInput.Y);
+	if (CurrentInput.IsZero() && !LastValidInput.IsZero())
+	{
+		// Only use cached input if it was recent? 
+		// For now, assuming if you aren't pressing anything, LastValid is fine 
+		// or we default to forward if you truly stopped.
+		// Actually, let's trust CurrentInput if the player strictly stopped, 
+		// but if they are moving in air, CurrentInput SHOULD be valid. 
+		// The fallback helps if Input_StartDrift fires before Input_Move.
+		InputToUse = LastValidInput;
+	}
+
+	// 2. Calculate Direction
+	FVector SurfaceNormal = GravityComp->GetSurfaceNormal();
+	FVector CamFwd = FVector::VectorPlaneProject(CameraComp->GetForwardVector(), SurfaceNormal).GetSafeNormal();
+	FVector CamRight = FVector::VectorPlaneProject(CameraComp->GetRightVector(), SurfaceNormal).GetSafeNormal();
+
+	FVector DashDir;
+	if (InputToUse.IsZero())
+	{
+		DashDir = CamFwd; // True fallback: Look direction
+	}
+	else
+	{
+		DashDir = (CamFwd * InputToUse.X) + (CamRight * InputToUse.Y);
+		DashDir.Normalize();
+	}
+
+	// 3. Apply Speed (Soft Cap Logic)
+	// Threshold: The speed we WANT to be at after a dash.
+	float TargetDashSpeed = BaseMoveSpeed + DashImpulseStrength;
+
+	if (CurrentSpeed > TargetDashSpeed)
+	{
+		// CASE: SUPER SPEED (Already going 3000+)
+		// Do NOT add speed. Just redirect the momentum.
+		// We keep CurrentSpeed exactly as is.
+	}
+	else
+	{
+		// CASE: NORMAL / SLOW
+		// Snap to the dash speed.
+		CurrentSpeed = TargetDashSpeed;
+	}
+
+	// 4. Force Physics Update (Instant Redirect)
+	GravityComp->SetVelocity(DashDir * CurrentSpeed);
+
+	// 5. Visuals & Cooldown
+	FOVImpulse = 20.0f;
+	TriggerWobble(); 
+	WobbleTimer = 0.15f;
+	if (DriftSparksComp) DriftSparksComp->Activate(true);
+
+	bCanDash = false;
+	GetWorld()->GetTimerManager().SetTimer(TimerHandle_DashCooldown, this, &APcPlayerCharacter::ResetDashCooldown, DashCooldown, false);
+
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
+			HUD->AddStyleMessage("DASH!", EStyleEventType::Neutral);
+}
+
+void APcPlayerCharacter::ResetDashCooldown()
+{
+	bCanDash = true;
 }

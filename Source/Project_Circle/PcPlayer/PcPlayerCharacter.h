@@ -183,12 +183,28 @@ public:
 	float DebugSlipAngle; 
 	float DriftScoreAccumulator = 0.0f;
 	bool bIsAirborneDebug = false;
+	
+	// --- DASH CONFIG (New) ---
+	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
+	float DashImpulseStrength = 2000.0f; // Speed added instantly
+
+	UPROPERTY(EditAnywhere, Category = "Movement|Dash")
+	float DashCooldown = 1.0f;
+
 
 private:
 	FVector CurrentInput = FVector::ZeroVector;
 	float CurrentSpeed = 0.0f;
 	float CameraPitch = 0.0f; 
 
+private:
+	// --- DASH STATE ---
+	bool bCanDash = true;
+	FTimerHandle TimerHandle_DashCooldown;
+	FVector2D LastValidInput = FVector2D::ZeroVector; // Cache for Dash direction
+	void PerformDash();
+	void ResetDashCooldown();
+	
 	// Visuals
 	float CurrentFOVMod = 0.0f; 
 	float FOVImpulse = 0.0f;    
