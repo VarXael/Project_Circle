@@ -38,6 +38,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
 	float GetCurrentBPM() const { return CurrentBPM; }
+	
+	UFUNCTION(BlueprintPure, Category = "Music Analysis")
+	float GetCurrentBeatPhase() const 
+	{ 
+		if (CurrentBPM <= 0.0f) return 0.0f;
+		float BeatDur = 60.0f / CurrentBPM;
+		float TimeSinceBeat = (LastProcessedMusicProgressMs - (NextBeatTimestampMS - (BeatDur*1000.0f))); 
+		// ^ This math depends on your internal timestamps.
+		// Simpler approximation given your variables:
+		return FMath::Clamp((float)(LastProcessedMusicProgressMs % FMath::RoundToInt(BeatDur * 1000)) / (BeatDur * 1000.0f), 0.0f, 1.0f);
+	}
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
 	bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }

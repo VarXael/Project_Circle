@@ -151,16 +151,9 @@ void APcPlayerCharacter::Input_StopDrift()
 
 void APcPlayerCharacter::Input_StartAttack() 
 { 
-	// FIX: Check both Physics Falling AND Logic Jumping
-	bool bIsAirborne = bIsJumping || (GravityComp && GravityComp->IsFalling());
-	
-	if (bIsAirborne)
-	{
-		return;
-	}
-
 	if (CurrentWeapon) CurrentWeapon->StartPrimaryFire(); 
 }
+
 void APcPlayerCharacter::Input_StopAttack() { if (CurrentWeapon) CurrentWeapon->StopPrimaryFire(); }
 void APcPlayerCharacter::Input_FireLaser() { if (CurrentWeapon) CurrentWeapon->FireLaserAttack(); }
 

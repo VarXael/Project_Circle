@@ -28,9 +28,11 @@ class PROJECT_CIRCLE_API APcPatternTurret : public AActor
 	
 public:	
 	APcPatternTurret();
+	virtual void Tick(float DeltaTime) override;
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // To unbind
 
 public:
 	// --- COMPONENTS ---
@@ -40,7 +42,6 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USceneComponent* MuzzleLoc;
 
-	// Used only for Surface Alignment (Finding "Up"), not moving.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcGravityMovementComponent* GravityComp;
 
@@ -48,35 +49,45 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
 
-	// If true, fires automatically on a timer. 
-	// If false, waits for an external event (Music Subsystem).
+	// If true, fires on a timer (Debugging). 
+	// If false, fires when the Song Configuration dictates a "Note Hit".
 	UPROPERTY(EditAnywhere, Category = "Combat")
-	bool bAutoFireTest = true;
+	bool bAutoFireDebug = false;
 
-	UPROPERTY(EditAnywhere, Category = "Combat", meta=(EditCondition="bAutoFireTest"))
-	float FireRate = 0.2f; // Fast for bullet hell
+	UPROPERTY(EditAnywhere, Category = "Combat", meta=(EditCondition="bAutoFireDebug"))
+	float FireRate = 0.2f; 
 
 	// --- PATTERN MATH ---
 	UPROPERTY(EditAnywhere, Category = "Pattern")
 	EBulletPattern PatternType = EBulletPattern::Spiral;
 
-	// How many degrees the pattern rotates PER SHOT.
-	// e.g. 10.0 = A tight spiral. 137.5 = Golden Ratio (No gaps).
 	UPROPERTY(EditAnywhere, Category = "Pattern")
 	float AngleStepPerShot = 15.0f;
 
-	// For Ring/Shotgun: How many bullets per pulse?
 	UPROPERTY(EditAnywhere, Category = "Pattern")
 	int32 BulletsPerPulse = 1;
 
+	// --- RHYTHM ARENA CONFIG ---
+	UPROPERTY(EditAnywhere, Category = "Rhythm Arena")
+	float RingSpacing = 600.0f; 
+
+	UPROPERTY(EditAnywhere, Category = "Rhythm Arena")
+	int32 ArenaRingCount = 5; 
+
+	UPROPERTY(EditAnywhere, Category = "Rhythm Arena")
+	bool bDrawDebugArena = true; 
+
 	// --- API ---
-	// Call this every Beat/Rhythm tick
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TriggerBeatShot();
 
 private:
-	int32 ShotCounter = 0; // The "Index" of the pattern
+	int32 ShotCounter = 0; 
 	FTimerHandle TimerHandle_TestFire;
 
 	void SpawnBullet(FVector Direction);
+	
+	// Callback for the Music Subsystem
+	UFUNCTION()
+	void OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound);
 };

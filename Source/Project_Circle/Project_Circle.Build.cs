@@ -22,7 +22,7 @@ public class Project_Circle : ModuleRules
 		// Audio / Metasound
 		PrivateDependencyModuleNames.AddRange(new string[] { 
 			"MetasoundEngine", 
-			"MetasoundFrontend" 
+			"MetasoundFrontend", "InterchangeNodes"
 		});
 
 		// UI - Runtime
