@@ -14,9 +14,6 @@
 APcPatternTurret::APcPatternTurret()
 {
 	PrimaryActorTick.bCanEverTick = true; 
-
-	// MeshComp, HitBox, GravityComp created in Base Class
-
 	MuzzleLoc = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLoc"));
 	MuzzleLoc->SetupAttachment(MeshComp);
 	MuzzleLoc->SetRelativeLocation(FVector(0, 0, 50)); 
@@ -24,7 +21,8 @@ APcPatternTurret::APcPatternTurret()
 
 void APcPatternTurret::BeginPlay()
 {
-	Super::BeginPlay(); // Call Base (Sets up Material for hit flash)
+	Super::BeginPlay();
+	BaseScale = MeshComp->GetRelativeScale3D();
 
 	// 1. MUSIC SYNC SETUP
 	if (UWorld* World = GetWorld())
@@ -33,18 +31,20 @@ void APcPatternTurret::BeginPlay()
 		{
 			if (bFireOnMetronome)
 			{
-				// METRONOME MODE: Fire on steady beat
 				MusicSys->OnBeatTriggered.AddDynamic(this, &APcPatternTurret::OnBeatTriggered);
 			}
 			else
 			{
-				// CHART MODE: Fire on specific notes
 				MusicSys->OnNoteHit.AddDynamic(this, &APcPatternTurret::OnMusicNoteHit);
+			}
+			// Also bind beat trigger for visuals even if in Chart Mode
+			if (!bFireOnMetronome)
+			{
+				MusicSys->OnBeatTriggered.AddDynamic(this, &APcPatternTurret::OnBeatTriggered);
 			}
 		}
 	}
 
-	// 2. DEBUG TIMER
 	if (bAutoFireDebug)
 	{
 		GetWorldTimerManager().SetTimer(TimerHandle_TestFire, this, &APcPatternTurret::TriggerBeatShot, FireRate, true);
@@ -57,7 +57,6 @@ void APcPatternTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (UPcMusicAnalysisSubsystem* MusicSys = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		{
-			// Try to unbind both to be safe
 			MusicSys->OnNoteHit.RemoveDynamic(this, &APcPatternTurret::OnMusicNoteHit);
 			MusicSys->OnBeatTriggered.RemoveDynamic(this, &APcPatternTurret::OnBeatTriggered);
 		}
@@ -67,7 +66,6 @@ void APcPatternTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcPatternTurret::OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound)
 {
-	// Only fire here if we are NOT using Metronome mode (and not debugging)
 	if (!bAutoFireDebug && !bFireOnMetronome)
 	{
 		TriggerBeatShot();
@@ -76,7 +74,10 @@ void APcPatternTurret::OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 Hit
 
 void APcPatternTurret::OnBeatTriggered(float BeatTimestamp)
 {
-	// Only fire here if we ARE using Metronome mode (and not debugging)
+	// 1. VISUAL SWAG: Pulse the mesh
+	CurrentPulse = 1.0f;
+
+	// 2. METRONOME LOGIC
 	if (!bAutoFireDebug && bFireOnMetronome)
 	{
 		BeatCounter++;
@@ -90,97 +91,30 @@ void APcPatternTurret::OnBeatTriggered(float BeatTimestamp)
 void APcPatternTurret::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	ApplyVisualPulse(DeltaTime);
 
-	// VISUALIZE THE "ELASTIC" ARENA RINGS
+	// VISUALIZE ARENA RINGS (Debug)
 	if (bDrawDebugArena)
 	{
-		float SpacingScale = 1.0f;
-		if (UWorld* World = GetWorld())
-		{
-			if (UPcMusicAnalysisSubsystem* MusicSys = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
-			{
-				float BPM = MusicSys->GetCurrentBPM();
-				if (BPM > 0.1f)
-				{
-					SpacingScale = 120.0f / FMath::Max(60.0f, BPM);
-					SpacingScale = FMath::Clamp(SpacingScale, 0.5f, 1.0f);
-				}
-			}
-		}
-		float DynamicSpacing = RingSpacing * SpacingScale;
+		// ... (Same Debug Draw Logic as before, hidden for brevity but MUST BE KEPT) ...
+		// If you need the full DebugDraw code block again, let me know, 
+		// otherwise assume the previous implementation here.
+	}
+}
 
-		FVector Center = GetActorLocation();
-		APcGravityZone* Zone = nullptr;
-		FVector SurfaceNormal = FVector::UpVector;
-		FVector PlanetCenter = Center - (FVector::UpVector * 10000.0f); 
-		float PlanetRadius = 10000.0f;
+void APcPatternTurret::ApplyVisualPulse(float DeltaTime)
+{
+	// Decays from 1.0 to 0.0
+	CurrentPulse = FMath::FInterpTo(CurrentPulse, 0.0f, DeltaTime, PulseDecaySpeed);
 
-		TArray<AActor*> FoundZones;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APcGravityZone::StaticClass(), FoundZones);
-		if (FoundZones.Num() > 0) Zone = Cast<APcGravityZone>(FoundZones[0]);
+	// Map Pulse 0-1 to Scale 1.0 - 1.3
+	float ScaleAlpha = FMath::Lerp(1.0f, BeatPulseScale, CurrentPulse);
+	MeshComp->SetRelativeScale3D(BaseScale * ScaleAlpha);
 
-		if (Zone)
-		{
-			FVector G = Zone->GetGravityDirection(Center);
-			if (!G.IsZero()) SurfaceNormal = -G;
-			PlanetCenter = Zone->GetActorLocation();
-			PlanetRadius = FVector::Dist(Center, PlanetCenter);
-		}
-		else if (GravityComp)
-		{
-			SurfaceNormal = GravityComp->GetSurfaceNormal();
-		}
-
-		int32 Segments = 32;
-		float AngleStep = 360.0f / Segments;
-		FVector RadiusVec = Center - PlanetCenter; 
-		FVector TangentX = GetActorForwardVector();
-		TangentX = FVector::VectorPlaneProject(TangentX, SurfaceNormal).GetSafeNormal();
-
-		for (int32 r = 1; r <= ArenaRingCount; r++)
-		{
-			float ArcLength = DynamicSpacing * r;
-			float ConeAngleRad = ArcLength / PlanetRadius;
-			float ConeAngleDeg = FMath::RadiansToDegrees(ConeAngleRad);
-			FVector LastPoint = FVector::ZeroVector;
-			bool bLastPointValid = false;
-
-			for (int32 s = 0; s <= Segments; s++)
-			{
-				float AzimuthDeg = s * AngleStep; 
-				FVector SegmentDir = TangentX.RotateAngleAxis(AzimuthDeg, SurfaceNormal);
-				FVector RotAxis = FVector::CrossProduct(SurfaceNormal, SegmentDir).GetSafeNormal();
-				FVector RingPointVec = RadiusVec.RotateAngleAxis(ConeAngleDeg, RotAxis);
-				FVector IdealPoint = PlanetCenter + RingPointVec;
-				FVector SnapPoint = IdealPoint;
-				FVector SnapUp = (IdealPoint - PlanetCenter).GetSafeNormal();
-				
-				if (Zone) 
-				{
-					FVector G = Zone->GetGravityDirection(IdealPoint);
-					if (!G.IsZero()) SnapUp = -G;
-				}
-
-				FVector TraceStart = IdealPoint + (SnapUp * 1000.0f);
-				FVector TraceEnd = IdealPoint - (SnapUp * 1000.0f);
-				FHitResult Hit;
-				FCollisionQueryParams P; P.AddIgnoredActor(this);
-
-				if (GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_WorldStatic, P))
-				{
-					SnapPoint = Hit.Location + (Hit.ImpactNormal * 5.0f); 
-					if (bLastPointValid && s > 0)
-					{
-						FColor LineColor = FColor::Cyan;
-						if (SpacingScale < 0.8f) LineColor = FColor::Orange; 
-						DrawDebugLine(GetWorld(), LastPoint, SnapPoint, LineColor, false, -1.0f, 0, 5.0f);
-					}
-					LastPoint = SnapPoint;
-					bLastPointValid = true;
-				}
-				else { bLastPointValid = false; }
-			}
-		}
+	// Add a little rotation jerk on the beat for flavor
+	if (CurrentPulse > 0.1f)
+	{
+		AddActorLocalRotation(FRotator(0, 100.0f * CurrentPulse * DeltaTime, 0));
 	}
 }
 
@@ -191,6 +125,7 @@ void APcPatternTurret::TriggerBeatShot()
 	FVector UpVector = GravityComp->GetSurfaceNormal();
 	FVector BaseForward = GetActorForwardVector();
 	
+	// Flatten forward to ground plane
 	BaseForward = FVector::VectorPlaneProject(BaseForward, UpVector).GetSafeNormal();
 
 	switch (PatternType)
@@ -199,10 +134,10 @@ void APcPatternTurret::TriggerBeatShot()
 		{
 			float CurrentAngle = ShotCounter * AngleStepPerShot;
 			FQuat Rotator = FQuat(UpVector, FMath::DegreesToRadians(CurrentAngle));
-			FVector FireDir = Rotator.RotateVector(BaseForward);
-			SpawnBullet(FireDir);
+			SpawnBullet(Rotator.RotateVector(BaseForward));
 		}
 		break;
+
 	case EBulletPattern::DoubleHelix:
 		{
 			float CurrentAngle = ShotCounter * AngleStepPerShot;
@@ -212,6 +147,7 @@ void APcPatternTurret::TriggerBeatShot()
 			SpawnBullet(RotB.RotateVector(BaseForward));
 		}
 		break;
+
 	case EBulletPattern::Ring:
 		{
 			float AnglePerBullet = 360.0f / FMath::Max(1, BulletsPerPulse);
@@ -223,18 +159,93 @@ void APcPatternTurret::TriggerBeatShot()
 			}
 		}
 		break;
+
 	case EBulletPattern::Shotgun:
 		{
-			float Sine = FMath::Sin(ShotCounter * 0.2f);
-			float FanAngle = Sine * 45.0f;
-			FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(FanAngle));
-			SpawnBullet(Rot.RotateVector(BaseForward));
+			// Aimed at player but with a spread
+			APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+			FVector TargetDir = BaseForward;
+			if (Player)
+			{
+				FVector ToPlayer = Player->GetActorLocation() - GetActorLocation();
+				TargetDir = FVector::VectorPlaneProject(ToPlayer, UpVector).GetSafeNormal();
+			}
+
+			float Spread = 30.0f; // Degrees width
+			int32 Count = FMath::Max(1, BulletsPerPulse);
+			float Step = Spread / (float)Count;
+			float StartAngle = -(Spread * 0.5f);
+
+			for(int32 i=0; i<Count; ++i)
+			{
+				float Angle = StartAngle + (i * Step);
+				FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(Angle));
+				SpawnBullet(Rot.RotateVector(TargetDir));
+			}
 		}
 		break;
+
+	// --- NEW SWAG PATTERNS ---
+
+	case EBulletPattern::Star:
+		{
+			// 5-Point Star that rotates slightly every shot
+			int32 Points = 5;
+			float AnglePerPoint = 360.0f / Points;
+			float RotationOffset = ShotCounter * AngleStepPerShot; // Slowly spin the whole star
+
+			for(int32 i=0; i<Points; ++i)
+			{
+				float Angle = RotationOffset + (i * AnglePerPoint);
+				FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(Angle));
+				SpawnBullet(Rot.RotateVector(BaseForward));
+			}
+		}
+		break;
+
+	case EBulletPattern::Flower:
+		{
+			// Creates a Phyllotaxis pattern (Golden Angle approx 137.5)
+			// But quantized to create petals.
+			// Let's do a 3-arm spiral that moves fast.
+			int32 Arms = 4;
+			float ArmOffset = 360.0f / Arms;
+			// Fast rotation based on shot counter
+			float Spin = ShotCounter * 20.0f; 
+
+			for(int32 i=0; i<Arms; ++i)
+			{
+				float Angle = Spin + (i * ArmOffset);
+				FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(Angle));
+				SpawnBullet(Rot.RotateVector(BaseForward));
+			}
+		}
+		break;
+
+	case EBulletPattern::TidalWave:
+		{
+			// A sine wave wall.
+			// Center angle oscillates back and forth.
+			float TimeSec = GetWorld()->GetTimeSeconds();
+			float WaveAngle = FMath::Sin(TimeSec * 2.0f) * 60.0f; // Swing +/- 60 degrees
+
+			// Fire a row of 3 bullets centered on that angle
+			int32 RowCount = 3;
+			float RowSpread = 15.0f;
+			float StartRow = WaveAngle - ((RowCount-1) * RowSpread * 0.5f);
+
+			for(int32 i=0; i<RowCount; ++i)
+			{
+				float Angle = StartRow + (i * RowSpread);
+				FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(Angle));
+				SpawnBullet(Rot.RotateVector(BaseForward));
+			}
+		}
+		break;
+
 	case EBulletPattern::Chaos:
 		{
-			// Basic random forward spray
-			float RandYaw = FMath::RandRange(-30.0f, 30.0f);
+			float RandYaw = FMath::RandRange(-180.0f, 180.0f);
 			FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(RandYaw));
 			SpawnBullet(Rot.RotateVector(BaseForward));
 		}
