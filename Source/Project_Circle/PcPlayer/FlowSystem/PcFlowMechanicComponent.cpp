@@ -22,8 +22,6 @@ void UPcFlowMechanicComponent::BeginPlay()
 void UPcFlowMechanicComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
-	// Check Overdrive State
 	bInOverdrive = (CurrentCharge >= OverdriveThreshold);
 }
 
@@ -44,16 +42,20 @@ void UPcFlowMechanicComponent::AddCharge(float Amount)
 
 void UPcFlowMechanicComponent::AddScore(float BasePoints)
 {
-	// Formula: Points * (1 + Multiplier). 
-	// If Multiplier is 0, we just get base points.
-	// If Multiplier is 5, we get Points * 6.
+	// Formula: Base * (1 + Multiplier)
+	// Example: 10 * (1 + 0.5) = 15 points
 	float FinalPoints = BasePoints * (1.0f + CurrentMultiplier);
 	CurrentScore += FinalPoints;
 }
 
 void UPcFlowMechanicComponent::IncreaseMultiplier(float Amount)
 {
-	CurrentMultiplier += Amount;
+	// NOTE: We ignore the passed amount usually and use a fixed step to control inflation
+	// Or we use the amount but scale it down.
+	// Let's assume the passed amount is "1.0" for a kill/hit. 
+	// We divide by 10 to make the multiplier grow by 0.1 per hit.
+	
+	CurrentMultiplier += (Amount * 0.1f);
 }
 
 void UPcFlowMechanicComponent::ResetMultiplier()
@@ -64,11 +66,7 @@ void UPcFlowMechanicComponent::ResetMultiplier()
 void UPcFlowMechanicComponent::TriggerHitStop(UWorld* WorldContext)
 {
 	if (!WorldContext) return;
-    
-	// Freeze time to 5%
 	UGameplayStatics::SetGlobalTimeDilation(WorldContext, 0.05f);
-    
-	// Schedule unfreeze (0.01s dilated = ~0.2s real time)
 	WorldContext->GetTimerManager().SetTimer(TimerHandle_HitStop, this, &UPcFlowMechanicComponent::ResetTimeDilation, 0.01f, false);
 }
 

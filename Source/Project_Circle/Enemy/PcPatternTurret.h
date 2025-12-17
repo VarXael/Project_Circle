@@ -34,7 +34,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; 
 
 public:
-	// --- COMPONENTS (Mesh, HitBox, Gravity are now in Base) ---
+	// --- COMPONENTS (Mesh, HitBox, Gravity are in Base) ---
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USceneComponent* MuzzleLoc;
@@ -43,10 +43,24 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
 
-	UPROPERTY(EditAnywhere, Category = "Combat")
+	// --- RHYTHM SOURCE ---
+	
+	/** 
+	 * If true, fires on the constant Metronome Beat (1-2-3-4).
+	 * If false, fires on the specific Song Chart Notes (Osu Data).
+	 */
+	UPROPERTY(EditAnywhere, Category = "Combat|Rhythm")
+	bool bFireOnMetronome = false;
+
+	/** Only used if bFireOnMetronome is true. Fires every N beats. */
+	UPROPERTY(EditAnywhere, Category = "Combat|Rhythm", meta=(EditCondition="bFireOnMetronome"))
+	int32 FireEveryNBeats = 1;
+
+	// --- DEBUG ---
+	UPROPERTY(EditAnywhere, Category = "Combat|Debug")
 	bool bAutoFireDebug = false;
 
-	UPROPERTY(EditAnywhere, Category = "Combat", meta=(EditCondition="bAutoFireDebug"))
+	UPROPERTY(EditAnywhere, Category = "Combat|Debug", meta=(EditCondition="bAutoFireDebug"))
 	float FireRate = 0.2f; 
 
 	// --- PATTERN MATH ---
@@ -75,10 +89,16 @@ public:
 
 private:
 	int32 ShotCounter = 0; 
+	int32 BeatCounter = 0;
 	FTimerHandle TimerHandle_TestFire;
 
 	void SpawnBullet(FVector Direction);
 	
+	// Callback for the Music Subsystem (Chart Mode)
 	UFUNCTION()
 	void OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound);
+
+	// Callback for the Music Subsystem (Metronome Mode)
+	UFUNCTION()
+	void OnBeatTriggered(float BeatTimestamp);
 };

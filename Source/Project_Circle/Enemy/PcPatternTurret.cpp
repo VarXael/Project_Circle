@@ -26,12 +26,21 @@ void APcPatternTurret::BeginPlay()
 {
 	Super::BeginPlay(); // Call Base (Sets up Material for hit flash)
 
-	// 1. MUSIC SYNC
+	// 1. MUSIC SYNC SETUP
 	if (UWorld* World = GetWorld())
 	{
 		if (UPcMusicAnalysisSubsystem* MusicSys = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		{
-			MusicSys->OnNoteHit.AddDynamic(this, &APcPatternTurret::OnMusicNoteHit);
+			if (bFireOnMetronome)
+			{
+				// METRONOME MODE: Fire on steady beat
+				MusicSys->OnBeatTriggered.AddDynamic(this, &APcPatternTurret::OnBeatTriggered);
+			}
+			else
+			{
+				// CHART MODE: Fire on specific notes
+				MusicSys->OnNoteHit.AddDynamic(this, &APcPatternTurret::OnMusicNoteHit);
+			}
 		}
 	}
 
@@ -48,7 +57,9 @@ void APcPatternTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		if (UPcMusicAnalysisSubsystem* MusicSys = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		{
+			// Try to unbind both to be safe
 			MusicSys->OnNoteHit.RemoveDynamic(this, &APcPatternTurret::OnMusicNoteHit);
+			MusicSys->OnBeatTriggered.RemoveDynamic(this, &APcPatternTurret::OnBeatTriggered);
 		}
 	}
 	Super::EndPlay(EndPlayReason);
@@ -56,9 +67,23 @@ void APcPatternTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcPatternTurret::OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound)
 {
-	if (!bAutoFireDebug)
+	// Only fire here if we are NOT using Metronome mode (and not debugging)
+	if (!bAutoFireDebug && !bFireOnMetronome)
 	{
 		TriggerBeatShot();
+	}
+}
+
+void APcPatternTurret::OnBeatTriggered(float BeatTimestamp)
+{
+	// Only fire here if we ARE using Metronome mode (and not debugging)
+	if (!bAutoFireDebug && bFireOnMetronome)
+	{
+		BeatCounter++;
+		if (BeatCounter % FMath::Max(1, FireEveryNBeats) == 0)
+		{
+			TriggerBeatShot();
+		}
 	}
 }
 
