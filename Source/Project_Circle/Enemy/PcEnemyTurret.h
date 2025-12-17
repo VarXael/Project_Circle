@@ -1,17 +1,17 @@
 // ==========================================
 // FILE: PcEnemyTurret.h
+// PATH: Source/Project_Circle/Enemy/PcEnemyTurret.h
 // ==========================================
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "PcEnemyBase.h" // Inherit from Base
 #include "PcEnemyTurret.generated.h"
 
 class APcProjectile;
-class UPcGravityMovementComponent; 
 
 UCLASS()
-class PROJECT_CIRCLE_API APcEnemyTurret : public AActor
+class PROJECT_CIRCLE_API APcEnemyTurret : public APcEnemyBase
 {
 	GENERATED_BODY()
 	
@@ -23,15 +23,10 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	// --- COMPONENTS ---
-	UPROPERTY(VisibleAnywhere, Category = "Components")
-	UStaticMeshComponent* MeshComp;
-
+	// --- COMPONENTS (Mesh, HitBox, Gravity are now in Base) ---
+	
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USceneComponent* MuzzleLoc;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UPcGravityMovementComponent* GravityComp;
 
 	// --- COMBAT ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
@@ -48,7 +43,6 @@ public:
 	float TurretRotationSpeed = 5.0f;
 
 private:
-	
 	UFUNCTION(BlueprintCallable)
 	void Shoot();
 };

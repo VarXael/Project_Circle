@@ -1,3 +1,7 @@
+// ==========================================
+// FILE: PcFlowMechanicComponent.cpp
+// PATH: Source/Project_Circle/PcPlayer/FlowSystem/PcFlowMechanicComponent.cpp
+// ==========================================
 #include "PcFlowMechanicComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -9,8 +13,10 @@ UPcFlowMechanicComponent::UPcFlowMechanicComponent()
 void UPcFlowMechanicComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	CurrentCharge = 0.0f; // Start with "Walk of Shame"
+	CurrentCharge = 0.0f; 
 	bInOverdrive = false;
+	CurrentScore = 0.0f;
+	CurrentMultiplier = 0.0f;
 }
 
 void UPcFlowMechanicComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -34,6 +40,25 @@ bool UPcFlowMechanicComponent::TrySpendCharge(float Amount)
 void UPcFlowMechanicComponent::AddCharge(float Amount)
 {
 	CurrentCharge = FMath::Clamp(CurrentCharge + Amount, 0.0f, MaxCharge);
+}
+
+void UPcFlowMechanicComponent::AddScore(float BasePoints)
+{
+	// Formula: Points * (1 + Multiplier). 
+	// If Multiplier is 0, we just get base points.
+	// If Multiplier is 5, we get Points * 6.
+	float FinalPoints = BasePoints * (1.0f + CurrentMultiplier);
+	CurrentScore += FinalPoints;
+}
+
+void UPcFlowMechanicComponent::IncreaseMultiplier(float Amount)
+{
+	CurrentMultiplier += Amount;
+}
+
+void UPcFlowMechanicComponent::ResetMultiplier()
+{
+	CurrentMultiplier = 0.0f;
 }
 
 void UPcFlowMechanicComponent::TriggerHitStop(UWorld* WorldContext)

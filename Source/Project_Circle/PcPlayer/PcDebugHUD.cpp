@@ -106,7 +106,22 @@ void APcDebugHUD::DrawFlowDashboard(APcPlayerCharacter* Player)
 	}
 
 	// =========================================================
-	// 2. DRIFT STAMINA (Vertical Left)
+	// 2. SCORE & MULTIPLIER (Above Charge Bars)
+	// =========================================================
+	FString ScoreStr = FString::Printf(TEXT("SCORE: %0.0f"), Flow->CurrentScore);
+	FString MultStr  = FString::Printf(TEXT("x%0.1f"), Flow->CurrentMultiplier);
+
+	// Multiplier Color logic
+	FLinearColor MultColor = FLinearColor::White;
+	if (Flow->CurrentMultiplier > 4.0f) MultColor = FLinearColor::Red;
+	else if (Flow->CurrentMultiplier > 2.0f) MultColor = FLinearColor::Yellow;
+	else if (Flow->CurrentMultiplier > 0.0f) MultColor = FLinearColor::Green;
+
+	DrawText(ScoreStr, FLinearColor::White, StartX, BottomAnchorY - 30.0f, nullptr, 1.2f);
+	DrawText(MultStr, MultColor, RightEdge - 60.0f, BottomAnchorY - 30.0f, nullptr, 1.5f);
+
+	// =========================================================
+	// 3. DRIFT STAMINA (Vertical Left)
 	// =========================================================
 	float StaminaW = 15.0f;
 	float StaminaH = 200.0f;
@@ -138,9 +153,9 @@ void APcDebugHUD::DrawFlowDashboard(APcPlayerCharacter* Player)
 	DrawText(TEXT("FUSE"), FLinearColor::White, StaminaX, StaminaY + StaminaH + 5.0f, nullptr, 1.0f);
 
 	// =========================================================
-	// 3. ACTION LOG (Above Charge Bars)
+	// 4. ACTION LOG (Above Score)
 	// =========================================================
-	DrawActionLog(BottomAnchorY - 30.0f, RightEdge);
+	DrawActionLog(BottomAnchorY - 60.0f, RightEdge);
 }
 
 void APcDebugHUD::DrawActionLog(float BottomAnchorY, float RightAnchorX)

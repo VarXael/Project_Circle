@@ -183,6 +183,9 @@ void APcPlayerCharacter::TakeHit()
 
 	if (FlowComp) 
 	{ 
+		// RESET MULTIPLIER ON HIT
+		FlowComp->ResetMultiplier();
+
 		// NEW DAMAGE LOGIC: Lose Charge
 		float ChargePenalty = 1.0f;
 		
@@ -206,7 +209,7 @@ void APcPlayerCharacter::TakeHit()
 
 			if (APlayerController* PC = Cast<APlayerController>(GetController()))
 				if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-					HUD->AddStyleMessage("HIT! (-1 Charge)", EStyleEventType::Bad);
+					HUD->AddStyleMessage("HIT! (-1 Charge, Multiplier Reset)", EStyleEventType::Bad);
 		}
 	}
 }
@@ -244,6 +247,10 @@ void APcPlayerCharacter::ResolvePerfectLand()
 	{
 		// THE JACKPOT: +2.0 Charge
 		FlowComp->AddCharge(2.0f);
+		
+		// MULTIPLIER INCREASE
+		FlowComp->IncreaseMultiplier(1.0f);
+
 		FlowComp->TriggerHitStop(GetWorld());
 	}
 
@@ -256,7 +263,7 @@ void APcPlayerCharacter::ResolvePerfectLand()
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 		if (APcDebugHUD* HUD = Cast<APcDebugHUD>(PC->GetHUD()))
-			HUD->AddStyleMessage("PERFECT LAND (+2.0)", EStyleEventType::Good);
+			HUD->AddStyleMessage("PERFECT LAND (+2.0 Charge, +1x Mult)", EStyleEventType::Good);
 }
 
 void APcPlayerCharacter::ResolveBunnyHop()

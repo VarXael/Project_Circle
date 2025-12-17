@@ -1,5 +1,6 @@
 // ==========================================
 // FILE: PcEnemyTurret.cpp
+// PATH: Source/Project_Circle/Enemy/PcEnemyTurret.cpp
 // ==========================================
 #include "PcEnemyTurret.h"
 #include "Kismet/GameplayStatics.h"
@@ -10,24 +11,21 @@ APcEnemyTurret::APcEnemyTurret()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-	RootComponent = MeshComp;
+	// MeshComp, HitBox, GravityComp created in Base Class Constructor
 
 	MuzzleLoc = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLoc"));
 	MuzzleLoc->SetupAttachment(MeshComp);
 	MuzzleLoc->SetRelativeLocation(FVector(50, 0, 20)); 
 
-	GravityComp = CreateDefaultSubobject<UPcGravityMovementComponent>(TEXT("GravityComp"));
-	
-	// Defaults
+	// Configure inherited Gravity Comp
 	GravityComp->PivotOffset = 0.0f; 
 	GravityComp->VerticalSmoothing = 10.0f; 
-	GravityComp->MovementMode = EPcMovementMode::GroundUnit;
 }
 
 void APcEnemyTurret::BeginPlay()
 {
 	Super::BeginPlay();
+	// Base::BeginPlay handles Material creation
 }
 
 void APcEnemyTurret::Tick(float DeltaTime)
@@ -51,27 +49,18 @@ void APcEnemyTurret::Tick(float DeltaTime)
 		if (Dist > StopDistance)
 		{
 			// --- STATE: MOVING ---
-			// Let the component handle rotation based on velocity (bOrientRotationToMovement)
 			GravityComp->bOrientRotationToMovement = true;
 			GravityComp->AddInputVector(FlatDirectionToPlayer);
 		}
 		else
 		{
 			// --- STATE: AIMING (Stationary) ---
-			// 1. Stop Moving
-			GravityComp->bOrientRotationToMovement = false; // Stop physics rotation
+			GravityComp->bOrientRotationToMovement = false; 
 			
-			// 2. Construct the Target Rotation
-			// We want:
-			// X (Forward) = Pointing at Player (Flat)
-			// Z (Up)      = Pointing away from Gravity (Surface Normal)
 			if (!FlatDirectionToPlayer.IsZero() && !SurfaceNormal.IsZero())
 			{
 				FRotator TargetRot = FRotationMatrix::MakeFromXZ(FlatDirectionToPlayer, SurfaceNormal).Rotator();
-
-				// 3. Smoothly Interpolate
 				FRotator NewRot = FMath::RInterpTo(GetActorRotation(), TargetRot, DeltaTime, TurretRotationSpeed);
-				
 				SetActorRotation(NewRot);
 			}
 		}
@@ -89,7 +78,6 @@ void APcEnemyTurret::Shoot()
 	FVector TargetDir = (Player->GetActorLocation() - SpawnLoc).GetSafeNormal();
 	FRotator SpawnRot = TargetDir.Rotation();
 
-	// FIX: Only set Owner. Do not set Instigator (because 'this' is not a Pawn).
 	FActorSpawnParameters P; 
 	P.Owner = this; 
 	

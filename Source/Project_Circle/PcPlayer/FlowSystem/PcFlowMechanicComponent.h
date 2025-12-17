@@ -1,3 +1,7 @@
+// ==========================================
+// FILE: PcFlowMechanicComponent.h
+// PATH: Source/Project_Circle/PcPlayer/FlowSystem/PcFlowMechanicComponent.h
+// ==========================================
 #pragma once
 
 #include "CoreMinimal.h"
@@ -32,12 +36,24 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow Economy")
 	bool bInOverdrive = false;
 
+	// --- SCORING & MULTIPLIER ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow Scoring")
+	float CurrentScore = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Flow Scoring")
+	float CurrentMultiplier = 0.0f;
+
 	// --- API ---
 	
 	// Returns true if successfully spent
 	bool TrySpendCharge(float Amount);
 	
 	void AddCharge(float Amount);
+
+	// Scoring Logic
+	void AddScore(float BasePoints);
+	void IncreaseMultiplier(float Amount);
+	void ResetMultiplier();
 	
 	// Trigger HitStop visual effect (moved from old implementation)
 	void TriggerHitStop(UWorld* WorldContext);

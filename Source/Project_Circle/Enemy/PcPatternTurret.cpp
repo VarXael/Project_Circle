@@ -15,27 +15,22 @@ APcPatternTurret::APcPatternTurret()
 {
 	PrimaryActorTick.bCanEverTick = true; 
 
-	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-	RootComponent = MeshComp;
+	// MeshComp, HitBox, GravityComp created in Base Class
 
 	MuzzleLoc = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLoc"));
 	MuzzleLoc->SetupAttachment(MeshComp);
 	MuzzleLoc->SetRelativeLocation(FVector(0, 0, 50)); 
-
-	GravityComp = CreateDefaultSubobject<UPcGravityMovementComponent>(TEXT("GravityComp"));
-	GravityComp->MovementMode = EPcMovementMode::GroundUnit; 
 }
 
 void APcPatternTurret::BeginPlay()
 {
-	Super::BeginPlay();
+	Super::BeginPlay(); // Call Base (Sets up Material for hit flash)
 
 	// 1. MUSIC SYNC
 	if (UWorld* World = GetWorld())
 	{
 		if (UPcMusicAnalysisSubsystem* MusicSys = World->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		{
-			// Bind to the actual Note Events (The "Rhythm Map")
 			MusicSys->OnNoteHit.AddDynamic(this, &APcPatternTurret::OnMusicNoteHit);
 		}
 	}
@@ -61,7 +56,6 @@ void APcPatternTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcPatternTurret::OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound)
 {
-	// If AutoFireDebug is ON, we ignore the music to avoid double firing
 	if (!bAutoFireDebug)
 	{
 		TriggerBeatShot();
@@ -75,10 +69,6 @@ void APcPatternTurret::Tick(float DeltaTime)
 	// VISUALIZE THE "ELASTIC" ARENA RINGS
 	if (bDrawDebugArena)
 	{
-		// ... [SAME AS PREVIOUS, NO CHANGES NEEDED HERE] ...
-		// Just creating the variables to keep the snippet compile-safe
-		// The full visualizer logic remains from previous step.
-		
 		float SpacingScale = 1.0f;
 		if (UWorld* World = GetWorld())
 		{
@@ -188,7 +178,6 @@ void APcPatternTurret::TriggerBeatShot()
 			SpawnBullet(FireDir);
 		}
 		break;
-	// ... (Other cases same as before) ...
 	case EBulletPattern::DoubleHelix:
 		{
 			float CurrentAngle = ShotCounter * AngleStepPerShot;
@@ -217,6 +206,14 @@ void APcPatternTurret::TriggerBeatShot()
 			SpawnBullet(Rot.RotateVector(BaseForward));
 		}
 		break;
+	case EBulletPattern::Chaos:
+		{
+			// Basic random forward spray
+			float RandYaw = FMath::RandRange(-30.0f, 30.0f);
+			FQuat Rot = FQuat(UpVector, FMath::DegreesToRadians(RandYaw));
+			SpawnBullet(Rot.RotateVector(BaseForward));
+		}
+		break;
 	}
 
 	ShotCounter++;
@@ -235,8 +232,6 @@ void APcPatternTurret::SpawnBullet(FVector Direction)
 	auto* Proj = GetWorld()->SpawnActor<APcProjectile>(ProjectileClass, SpawnLoc, SpawnRot, P);
 	if (Proj)
 	{
-		// Pass RingSpacing AND ArenaRingCount to enforce limits
-		// We overload the Initialize function slightly in next step
 		Proj->InitializeProjectile(Direction, nullptr, false, RingSpacing, ArenaRingCount);
 	}
 }

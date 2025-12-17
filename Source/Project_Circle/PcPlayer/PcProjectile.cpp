@@ -7,8 +7,9 @@
 #include "Project_Circle/GravitySystem/PcGravityZone.h" 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Project_Circle/Enemy/PcEnemyTurret.h"
+#include "Project_Circle/Enemy/PcEnemyBase.h" 
 #include "Project_Circle/PcPlayer/PcPlayerCharacter.h"
+#include "Project_Circle/PcPlayer/FlowSystem/PcFlowMechanicComponent.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -264,13 +265,27 @@ void APcProjectile::OnOverlap(UPrimitiveComponent* OverlappedComp, AActor* Other
 
 	if (bIsPlayerProjectile)
 	{
-		if (auto* Enemy = Cast<APcEnemyTurret>(OtherActor))
+		// Checks against the BASE class.
+		if (auto* Enemy = Cast<APcEnemyBase>(OtherActor))
 		{
-			if (MovementComp && Enemy->GravityComp)
+			// 1. VISUALS
+			Enemy->HandleHit();
+
+			// 2. PHYSICS (REMOVED IMPULSE)
+			// I have deleted the AddImpulse line here. The enemy will no longer move when hit.
+
+			// 3. PLAYER REWARD
+			if (APcPlayerCharacter* PlayerOwner = Cast<APcPlayerCharacter>(GetOwner()))
 			{
-				FVector ImpactDir = GetActorForwardVector();
-				Enemy->GravityComp->AddImpulse(ImpactDir * 2000.0f);
+				if (PlayerOwner->FlowComp)
+				{
+					PlayerOwner->FlowComp->AddCharge(Enemy->ChargeReward); 
+					PlayerOwner->FlowComp->IncreaseMultiplier(1.0f);
+					PlayerOwner->FlowComp->AddScore(Enemy->ScoreReward);
+				}
 			}
+
+			// 4. Destroy Bullet
 			Destroy();
 		}
 	}

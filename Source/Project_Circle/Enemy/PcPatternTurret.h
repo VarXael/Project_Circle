@@ -5,11 +5,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "PcEnemyBase.h" // Inherit from Base
 #include "PcPatternTurret.generated.h"
 
 class APcProjectile;
-class UPcGravityMovementComponent; 
 
 UENUM(BlueprintType)
 enum class EBulletPattern : uint8
@@ -22,7 +21,7 @@ enum class EBulletPattern : uint8
 };
 
 UCLASS()
-class PROJECT_CIRCLE_API APcPatternTurret : public AActor
+class PROJECT_CIRCLE_API APcPatternTurret : public APcEnemyBase
 {
 	GENERATED_BODY()
 	
@@ -32,25 +31,18 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; // To unbind
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override; 
 
 public:
-	// --- COMPONENTS ---
-	UPROPERTY(VisibleAnywhere, Category = "Components")
-	UStaticMeshComponent* MeshComp;
+	// --- COMPONENTS (Mesh, HitBox, Gravity are now in Base) ---
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USceneComponent* MuzzleLoc;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UPcGravityMovementComponent* GravityComp;
 
 	// --- COMBAT CONFIG ---
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	TSubclassOf<APcProjectile> ProjectileClass;
 
-	// If true, fires on a timer (Debugging). 
-	// If false, fires when the Song Configuration dictates a "Note Hit".
 	UPROPERTY(EditAnywhere, Category = "Combat")
 	bool bAutoFireDebug = false;
 
@@ -87,7 +79,6 @@ private:
 
 	void SpawnBullet(FVector Direction);
 	
-	// Callback for the Music Subsystem
 	UFUNCTION()
 	void OnMusicNoteHit(int32 Timestamp, int32 NoteType, int32 HitSound);
 };
