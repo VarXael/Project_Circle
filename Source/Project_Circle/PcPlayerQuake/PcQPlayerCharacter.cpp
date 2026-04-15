@@ -46,13 +46,8 @@ void APcQPlayerCharacter::BeginPlay()
 
 	if (UPcMusicAnalysisSubsystem* MusicSub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 	{
-		// OnGameplayBeatTriggered — fires at the subdivided tempo, not raw BPM.
-		// This is what actually triggers the jump.
 		MusicSub->OnGameplayBeatTriggered.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBeat);
-
-		// OnGameplayBPMChanged — fires when the remapped tempo changes section.
-		// Updates jump height so airtime matches one gameplay beat interval.
-		MusicSub->OnGameplayBPMChanged.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBPMChanged);
+		MusicSub->OnGameplayBPMChanged.AddDynamic(this,   &APcQPlayerCharacter::OnGameplayBPMChanged);
 	}
 }
 
@@ -103,5 +98,12 @@ void APcQPlayerCharacter::OnGameplayBeat(float BeatTimestamp)
 
 void APcQPlayerCharacter::OnGameplayBPMChanged(float NewGameplayBPM)
 {
-	if (MoveComp) MoveComp->UpdateBPM(NewGameplayBPM);
+	if (!MoveComp) return;
+
+	// Get the current subdivision from the subsystem and pass it through.
+	// The movement component uses it to select the correct preset.
+	if (UPcMusicAnalysisSubsystem* MusicSub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+	{
+		MoveComp->UpdateBPM(NewGameplayBPM, MusicSub->GetCurrentSubdivision());
+	}
 }

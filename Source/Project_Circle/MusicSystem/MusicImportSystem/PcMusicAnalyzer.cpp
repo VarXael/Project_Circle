@@ -38,8 +38,7 @@ namespace MusicAnalysisHelpers
 					const float SinglePassDuration = SliderDuration / FMath::Max(1, HO->Repeats);
 					int32 TickCount = FMath::FloorToInt(SinglePassDuration / TickInterval);
 					if (FMath::IsNearlyEqual(SinglePassDuration, (float)(TickCount * TickInterval), 10.f))
-						TickCount =
-							FMath::Max(0, TickCount - 1);
+						TickCount = FMath::Max(0, TickCount - 1);
 					if (TickCount > 0) TotalWeightedActions += TickCount * HO->Repeats;
 				}
 			}
@@ -71,8 +70,7 @@ namespace MusicAnalysisHelpers
 					const float SinglePassDuration = SliderDuration / FMath::Max(1, HO->Repeats);
 					int32 TickCount = FMath::FloorToInt(SinglePassDuration / TickInterval);
 					if (FMath::IsNearlyEqual(SinglePassDuration, (float)(TickCount * TickInterval), 10.f))
-						TickCount =
-							FMath::Max(0, TickCount - 1);
+						TickCount = FMath::Max(0, TickCount - 1);
 					if (TickCount > 0) TotalActions += TickCount * HO->Repeats;
 				}
 			}
@@ -81,7 +79,7 @@ namespace MusicAnalysisHelpers
 	}
 }
 
-// --- UAnalyzedSongData Implementation ---
+// --- UPcMusicAnalyzer Implementation ---
 
 UPcMusicAnalyzer* UPcMusicAnalyzer::RunSongAnalysis(UObject* Outer, UPcMusicConfigurationData* SongConfig)
 {
@@ -151,7 +149,6 @@ UPcMusicAnalyzer* UPcMusicAnalyzer::RunSongAnalysis(UObject* Outer, UPcMusicConf
 	return NewAnalysis;
 }
 
-// MODIFIED: The function now takes the single parameter struct.
 void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Parameters)
 {
 	// --- STEP 1: Structural Analysis ---
@@ -159,7 +156,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	TArray<FPcImportedMusicData> StructuralUninheritedTPs;
 	TArray<const FPcImportedMusicData*> StructuralAllEvents;
 
-	// MODIFIED: Getting the input from the Parameters struct.
 	Parameters.StructuralBaseMap->ForeachRow<FPcImportedMusicData>("Populating Structural Data",
 	                                                     [&](const FName&, const FPcImportedMusicData& Value)
 	                                                     {
@@ -168,16 +164,14 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 			                                                     StructuralHitObjects.Add(&Value);
 		                                                     else if (Value.EntryType == EPcGameplayEntryType::TimingPoint
 			                                                     && Value.Uninherited == 1)
-			                                                     StructuralUninheritedTPs.
-				                                                     Add(Value);
+			                                                     StructuralUninheritedTPs.Add(Value);
 	                                                     });
 
 	if (StructuralUninheritedTPs.Num() == 0 || StructuralHitObjects.Num() == 0)
 	{
-		// This block is UNCHANGED logic-wise.
 		UE_LOG(LogTemp, Warning,
-		       TEXT("Structural analysis aborted: The StructuralBaseMap '%s' contains no timing points or hit objects."
-		       ), *Parameters.StructuralBaseMap->GetName());
+		       TEXT("Structural analysis aborted: The StructuralBaseMap '%s' contains no timing points or hit objects."),
+		       *Parameters.StructuralBaseMap->GetName());
 		RuntimeEventTimeline.Empty();
 		Parameters.GameplayMap->ForeachRow<FPcImportedMusicData>("", [&](const FName&, const FPcImportedMusicData& Value)
 		{
@@ -188,7 +182,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		return;
 	}
 
-	// The ENTIRE block of code from here...
 	TSet<int32> BoundarySet;
 	BoundarySet.Add(0);
 	for (const FPcImportedMusicData& TP : StructuralUninheritedTPs) BoundarySet.Add(TP.TimestampMS);
@@ -236,11 +229,9 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 			for (const FPcImportedMusicData* HO : StructuralHitObjects)
 			{
 				if (HO->TimestampMS >= CurrentTime - LookbackWindowMS && HO->TimestampMS < CurrentTime)
-					HistoryObjects.
-						Add(HO);
+					HistoryObjects.Add(HO);
 				if (HO->TimestampMS >= CurrentTime && HO->TimestampMS < CurrentTime + StepSizeMS)
-					ImmediateObjects.
-						Add(HO);
+					ImmediateObjects.Add(HO);
 			}
 			if (HistoryObjects.Num() < 3) continue;
 
@@ -249,8 +240,7 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 				if (TP.TimestampMS <= CurrentTime) CurrentBaseBeatLength = TP.BeatLength;
 			}
 			if (HistoryObjects.Num() > 0 && HistoryObjects[0]->SliderTickRate > 0)
-				CurrentTickRate = HistoryObjects[0]->
-					SliderTickRate;
+				CurrentTickRate = HistoryObjects[0]->SliderTickRate;
 
 			float CurrentWindowAPS = MusicAnalysisHelpers::CalculateAPS(ImmediateObjects, StepSizeMS / 1000.f,
 			                                                            CurrentBaseBeatLength, CurrentTickRate);
@@ -296,18 +286,15 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	if (AbsoluteSongEnd > StructuralMaxEventTime + LookbackWindowMS)
 	{
 		float LastWindowWAPS = -1.f;
-		for (int32 CurrentTime = StructuralMaxEventTime + LookbackWindowMS; CurrentTime < AbsoluteSongEnd; CurrentTime
-		     += StepSizeMS)
+		for (int32 CurrentTime = StructuralMaxEventTime + LookbackWindowMS; CurrentTime < AbsoluteSongEnd; CurrentTime += StepSizeMS)
 		{
 			TArray<const FPcConfidentHitObject*> HistoryObjects, ImmediateObjects;
 			for (const FPcConfidentHitObject& HO : ConfidentHitObjects)
 			{
 				if (HO.TimestampMS >= CurrentTime - LookbackWindowMS && HO.TimestampMS < CurrentTime)
-					HistoryObjects.
-						Add(&HO);
+					HistoryObjects.Add(&HO);
 				if (HO.TimestampMS >= CurrentTime && HO.TimestampMS < CurrentTime + StepSizeMS)
-					ImmediateObjects.
-						Add(&HO);
+					ImmediateObjects.Add(&HO);
 			}
 			if (HistoryObjects.Num() == 0) continue;
 
@@ -410,9 +397,7 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		}
 
 		UE_LOG(LogTemp, Log,
-		       TEXT(
-			       "Profile [%d] | Start: %dms | Raw Score: %.3f | Norm Score: %.3f | Decision: %s -> New Beat Length: %.2fms"
-		       ),
+		       TEXT("Profile [%d] | Start: %dms | Raw Score: %.3f | Norm Score: %.3f | Decision: %s -> New Beat Length: %.2fms"),
 		       i, Profile.StartTime, Profile.HybridApsScore, NormalizedScore, *BeatDivision, GameplayBeatLength);
 
 		FPcRhythmSectionProfile FinalSection;
@@ -436,12 +421,13 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 
 	if (TempSections.Num() == 0) return;
 
-	// Final cleanup loop is UNCHANGED.
+	// Cleanup pass: merge sections that are too close together.
+	// FIX: Added the missing 'else' so merged sections are NOT also added as separate entries.
 	Result.RhythmSections.Add(TempSections[0]);
 	for (int32 i = 1; i < TempSections.Num(); ++i)
 	{
 		FPcRhythmSectionProfile& Current = TempSections[i];
-		FPcRhythmSectionProfile& Last = Result.RhythmSections.Last();
+		FPcRhythmSectionProfile& Last    = Result.RhythmSections.Last();
 
 		float BaseBeatForLast = 500;
 		for (const FPcImportedMusicData& TP : StructuralUninheritedTPs)
@@ -452,15 +438,19 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 
 		if (Current.StartTimeMS - Last.StartTimeMS < MinDurationMS)
 		{
+			// Too close — merge by promoting to the faster speed if needed.
 			if (Current.BPM > Last.BPM)
 			{
-				Last.BPM = Current.BPM;
+				Last.BPM          = Current.BPM;
 				Last.BeatLengthMS = Current.BeatLengthMS;
 			}
+			// Do NOT add Current as a separate section — it was absorbed into Last.
 		}
-		Result.RhythmSections.Add(Current);
+		else
+		{
+			Result.RhythmSections.Add(Current);
+		}
 	}
-
 
 	RuntimeEventTimeline.Empty();
 	Parameters.GameplayMap->ForeachRow<FPcImportedMusicData>("Populating Gameplay Timeline",
@@ -471,8 +461,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	RuntimeEventTimeline.Sort([](const FPcImportedMusicData& A, const FPcImportedMusicData& B) { return A.TimestampMS < B.TimestampMS; });
 }
 
-
-// GatherCouncilData is UNCHANGED logic-wise.
 bool UPcMusicAnalyzer::GatherCouncilData(const TArray<UDataTable*>& WeightedAnalysisMaps, float DifficultyBias,
                                           TArray<FPcConfidentHitObject>& OutConfidentHitObjects)
 {
@@ -502,13 +490,13 @@ bool UPcMusicAnalyzer::GatherCouncilData(const TArray<UDataTable*>& WeightedAnal
 			case EPcGameplayEntryType::HitObject:
 				{
 					FPcConfidentHitObject& ConfidentHO = TempConfidentHOMap.FindOrAdd(Value.TimestampMS);
-					ConfidentHO.TimestampMS = Value.TimestampMS;
-					ConfidentHO.Confidence += DifficultyWeight;
+					ConfidentHO.TimestampMS   = Value.TimestampMS;
+					ConfidentHO.Confidence   += DifficultyWeight;
 					ConfidentHO.CombinedHitSound |= Value.HitSound;
 					ConfidentHO.HitObjectType = Value.HitObjectType;
-					ConfidentHO.Repeats = Value.Repeats;
+					ConfidentHO.Repeats       = Value.Repeats;
 					ConfidentHO.SliderEndTimeMS = Value.SliderEndTimeMS;
-					ConfidentHO.SliderTickRate = Value.SliderTickRate;
+					ConfidentHO.SliderTickRate  = Value.SliderTickRate;
 					break;
 				}
 			case EPcGameplayEntryType::AudioBeat:

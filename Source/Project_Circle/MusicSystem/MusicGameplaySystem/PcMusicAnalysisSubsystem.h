@@ -89,12 +89,8 @@ private:
 	int32 CurrentBreakEndTimeMS        = -1;
 	TArray<FPcQueuedNoteEvent> NoteEventQueue;
 
-	// Gameplay beat state
 	float CurrentGameplayBPM  = 0.f;
 	int32 BeatSubdivision     = 1;
 	int32 RawBeatCounter      = 0;
-
-	// Loaded from SongConfig on InitializePlayback.
-	// Used as fallback when a section's GameplayBPM is left at 0 in the DataTable.
 	float DefaultGameplayBPM  = 110.f;
 };

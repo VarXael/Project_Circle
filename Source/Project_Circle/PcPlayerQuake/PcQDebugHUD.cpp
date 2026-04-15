@@ -27,13 +27,9 @@ void APcQDebugHUD::DrawDotCrosshair()
 	const float CX = Canvas->SizeX * 0.5f;
 	const float CY = Canvas->SizeY * 0.5f;
 
-	// Shadow pass
 	DrawCircleHUD(CX, CY, DotRingRadius + 1.f, FLinearColor(0.f, 0.f, 0.f, 0.45f), DotRingThickness + 1.f, 32);
-	// Ring
 	DrawCircleHUD(CX, CY, DotRingRadius, CrosshairColor, DotRingThickness, 32);
-	// Dot shadow
 	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.5f), CX - DotSize - 0.5f, CY - DotSize - 0.5f, (DotSize + 0.5f) * 2.f, (DotSize + 0.5f) * 2.f);
-	// Dot
 	DrawRect(CrosshairColor, CX - DotSize, CY - DotSize, DotSize * 2.f, DotSize * 2.f);
 }
 
@@ -87,34 +83,28 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		PanelY += BH + 6.f;
 	}
 
-	// --- BPM & JUMP HEIGHT ---
-	const float BPM = MC->GetCurrentBPM();
-	if (BPM > 0.f)
-	{
-		Row(TEXT("BPM:"),      FString::Printf(TEXT("%.1f"), BPM));
-		Row(TEXT("JUMP VEL:"), FString::Printf(TEXT("%.0f u/s"), MC->JumpZVelocity));
-	}
-	else
-	{
-		Row(TEXT("BPM:"), TEXT("-- (no music)"), FLinearColor(0.5f, 0.5f, 0.5f));
-	}
+	// --- PRESET ---
+	const int32 Sub = MC->GetCurrentSubdivision();
+	FString PresetName;
+	FLinearColor PresetColor;
+	if (Sub <= 1)      { PresetName = TEXT("SLOW");      PresetColor = FLinearColor(0.4f, 0.8f, 1.f); }
+	else if (Sub <= 2) { PresetName = TEXT("NORMAL");    PresetColor = FLinearColor::Green; }
+	else if (Sub <= 4) { PresetName = TEXT("FAST");      PresetColor = FLinearColor::Yellow; }
+	else               { PresetName = TEXT("VERY FAST"); PresetColor = FLinearColor(1.f, 0.4f, 0.f); }
 
-	// --- BEAT QUEUE ---
-	if (State == EBhopState::Active)
-	{
-		const bool bQueued = MC->HasQueuedJump();
-		Row(TEXT("BEAT QUEUED:"), bQueued ? TEXT("YES — land now!") : TEXT("no"),
-			bQueued ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
-	}
+	Row(TEXT("PRESET:"),     FString::Printf(TEXT("%s  (sub %d)"), *PresetName, Sub), PresetColor);
+	Row(TEXT("GAME BPM:"),   FString::Printf(TEXT("%.1f"), MC->GetCurrentBPM()));
+	Row(TEXT("JUMP VEL:"),   FString::Printf(TEXT("%.0f u/s"), MC->JumpZVelocity));
+	Row(TEXT("COYOTE:"),     MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"),
+		MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 
 	// --- SPEED ---
 	const float HSpeed = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White;
 	Row(TEXT("SPEED:"), FString::Printf(TEXT("%.0f u/s"), HSpeed), SpeedCol);
 
-	// Speed bar
 	{
-		const float MaxDisplay = MC->MaxBhopSpeed > 0.f ? MC->MaxBhopSpeed : MC->MaxWalkSpeed * 5.f;
+		const float MaxDisplay = MC->MaxWalkSpeed * 3.f;
 		const float BW = 160.f, BH = 6.f;
 		const float Fill = FMath::Clamp(HSpeed / MaxDisplay, 0.f, 1.f);
 		DrawRect(FLinearColor(0.1f, 0.1f, 0.1f, 0.8f), PanelX, PanelY, BW, BH);
@@ -128,14 +118,12 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		PanelY += BH + 8.f;
 	}
 
-	Row(TEXT("V SPEED:"),  FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z),
+	Row(TEXT("V SPEED:"), FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z),
 		MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
 
-	const bool bGround = MC->IsMovingOnGround();
-	Row(TEXT("GROUNDED:"), bGround ? TEXT("YES") : TEXT("NO"),
-		bGround ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
+	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"),
+		MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
 
-	// --- CHAIN pulse ---
 	if (MC->IsInBhopChain())
 	{
 		const float Pulse = FMath::Abs(FMath::Sin(GetWorld()->GetTimeSeconds() * 6.f));

@@ -21,8 +21,6 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 		return;
 	}
 
-	// Store the song's default gameplay BPM.
-	// Any section with GameplayBPM = 0 in the DataTable will use this.
 	DefaultGameplayBPM = SongConfig->DefaultGameplayBPM > 0.f ? SongConfig->DefaultGameplayBPM : 110.f;
 
 	TArray<FPcRhythmSectionProfile*> TempProfilePtrs;
@@ -102,21 +100,23 @@ void UPcMusicAnalysisSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 
 void UPcMusicAnalysisSubsystem::UpdateGameplayBPM(const FPcRhythmSectionProfile& Section)
 {
-	// Use the section's GameplayBPM if set, otherwise fall back to the song's default.
-	// This means you only need to fill in the DataTable for sections that deviate
-	// from the default — most songs need zero DataTable edits.
-	const float NewGameplayBPM = Section.GameplayBPM > 0.f ? Section.GameplayBPM : DefaultGameplayBPM;
+	// Trust the analyzer's BPM directly (unless you manually override it in the DataTable)
+	const float EffectiveGameplayBPM = Section.GameplayBPM > 0.f ? Section.GameplayBPM : Section.BPM;
 
-	BeatSubdivision = FMath::Max(1, FMath::RoundToInt(Section.BPM / NewGameplayBPM));
-	RawBeatCounter  = 0;
-
-	if (!FMath::IsNearlyEqual(CurrentGameplayBPM, NewGameplayBPM))
+	if (!FMath::IsNearlyEqual(CurrentGameplayBPM, EffectiveGameplayBPM))
 	{
-		CurrentGameplayBPM = NewGameplayBPM;
+		CurrentGameplayBPM = EffectiveGameplayBPM;
+		
+		// Calculate how many times faster this section is than the song's base tempo.
+		// e.g. 440 / 110 = 4x. Or 880 / 440 = 2x.
+		BeatSubdivision = FMath::Max(1, FMath::RoundToInt(CurrentGameplayBPM / DefaultGameplayBPM));
+		
+		RawBeatCounter = 0;
+
 		OnGameplayBPMChanged.Broadcast(CurrentGameplayBPM);
 
-		UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: RawBPM=%.1f  GameplayBPM=%.1f  Subdivision=%d"),
-			Section.BPM, NewGameplayBPM, BeatSubdivision);
+		UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: EffectiveBPM=%.1f  SpeedMultiplier=%d"),
+			EffectiveGameplayBPM, BeatSubdivision);
 	}
 }
 
@@ -174,11 +174,8 @@ void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 
 		OnBeatTriggered.Broadcast(BeatTimeSeconds);
 
-		RawBeatCounter++;
-		if (RawBeatCounter % BeatSubdivision == 0)
-		{
-			OnGameplayBeatTriggered.Broadcast(BeatTimeSeconds);
-		}
+		// Every music pulse triggers a gameplay jump pulse.
+		OnGameplayBeatTriggered.Broadcast(BeatTimeSeconds);
 
 		CurrentBeatInSession++;
 		NextBeatTimestampMS = Anchor + FMath::RoundToInt(CurrentBeatInSession * BeatLength);
@@ -292,5 +289,11 @@ void UPcMusicAnalysisSubsystem::GenerateSliderSubEvents(const FPcImportedMusicDa
 			NoteEventQueue.Add(Tail);
 		}
 	}
-	NoteEventQueue.Sort([](const FPcQueuedNoteEvent& A, const FPcQueuedNoteEvent& B) { return A.TimestampMS > B.TimestampMS; });
+
+	// Sort descending so NoteEventQueue.Last() always gives the earliest timestamp.
+	// ProcessMusicEvents pops from the back, so earliest must live at the end.
+	NoteEventQueue.Sort([](const FPcQueuedNoteEvent& A, const FPcQueuedNoteEvent& B)
+	{
+		return A.TimestampMS > B.TimestampMS;
+	});
 }
