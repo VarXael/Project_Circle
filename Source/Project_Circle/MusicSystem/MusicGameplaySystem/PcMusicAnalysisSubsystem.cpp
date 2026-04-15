@@ -8,56 +8,47 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 
 	if (!SongConfig)
 	{
-		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: Provided SongConfiguration was null. Cannot initialize playback."));
+		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: SongConfiguration was null."));
 		return;
 	}
 
-	// Get the generated data tables from the SongConfig asset
 	UDataTable* RhythmProfileData = SongConfig->GeneratedRhythmProfile;
-	UDataTable* NoteEventData = SongConfig->GeneratedNoteData;
+	UDataTable* NoteEventData     = SongConfig->GeneratedNoteData;
 
 	if (!RhythmProfileData || !NoteEventData)
 	{
-		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: The provided SongConfiguration is missing its GeneratedRhythmProfile or GeneratedNoteData. Did you generate the assets?"));
+		UE_LOG(LogTemp, Error, TEXT("MusicAnalysisSubsystem: Missing GeneratedRhythmProfile or GeneratedNoteData."));
 		return;
 	}
 
+	// Store the song's default gameplay BPM.
+	// Any section with GameplayBPM = 0 in the DataTable will use this.
+	DefaultGameplayBPM = SongConfig->DefaultGameplayBPM > 0.f ? SongConfig->DefaultGameplayBPM : 110.f;
+
 	TArray<FPcRhythmSectionProfile*> TempProfilePtrs;
-	TArray<FPcImportedMusicData*> TempEventPtrs;
+	TArray<FPcImportedMusicData*>    TempEventPtrs;
 	RhythmProfileData->GetAllRows(TEXT("Loading Rhythm Profile"), TempProfilePtrs);
-	NoteEventData->GetAllRows(TEXT("Loading Note Events"), TempEventPtrs);
+	NoteEventData->GetAllRows(TEXT("Loading Note Events"),        TempEventPtrs);
 
 	RhythmProfileRows.Reserve(TempProfilePtrs.Num());
 	for (const FPcRhythmSectionProfile* Ptr : TempProfilePtrs)
-	{
-		if (Ptr)
-		{
-			RhythmProfileRows.Add(*Ptr);
-		}
-	}
+		if (Ptr) RhythmProfileRows.Add(*Ptr);
 
 	RuntimeEventRows.Reserve(TempEventPtrs.Num());
 	for (const FPcImportedMusicData* Ptr : TempEventPtrs)
-	{
-		if (Ptr)
-		{
-			RuntimeEventRows.Add(*Ptr);
-		}
-	}
+		if (Ptr) RuntimeEventRows.Add(*Ptr);
 
 	if (RhythmProfileRows.Num() == 0 || RuntimeEventRows.Num() == 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("MusicAnalysisSubsystem: One or both of the generated DataTables were empty."));
+		UE_LOG(LogTemp, Warning, TEXT("MusicAnalysisSubsystem: One or both DataTables were empty."));
 		return;
 	}
 
 	for (const FPcImportedMusicData& EventRow : RuntimeEventRows)
 	{
 		if (EventRow.EntryType == EPcGameplayEntryType::TimingPoint && EventRow.Uninherited == 1)
-		{
 			MasterBeatLengths.Add(EventRow.TimestampMS, EventRow.BeatLength);
-		}
-		
+
 		AbsoluteSongEndTimeMS = FMath::Max(AbsoluteSongEndTimeMS, EventRow.TimestampMS);
 		AbsoluteSongEndTimeMS = FMath::Max(AbsoluteSongEndTimeMS, EventRow.BreakEndTimeMS);
 		AbsoluteSongEndTimeMS = FMath::Max(AbsoluteSongEndTimeMS, EventRow.SliderEndTimeMS);
@@ -65,34 +56,36 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 	AbsoluteSongEndTimeMS += 2000;
 
 	bIsReadyForPlayback = true;
-	UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: Initialized with %d rhythm sections and %d timeline events. Ready."), RhythmProfileRows.Num(), RuntimeEventRows.Num());
+	UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: Initialized. %d rhythm sections, %d events. DefaultGameplayBPM=%.1f"),
+		RhythmProfileRows.Num(), RuntimeEventRows.Num(), DefaultGameplayBPM);
 }
 
 void UPcMusicAnalysisSubsystem::ResetState()
 {
-	bIsReadyForPlayback = false;
-	
-	// FIX: Added back the lines to clear the main data arrays. This is critical.
+	bIsReadyForPlayback          = false;
 	RhythmProfileRows.Empty();
 	RuntimeEventRows.Empty();
-	
 	MasterBeatLengths.Empty();
 	NoteEventQueue.Empty();
-	NextEventIndex = 0;
+	NextEventIndex               = 0;
 	LastProcessedMusicProgressMs = -1;
-	AbsoluteSongEndTimeMS = -1;
-	NextBeatTimestampMS = 0;
-	CurrentSectionIndex = 0;
-	CurrentBeatInSession = 0;
-	CurrentBPM = 0.f;
-	CurrentMeter = 4;
-	CurrentBreakEndTimeMS = -1;
+	AbsoluteSongEndTimeMS        = -1;
+	NextBeatTimestampMS          = 0;
+	CurrentSectionIndex          = 0;
+	CurrentBeatInSession         = 0;
+	CurrentBPM                   = 0.f;
+	CurrentMeter                 = 4;
+	CurrentBreakEndTimeMS        = -1;
+	CurrentGameplayBPM           = 0.f;
+	BeatSubdivision              = 1;
+	RawBeatCounter               = 0;
+	DefaultGameplayBPM           = 110.f;
 }
 
 void UPcMusicAnalysisSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 {
 	if (!bIsReadyForPlayback) return;
-	
+
 	const int32 CurrentTimeMs = FMath::RoundToInt(CurrentTimeSeconds * 1000.0f);
 	if (CurrentTimeMs > LastProcessedMusicProgressMs)
 	{
@@ -107,6 +100,91 @@ void UPcMusicAnalysisSubsystem::UpdateMusicTime(float CurrentTimeSeconds)
 	}
 }
 
+void UPcMusicAnalysisSubsystem::UpdateGameplayBPM(const FPcRhythmSectionProfile& Section)
+{
+	// Use the section's GameplayBPM if set, otherwise fall back to the song's default.
+	// This means you only need to fill in the DataTable for sections that deviate
+	// from the default — most songs need zero DataTable edits.
+	const float NewGameplayBPM = Section.GameplayBPM > 0.f ? Section.GameplayBPM : DefaultGameplayBPM;
+
+	BeatSubdivision = FMath::Max(1, FMath::RoundToInt(Section.BPM / NewGameplayBPM));
+	RawBeatCounter  = 0;
+
+	if (!FMath::IsNearlyEqual(CurrentGameplayBPM, NewGameplayBPM))
+	{
+		CurrentGameplayBPM = NewGameplayBPM;
+		OnGameplayBPMChanged.Broadcast(CurrentGameplayBPM);
+
+		UE_LOG(LogTemp, Log, TEXT("MusicAnalysisSubsystem: RawBPM=%.1f  GameplayBPM=%.1f  Subdivision=%d"),
+			Section.BPM, NewGameplayBPM, BeatSubdivision);
+	}
+}
+
+void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
+{
+	if (RhythmProfileRows.Num() == 0) return;
+
+	int32 NewSectionIndex = CurrentSectionIndex;
+	while (NewSectionIndex < RhythmProfileRows.Num() - 1 &&
+		   InCurrentTimeMS >= RhythmProfileRows[NewSectionIndex + 1].StartTimeMS)
+	{
+		NewSectionIndex++;
+	}
+
+	if (NewSectionIndex != CurrentSectionIndex || CurrentBPM == 0.f)
+	{
+		CurrentSectionIndex = NewSectionIndex;
+		const FPcRhythmSectionProfile& Section = RhythmProfileRows[CurrentSectionIndex];
+
+		if (!FMath::IsNearlyEqual(CurrentBPM, Section.BPM))
+		{
+			CurrentBPM = Section.BPM;
+			OnBPMChanged.Broadcast(CurrentBPM);
+		}
+
+		UpdateGameplayBPM(Section);
+
+		CurrentBeatInSession = 0;
+		NextBeatTimestampMS  = Section.AnchorTimestampMS;
+	}
+}
+
+void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
+{
+	if (InCurrentTimeMS < CurrentBreakEndTimeMS || RhythmProfileRows.Num() == 0 ||
+		CurrentSectionIndex >= RhythmProfileRows.Num()) return;
+
+	const FPcRhythmSectionProfile& Section = RhythmProfileRows[CurrentSectionIndex];
+	const float BeatLength = Section.BeatLengthMS;
+	const int32 Anchor     = Section.AnchorTimestampMS;
+
+	if (BeatLength <= 0 || InCurrentTimeMS < Anchor) return;
+
+	if (NextBeatTimestampMS <= 0 || NextBeatTimestampMS < InCurrentTimeMS - FMath::RoundToInt(BeatLength * 4))
+	{
+		const float BeatsPassed = (InCurrentTimeMS - Anchor) / BeatLength;
+		CurrentBeatInSession    = FMath::FloorToInt(BeatsPassed) + 1;
+	}
+
+	NextBeatTimestampMS = Anchor + FMath::RoundToInt(CurrentBeatInSession * BeatLength);
+
+	while (InCurrentTimeMS >= NextBeatTimestampMS)
+	{
+		const float BeatTimeSeconds = NextBeatTimestampMS / 1000.0f;
+
+		OnBeatTriggered.Broadcast(BeatTimeSeconds);
+
+		RawBeatCounter++;
+		if (RawBeatCounter % BeatSubdivision == 0)
+		{
+			OnGameplayBeatTriggered.Broadcast(BeatTimeSeconds);
+		}
+
+		CurrentBeatInSession++;
+		NextBeatTimestampMS = Anchor + FMath::RoundToInt(CurrentBeatInSession * BeatLength);
+	}
+}
+
 void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 {
 	const int32 CurrentTimeMs = LastProcessedMusicProgressMs;
@@ -115,17 +193,13 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 
 	while (true)
 	{
-		// FIX: Added the '&' to get the address of the struct from the array.
 		const FPcImportedMusicData* NextMajorEvent = (NextEventIndex < RuntimeEventRows.Num()) ? &RuntimeEventRows[NextEventIndex] : nullptr;
-		FPcQueuedNoteEvent* NextSubEvent = (NoteEventQueue.Num() > 0) ? &NoteEventQueue.Last() : nullptr;
-		
+		FPcQueuedNoteEvent*         NextSubEvent   = (NoteEventQueue.Num() > 0) ? &NoteEventQueue.Last() : nullptr;
+
 		const int32 NextMajorEventTime = NextMajorEvent ? NextMajorEvent->TimestampMS : INT_MAX;
-		const int32 NextSubEventTime = NextSubEvent ? NextSubEvent->TimestampMS : INT_MAX;
-		
-		if (FMath::Min(NextMajorEventTime, NextSubEventTime) > CurrentTimeMs)
-		{
-			break;
-		}
+		const int32 NextSubEventTime   = NextSubEvent   ? NextSubEvent->TimestampMS   : INT_MAX;
+
+		if (FMath::Min(NextMajorEventTime, NextSubEventTime) > CurrentTimeMs) break;
 
 		if (NextMajorEventTime <= NextSubEventTime)
 		{
@@ -135,9 +209,7 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 				{
 					OnNoteHit.Broadcast(NextMajorEvent->TimestampMS, NextMajorEvent->HitObjectType, NextMajorEvent->HitSound);
 					if (NextMajorEvent->HitObjectType & 2)
-					{
 						GenerateSliderSubEvents(*NextMajorEvent);
-					}
 				}
 				else if (NextMajorEvent->EntryType == EPcGameplayEntryType::TimingPoint)
 				{
@@ -164,7 +236,7 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 			}
 		}
 	}
-	
+
 	if (CurrentBreakEndTimeMS > 0 && LastProcessedMusicProgressMs < CurrentBreakEndTimeMS && CurrentTimeMs >= CurrentBreakEndTimeMS)
 	{
 		OnBreakEnd.Broadcast(0, CurrentBreakEndTimeMS);
@@ -172,103 +244,52 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 	}
 }
 
-void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
-{
-	if (RhythmProfileRows.Num() == 0) return;
-	
-	int32 NewSectionIndex = CurrentSectionIndex;
-	while (NewSectionIndex < RhythmProfileRows.Num() - 1 && InCurrentTimeMS >= RhythmProfileRows[NewSectionIndex + 1].StartTimeMS)
-	{
-		NewSectionIndex++;
-	}
-
-	if (NewSectionIndex != CurrentSectionIndex || CurrentBPM == 0.f)
-	{
-		CurrentSectionIndex = NewSectionIndex;
-		const FPcRhythmSectionProfile* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
-		
-		if (CurrentSection)
-		{
-			if (!FMath::IsNearlyEqual(CurrentBPM, CurrentSection->BPM))
-			{
-				CurrentBPM = CurrentSection->BPM;
-				OnBPMChanged.Broadcast(CurrentBPM);
-			}
-			CurrentBeatInSession = 0; 
-			NextBeatTimestampMS = CurrentSection->AnchorTimestampMS;
-		}
-	}
-}
-
-void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
-{
-	if (InCurrentTimeMS < CurrentBreakEndTimeMS || RhythmProfileRows.Num() == 0 || CurrentSectionIndex >= RhythmProfileRows.Num()) return;
-
-	const FPcRhythmSectionProfile* CurrentSection = &RhythmProfileRows[CurrentSectionIndex];
-	
-	if (!CurrentSection) return;
-
-	const float BeatLength = CurrentSection->BeatLengthMS;
-	const int32 Anchor = CurrentSection->AnchorTimestampMS;
-
-	if (BeatLength <= 0 || InCurrentTimeMS < Anchor) return;
-
-	if (NextBeatTimestampMS <= 0 || NextBeatTimestampMS < InCurrentTimeMS - FMath::RoundToInt(BeatLength * 4))
-	{
-		const float BeatsPassed = (InCurrentTimeMS - Anchor) / BeatLength;
-		CurrentBeatInSession = FMath::FloorToInt(BeatsPassed) + 1;
-	}
-
-	NextBeatTimestampMS = Anchor + FMath::RoundToInt(CurrentBeatInSession * BeatLength);
-
-	while (InCurrentTimeMS >= NextBeatTimestampMS)
-	{
-		OnBeatTriggered.Broadcast(NextBeatTimestampMS / 1000.0f);
-		CurrentBeatInSession++;
-		NextBeatTimestampMS = Anchor + FMath::RoundToInt(CurrentBeatInSession * BeatLength);
-	}
-}
-
 void UPcMusicAnalysisSubsystem::GenerateSliderSubEvents(const FPcImportedMusicData& SliderData)
 {
 	if (!(SliderData.HitObjectType & 2)) return;
-	
+
 	float BaseBeatLength = 500.f;
 	if (MasterBeatLengths.Num() > 0)
 	{
 		int32 BestTPTime = -1;
-		for(const auto& Elem : MasterBeatLengths)
+		for (const auto& Elem : MasterBeatLengths)
 		{
 			if (Elem.Key <= SliderData.TimestampMS && Elem.Key > BestTPTime)
 			{
 				BaseBeatLength = Elem.Value;
-				BestTPTime = Elem.Key;
+				BestTPTime     = Elem.Key;
 			}
 		}
 	}
-	
-	const float SliderDuration = SliderData.SliderEndTimeMS - SliderData.TimestampMS;
-	const float TickInterval = (BaseBeatLength > 0 && SliderData.SliderTickRate > 0) ? FMath::Max(20.f, BaseBeatLength / SliderData.SliderTickRate) : -1.f;
 
-	if (SliderDuration > 0 && TickInterval > 0) {
+	const float SliderDuration = SliderData.SliderEndTimeMS - SliderData.TimestampMS;
+	const float TickInterval   = (BaseBeatLength > 0 && SliderData.SliderTickRate > 0)
+		? FMath::Max(20.f, BaseBeatLength / SliderData.SliderTickRate) : -1.f;
+
+	if (SliderDuration > 0 && TickInterval > 0)
+	{
 		const float SinglePassDuration = SliderDuration / FMath::Max(1, SliderData.Repeats);
-		for (int32 Pass = 0; Pass < SliderData.Repeats; ++Pass) {
-			for (float TimeAlongPass = TickInterval; TimeAlongPass < SinglePassDuration; TimeAlongPass += TickInterval) {
-				if (!FMath::IsNearlyEqual(TimeAlongPass, SinglePassDuration, 1.f)) {
-					FPcQueuedNoteEvent TickEvent;
-					TickEvent.TimestampMS = SliderData.TimestampMS + FMath::RoundToInt((Pass * SinglePassDuration) + TimeAlongPass);
-					TickEvent.NoteType = EQueuedNoteType::SliderTick;
-					TickEvent.OriginalHitSound = SliderData.HitSound;
-					NoteEventQueue.Add(TickEvent);
+		for (int32 Pass = 0; Pass < SliderData.Repeats; ++Pass)
+		{
+			for (float T = TickInterval; T < SinglePassDuration; T += TickInterval)
+			{
+				if (!FMath::IsNearlyEqual(T, SinglePassDuration, 1.f))
+				{
+					FPcQueuedNoteEvent Tick;
+					Tick.TimestampMS      = SliderData.TimestampMS + FMath::RoundToInt((Pass * SinglePassDuration) + T);
+					Tick.NoteType         = EQueuedNoteType::SliderTick;
+					Tick.OriginalHitSound = SliderData.HitSound;
+					NoteEventQueue.Add(Tick);
 				}
 			}
 		}
-		for (int32 Repeat = 1; Repeat <= SliderData.Repeats; ++Repeat) {
-			FPcQueuedNoteEvent TailEvent;
-			TailEvent.TimestampMS = SliderData.TimestampMS + FMath::RoundToInt(Repeat * SinglePassDuration);
-			TailEvent.NoteType = EQueuedNoteType::SliderTail;
-			TailEvent.OriginalHitSound = SliderData.HitSound;
-			NoteEventQueue.Add(TailEvent);
+		for (int32 Repeat = 1; Repeat <= SliderData.Repeats; ++Repeat)
+		{
+			FPcQueuedNoteEvent Tail;
+			Tail.TimestampMS      = SliderData.TimestampMS + FMath::RoundToInt(Repeat * SinglePassDuration);
+			Tail.NoteType         = EQueuedNoteType::SliderTail;
+			Tail.OriginalHitSound = SliderData.HitSound;
+			NoteEventQueue.Add(Tail);
 		}
 	}
 	NoteEventQueue.Sort([](const FPcQueuedNoteEvent& A, const FPcQueuedNoteEvent& B) { return A.TimestampMS > B.TimestampMS; });

@@ -14,6 +14,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBPMChanged, float, NewBPM);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMeterChanged, int32, NewMeter);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBreakPeriod, int32, StartTimeMS, int32, EndTimeMS);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongEnd, float, EndTimeSeconds);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameplayBeatTriggered, float, BeatTimestamp);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameplayBPMChanged, float, NewGameplayBPM);
 
 UCLASS()
 class PROJECT_CIRCLE_API UPcMusicAnalysisSubsystem : public UWorldSubsystem
@@ -21,15 +23,9 @@ class PROJECT_CIRCLE_API UPcMusicAnalysisSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	/**
-	 * Initializes the subsystem for playback using pre-processed, hand-tuned data from DataTables.
-	 * @param RhythmProfileData The DataTable containing the FRhythmSectionProfile rows.
-	 * @param NoteEventData The DataTable containing the FMusicData for the specific difficulty being played.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void InitializePlayback(UPcMusicConfigurationData* SongConfig);
 
-	/** Updates the subsystem with the current music time, triggering events. */
 	UFUNCTION(BlueprintCallable, Category = "Music Analysis")
 	void UpdateMusicTime(float CurrentTimeSeconds);
 
@@ -40,9 +36,14 @@ public:
 	float GetCurrentBPM() const { return CurrentBPM; }
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
+	float GetCurrentGameplayBPM() const { return CurrentGameplayBPM; }
+
+	UFUNCTION(BlueprintPure, Category = "Music Analysis")
+	int32 GetCurrentSubdivision() const { return BeatSubdivision; }
+
+	UFUNCTION(BlueprintPure, Category = "Music Analysis")
 	bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
 
-	// --- Delegates ---
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnBeatTriggered OnBeatTriggered;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
@@ -59,6 +60,10 @@ public:
 	FOnBreakPeriod OnBreakEnd;
 	UPROPERTY(BlueprintAssignable, Category = "Music Events")
 	FOnSongEnd OnSongEnd;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay")
+	FOnGameplayBeatTriggered OnGameplayBeatTriggered;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay")
+	FOnGameplayBPMChanged OnGameplayBPMChanged;
 
 private:
 	void ProcessMusicEvents();
@@ -66,23 +71,30 @@ private:
 	void ProcessBeatTicks(int32 InCurrentTimeMS);
 	void GenerateSliderSubEvents(const FPcImportedMusicData& SliderData);
 	void ResetState();
-
-	// --- Core Playback Data ---
+	void UpdateGameplayBPM(const FPcRhythmSectionProfile& Section);
 
 	TArray<FPcRhythmSectionProfile> RhythmProfileRows;
-	TArray<FPcImportedMusicData> RuntimeEventRows;
-	TMap<int32, float> MasterBeatLengths; // For slider tick calculations
+	TArray<FPcImportedMusicData>    RuntimeEventRows;
+	TMap<int32, float>              MasterBeatLengths;
 
-	// --- Playback State Tracking ---
-	bool bIsReadyForPlayback = false;
-	int32 NextEventIndex = 0;
+	bool  bIsReadyForPlayback          = false;
+	int32 NextEventIndex               = 0;
 	int32 LastProcessedMusicProgressMs = -1;
-	int32 AbsoluteSongEndTimeMS = -1;
-	int32 NextBeatTimestampMS = 0;
-	int32 CurrentSectionIndex = 0;
-	int32 CurrentBeatInSession = 0;
-	float CurrentBPM = 0.f;
-	int32 CurrentMeter = 4;
-	int32 CurrentBreakEndTimeMS = -1;
+	int32 AbsoluteSongEndTimeMS        = -1;
+	int32 NextBeatTimestampMS          = 0;
+	int32 CurrentSectionIndex          = 0;
+	int32 CurrentBeatInSession         = 0;
+	float CurrentBPM                   = 0.f;
+	int32 CurrentMeter                 = 4;
+	int32 CurrentBreakEndTimeMS        = -1;
 	TArray<FPcQueuedNoteEvent> NoteEventQueue;
+
+	// Gameplay beat state
+	float CurrentGameplayBPM  = 0.f;
+	int32 BeatSubdivision     = 1;
+	int32 RawBeatCounter      = 0;
+
+	// Loaded from SongConfig on InitializePlayback.
+	// Used as fallback when a section's GameplayBPM is left at 0 in the DataTable.
+	float DefaultGameplayBPM  = 110.f;
 };

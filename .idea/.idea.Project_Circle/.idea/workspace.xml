@@ -11,32 +11,134 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="" />
+    <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQDebugHUD.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQDebugHUD.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerCharacter.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerCharacter.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerMovementComponent.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerMovementComponent.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Config/DefaultEngine.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultEngine.ini" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Blueprints/BP_MusicManager.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Blueprints/BP_MusicManager.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Blueprints/BP_PcGameMode.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Blueprints/BP_PcGameMode.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Blueprints/FirstPerson/Blueprints/BP_FirstPersonCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Blueprints/FirstPerson/Blueprints/BP_FirstPersonCharacter.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Blueprints/Player/BP_PcPlayerMovementComponent.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Blueprints/Tests/BP_EncounterManager.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Blueprints/Tests/BP_EncounterManager.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Maps/L_MusicTest.umap" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Maps/L_MusicTest.umap" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Prototype/Core/Player/Input/Actions/IA_Jump.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Prototype/Core/Player/Input/Actions/IA_Jump.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/Maps/L_MusicTest/C/IZ/Q1QD2XZQX3WBG4287KJ8WK.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/Maps/L_MusicTest/C/IZ/Q1QD2XZQX3WBG4287KJ8WK.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalysisTypes.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalysisTypes.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcPlayerMovementComponent.cpp" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcPlayerMovementComponent.h" beforeDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="DpaMonitoringSettings">
+    <option name="firstShow" value="false" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;VarXael&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/VarXael/Project_Circle.git&quot;,
+    &quot;accountId&quot;: &quot;67c7343e-3eb9-4864-ac49-3c07b557f7cd&quot;
+  }
+}</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="cidr-memory-view://3" root0="FORCE_HIGHLIGHTING" />
-    <setting file="cidr-memory-view://4" root0="FORCE_HIGHLIGHTING" />
+    <setting file="cidr-memory-view://9" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Classes/GameFramework/Actor.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Private/Components/CharacterMovementComponent.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcDebugHUD.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcDebugHUD.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcPlayerController.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcPlayerController.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcProjectile.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcProjectile.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQDebugHUD.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQDebugHUD.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerCharacter.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayerQuake/PcQPlayerCharacter.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.h" root0="FORCE_HIGHLIGHTING" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "node.js.selected.package.tslint": "(autodetect)"
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="3Bd5R1YPrRP6J9d1E5GeEDTMwH1" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;C/C++ Project.Games\\Project_Circle.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;Player-Slide-Movement&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
+  <component name="RunManager">
+    <configuration name="Games\Project_Circle" type="CppProject" factoryName="C++ Project" temporary="true">
+      <configuration_1 setup="1">
+        <option name="CONFIGURATION" value="Development_Editor" />
+        <option name="PLATFORM" value="x64" />
+        <option name="CURRENT_LAUNCH_PROFILE" value="Local" />
+        <option name="EXE_PATH" value="$(LocalDebuggerCommand)" />
+        <option name="PROGRAM_PARAMETERS" value="$(LocalDebuggerCommandArguments)" />
+        <option name="WORKING_DIRECTORY" value="$(LocalDebuggerWorkingDirectory)" />
+        <option name="PASS_PARENT_ENVS" value="1" />
+        <option name="USE_EXTERNAL_CONSOLE" value="0" />
+        <option name="TERMINAL_INTERACTION_BEHAVIOR" value="AUTO_DETECT" />
+        <option name="PROJECT_FILE_PATH" value="$PROJECT_DIR$/Intermediate/ProjectFiles/Project_Circle.vcxproj" />
+      </configuration_1>
+      <option name="DEFAULT_PROJECT_PATH" value="$PROJECT_DIR$/Intermediate/ProjectFiles/Project_Circle.vcxproj" />
+      <option name="PROJECT_FILE_PATH" value="$PROJECT_DIR$/Intermediate/ProjectFiles/Project_Circle.vcxproj" />
+      <option name="AUTO_SELECT_PRIORITY" value="10010" />
+      <method v="2">
+        <option name="Build" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="C/C++ Project.Games\Project_Circle" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="" />
+      <created>1774807000399</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1774807000399</updated>
+      <workItem from="1774807000401" duration="913000" />
+      <workItem from="1776203251402" duration="7574000" />
+    </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
   <component name="XDebuggerManager">
