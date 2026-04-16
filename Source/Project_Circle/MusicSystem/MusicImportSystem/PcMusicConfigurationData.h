@@ -12,20 +12,12 @@ class PROJECT_CIRCLE_API UPcMusicConfigurationData : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	// --- CORE GAMEPLAY DATA ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
 	TObjectPtr<UDataTable> GameplayMap;
 
-	// --- GAMEPLAY BPM ---
-	/**
-	 * The target gameplay BPM. 
-	 * The system automatically calculates the correct subdivision based on this.
-	 * (e.g. Song is 440 BPM, Target is 110 BPM -> System automatically jumps every 4 beats).
-	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|BPM", meta = (ClampMin = "1.0", ClampMax = "300.0"))
 	float DefaultGameplayBPM = 110.f;
 
-	// --- RHYTHM ANALYSIS DATA ---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis")
 	TArray<TObjectPtr<UDataTable>> AdditionalAnalysisMaps;
 
@@ -35,7 +27,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis", meta=(DisplayName="Structural Base Map (Optional Override)"))
 	TObjectPtr<UDataTable> StructuralAnalysisBaseMapOverride;
 
-	// --- GENERATED GAMEPLAY ASSETS ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Generated Assets")
 	TObjectPtr<UDataTable> GeneratedRhythmProfile;
 

@@ -23,29 +23,16 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UCameraComponent* CameraComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UCameraComponent* CameraComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UPcQPlayerMovementComponent* MoveComp;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UPcQPlayerMovementComponent* MoveComp;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputMappingContext* DefaultMappingContext;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Move;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Look;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Jump;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputMappingContext* DefaultMappingContext;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputAction* IA_Move;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputAction* IA_Look;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
-	UInputAction* IA_Jump;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Look")
-	float LookSensitivityX = 0.4f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Look")
-	float LookSensitivityY = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityX = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityY = 0.4f;
 
 private:
 	void Input_Move(const FInputActionValue& Value);
@@ -53,9 +40,6 @@ private:
 	void Input_JumpPressed();
 	void Input_JumpReleased();
 
-	UFUNCTION()
-	void OnGameplayBeat(float BeatTimestamp);
-
-	UFUNCTION()
-	void OnGameplayBPMChanged(float NewGameplayBPM);
+	UFUNCTION() void OnGameplayBeat(float BeatTimestamp);
+	UFUNCTION() void OnGameplayBPMChanged(float NewGameplayBPM);
 };

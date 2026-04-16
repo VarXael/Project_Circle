@@ -13,20 +13,10 @@ class PROJECT_CIRCLE_API APcQDebugHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	/** Radius of the outer ring. */
-	UPROPERTY(EditAnywhere, Category = "Crosshair")
-	float DotRingRadius = 7.f;
-
-	/** Thickness of the outer ring lines. */
-	UPROPERTY(EditAnywhere, Category = "Crosshair")
-	float DotRingThickness = 1.2f;
-
-	/** Half-size of the center filled dot. */
-	UPROPERTY(EditAnywhere, Category = "Crosshair")
-	float DotSize = 2.f;
-
-	UPROPERTY(EditAnywhere, Category = "Crosshair")
-	FLinearColor CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.92f);
+	UPROPERTY(EditAnywhere) float DotRingRadius = 7.f;
+	UPROPERTY(EditAnywhere) float DotRingThickness = 1.2f;
+	UPROPERTY(EditAnywhere) float DotSize = 2.f;
+	UPROPERTY(EditAnywhere) FLinearColor CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.92f);
 
 private:
 	void DrawDotCrosshair();

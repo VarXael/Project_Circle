@@ -6,6 +6,7 @@
 #include "PcMusicAnalysisSubsystem.generated.h"
 
 class UDataTable;
+class UPcMusicConfigurationData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBeatTriggered, float, BeatTimestamp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSongProgress, float, CurrentSongProgress);
@@ -42,55 +43,39 @@ public:
 	int32 GetCurrentSubdivision() const { return BeatSubdivision; }
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
-	bool IsInBreakPeriod() const { return LastProcessedMusicProgressMs < CurrentBreakEndTimeMS; }
+	EPcMovementPresetOverride GetCurrentPresetOverride() const { return CurrentPresetOverride; }
 
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnBeatTriggered OnBeatTriggered;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnSongProgress OnSongProgress;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnNoteHit OnNoteHit;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnBPMChanged OnBPMChanged;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnMeterChanged OnMeterChanged;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnBreakPeriod OnBreakStart;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnBreakPeriod OnBreakEnd;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events")
-	FOnSongEnd OnSongEnd;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay")
-	FOnGameplayBeatTriggered OnGameplayBeatTriggered;
-	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay")
-	FOnGameplayBPMChanged OnGameplayBPMChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBeatTriggered OnBeatTriggered;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnSongProgress OnSongProgress;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnNoteHit OnNoteHit;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBPMChanged OnBPMChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnMeterChanged OnMeterChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBreakPeriod OnBreakStart;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnBreakPeriod OnBreakEnd;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events") FOnSongEnd OnSongEnd;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay") FOnGameplayBeatTriggered OnGameplayBeatTriggered;
+	UPROPERTY(BlueprintAssignable, Category = "Music Events|Gameplay") FOnGameplayBPMChanged OnGameplayBPMChanged;
 
 private:
 	void ProcessMusicEvents();
-	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ProcessBeatTicks(int32 InCurrentTimeMS);
-	void GenerateSliderSubEvents(const FPcImportedMusicData& SliderData);
+	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ResetState();
-	void UpdateGameplayBPM(const FPcRhythmSectionProfile& Section);
 
-	TArray<FPcRhythmSectionProfile> RhythmProfileRows;
-	TArray<FPcImportedMusicData>    RuntimeEventRows;
-	TMap<int32, float>              MasterBeatLengths;
+	TArray<FPcRhythmSectionProfile> RhythmSections;
+	TArray<FPcRuntimeEvent>         RuntimeEvents;
 
 	bool  bIsReadyForPlayback          = false;
 	int32 NextEventIndex               = 0;
 	int32 LastProcessedMusicProgressMs = -1;
-	int32 AbsoluteSongEndTimeMS        = -1;
-	int32 NextBeatTimestampMS          = 0;
+	
 	int32 CurrentSectionIndex          = 0;
+	int32 NextBeatTimestampMS          = 0;
 	int32 CurrentBeatInSession         = 0;
+	
 	float CurrentBPM                   = 0.f;
-	int32 CurrentMeter                 = 4;
-	int32 CurrentBreakEndTimeMS        = -1;
-	TArray<FPcQueuedNoteEvent> NoteEventQueue;
-
-	float CurrentGameplayBPM  = 0.f;
-	int32 BeatSubdivision     = 1;
-	int32 RawBeatCounter      = 0;
-	float DefaultGameplayBPM  = 110.f;
+	float CurrentGameplayBPM           = 0.f;
+	int32 BeatSubdivision              = 1;
+	float DefaultGameplayBPM           = 110.f;
+	EPcMovementPresetOverride CurrentPresetOverride = EPcMovementPresetOverride::Auto;
 };

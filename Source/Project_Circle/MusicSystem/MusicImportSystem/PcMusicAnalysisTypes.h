@@ -1,48 +1,24 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "PcMusicAnalysisTypes.generated.h"
 
 class UDataTable;
 class UPcMusicConfigurationData;
 
 // -----------------------------------------------------------------------------
-// ANALYSIS PARAMETERS
-// -----------------------------------------------------------------------------
-
-USTRUCT(BlueprintType)
-struct FPcSongAnalysisParameters
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis Parameters")
-	TObjectPtr<UDataTable> GameplayMap = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis Parameters")
-	TObjectPtr<UDataTable> StructuralBaseMap = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis Parameters")
-	TArray<TObjectPtr<UDataTable>> WeightedAnalysisMaps;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis Parameters")
-	float DifficultyBias = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis Parameters")
-	TObjectPtr<UPcMusicConfigurationData> SourceConfig = nullptr;
-};
-
-// -----------------------------------------------------------------------------
-// RHYTHM SECTION
+// PURE RUNTIME DATA (Agnostic - Game only cares about this)
 // -----------------------------------------------------------------------------
 
 UENUM(BlueprintType)
-enum class EPcGameplaySectionType : uint8
+enum class EPcMovementPresetOverride : uint8
 {
+	Auto        UMETA(DisplayName = "Auto (Use Subdivision)"),
+	Slow        UMETA(DisplayName = "Slow"),
 	Normal      UMETA(DisplayName = "Normal"),
-	HighEnergy  UMETA(DisplayName = "High Energy"),
-	Buildup     UMETA(DisplayName = "Buildup"),
-	Cooldown    UMETA(DisplayName = "Cooldown"),
-	Break       UMETA(DisplayName = "Break")
+	Fast        UMETA(DisplayName = "Fast"),
+	VeryFast    UMETA(DisplayName = "Very Fast")
 };
 
 USTRUCT(BlueprintType)
@@ -62,63 +38,47 @@ struct FPcRhythmSectionProfile : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
 	int32 AnchorTimestampMS = 0;
 
-	/**
-	 * The gameplay BPM for this section — what tempo the player's jump should feel like.
-	 * The subsystem uses this to calculate subdivision (how many raw beats between jumps)
-	 * and jump height (airtime = one gameplay beat interval).
-	 *
-	 * Set this directly in the generated DataTable after generating rhythm assets.
-	 *
-	 * Rules of thumb:
-	 *   - Keep it between ~80 and ~180 for comfortable jump feel.
-	 *   - Subdivision = round(BPM / GameplayBPM). e.g. BPM=400, GameplayBPM=100 → jumps every 4 beats.
-	 *   - If left at 0, the subsystem falls back to using raw BPM (no subdivision).
-	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay")
 	float GameplayBPM = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay")
+	EPcMovementPresetOverride MovementPreset = EPcMovementPresetOverride::Auto;
 };
 
-// -----------------------------------------------------------------------------
-// ANALYSIS RESULT
-// -----------------------------------------------------------------------------
+UENUM(BlueprintType)
+enum class EPcRuntimeEventType : uint8
+{
+	NoteHit     UMETA(DisplayName = "Note Hit"),
+	MeterChange UMETA(DisplayName = "Meter Change"),
+	BreakStart  UMETA(DisplayName = "Break Start"),
+	BreakEnd    UMETA(DisplayName = "Break End"),
+	SongEnd     UMETA(DisplayName = "Song End")
+};
 
+/** The incredibly lightweight runtime event. Completely ignores Osu! stats. */
 USTRUCT(BlueprintType)
-struct FPcSongAnalysisResult
+struct FPcRuntimeEvent : public FTableRowBase
 {
 	GENERATED_BODY()
-	UPROPERTY(BlueprintReadOnly, Category = "Song Analysis") TArray<FPcRhythmSectionProfile> RhythmSections;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
+	int32 TimestampMS = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
+	EPcRuntimeEventType EventType = EPcRuntimeEventType::NoteHit;
+
+	// Context specific value (e.g., NoteType for hits, NewMeter for MeterChange, etc)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
+	int32 Value1 = 0;
+
+	// Context specific value (e.g., HitSound for hits)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
+	int32 Value2 = 0;
 };
 
 // -----------------------------------------------------------------------------
-// NOTE / QUEUE TYPES (unchanged)
+// IMPORT & EDITOR DATA (Osu! Specific - Stripped out during analysis)
 // -----------------------------------------------------------------------------
-
-struct FPcQueuedNoteEvent
-{
-	int32 TimestampMS;
-	int32 NoteType;
-	int32 OriginalHitSound;
-	bool operator<(const FPcQueuedNoteEvent& Other) const { return TimestampMS < Other.TimestampMS; }
-};
-
-namespace EQueuedNoteType
-{
-	constexpr int32 SliderTick = 128;
-	constexpr int32 SliderTail = 256;
-}
-
-USTRUCT(BlueprintType)
-struct FPcConfidentHitObject
-{
-	GENERATED_BODY()
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 TimestampMS = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") float Confidence = 0.f;
-	uint32 CombinedHitSound = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 HitObjectType = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 Repeats = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") int32 SliderEndTimeMS = 0;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Analysis") float SliderTickRate = 1.f;
-};
 
 UENUM(BlueprintType)
 enum class EPcGameplayEntryType : uint8
@@ -134,22 +94,45 @@ struct FPcImportedMusicData : public FTableRowBase
 {
 	GENERATED_BODY()
 
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data") int32 TimestampMS = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data") EPcGameplayEntryType EntryType = EPcGameplayEntryType::HitObject;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Difficulty") float HPDrainRate = 5.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Difficulty") float CircleSize = 5.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Difficulty") float OverallDifficulty = 5.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Difficulty") float ApproachRate = 5.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object") int32 HitObjectType = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object") int32 HitSound = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object") int32 SliderEndTimeMS = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object") int32 Repeats = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Hit Object") float SliderTickRate = 1.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Break") int32 BreakEndTimeMS = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point") int32 Uninherited = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point") float BeatLength = 500.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point") int32 Meter = 4;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Timing Point") int32 Effects = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music Data|Audio") float AudioBeatStrength = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 TimestampMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) EPcGameplayEntryType EntryType = EPcGameplayEntryType::HitObject;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float HPDrainRate = 5.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float CircleSize = 5.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float OverallDifficulty = 5.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float ApproachRate = 5.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 HitObjectType = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 HitSound = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 SliderEndTimeMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 Repeats = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float SliderTickRate = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 BreakEndTimeMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 Uninherited = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float BeatLength = 500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 Meter = 4;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 Effects = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float AudioBeatStrength = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FPcSongAnalysisParameters
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TObjectPtr<UDataTable> GameplayMap = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TObjectPtr<UDataTable> StructuralBaseMap = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) TArray<TObjectPtr<UDataTable>> WeightedAnalysisMaps;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float DifficultyBias = 0.0f;
+};
+
+USTRUCT()
+struct FPcConfidentHitObject
+{
+	GENERATED_BODY()
+	int32 TimestampMS = 0;
+	float Confidence = 0.f;
+	uint32 CombinedHitSound = 0;
+	int32 HitObjectType = 0;
+	int32 Repeats = 0;
+	int32 SliderEndTimeMS = 0;
+	float SliderTickRate = 1.f;
 };
