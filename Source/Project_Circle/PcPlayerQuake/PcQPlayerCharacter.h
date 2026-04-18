@@ -30,6 +30,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Move;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Look;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Jump;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_GroundPound;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityX = 0.4f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityY = 0.4f;
@@ -39,7 +40,7 @@ private:
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
 	void Input_JumpReleased();
+	void Input_GroundPound();
 
 	UFUNCTION() void OnGameplayBeat(float BeatTimestamp);
-	UFUNCTION() void OnGameplayBPMChanged(float NewGameplayBPM);
 };

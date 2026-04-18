@@ -160,9 +160,8 @@ void UPcMusicAnalyzer::FlattenAndUnrollEvents(UDataTable* GameplayMap)
 	EndEv.EventType = EPcRuntimeEventType::SongEnd;
 	FlattenedRuntimeEvents.Add(EndEv);
 
-	FlattenedRuntimeEvents.Sort([](const FPcRuntimeEvent& A, const FPcRuntimeEvent& B) {
-		return A.TimestampMS < B.TimestampMS;
-	});
+	// FIX: Replaced `<` with `>` in the opposite order to fix the HTML parsing bug in chat!
+	FlattenedRuntimeEvents.Sort([](const FPcRuntimeEvent& A, const FPcRuntimeEvent& B) { return B.TimestampMS > A.TimestampMS; });
 }
 
 void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Parameters)
@@ -189,7 +188,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	bool bKiai = false;
 	int32 StructuralMaxEventTime = 0;
 	
-	// Find structural bounds (Kiai, Breaks)
 	for (const auto* Data : StructuralAllEvents) {
 		if (Data->EntryType == EPcGameplayEntryType::TimingPoint) {
 			if (((Data->Effects & 1) != 0) != bKiai) {
@@ -211,7 +209,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	const int32 LookbackWindowMS = 4000, StepSizeMS = 500, SnapWindowMS = 250;
 	const float DropThreshold = 0.5f, SpikeThreshold = 2.0f;
 
-	// Sliding window APS analysis to find intensity changes without structural markers
 	for (int32 i = 0; i < MajorBoundaries.Num() - 1; ++i) {
 		const int32 SectionStart = MajorBoundaries[i], SectionEnd = MajorBoundaries[i + 1];
 		if (SectionEnd - SectionStart < LookbackWindowMS + StepSizeMS) continue;
@@ -259,8 +256,7 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 	TArray<int32> FinalBoundaries = BoundarySet.Array();
 	FinalBoundaries.Sort();
 
-	// Calculate and assign the deep rhythm profiling
-	struct FSectionProfileData { int32 StartTime; int32 EndTime; float BaseBeatLength; float HybridApsScore; };
+	struct FSectionProfileData { int32 StartTime = 0; int32 EndTime = 0; float BaseBeatLength = 0.f; float HybridApsScore = 0.f; };
 	TArray<FSectionProfileData> ProfileList;
 	float LastValidBaseBeatLength = StructuralUninheritedTPs[0].BeatLength;
 
@@ -298,7 +294,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 		float GameplayBeatLength = Profile.BaseBeatLength;
 		if (GameplayBeatLength <= 0) continue;
 
-		// The subdivision logic!
 		float NormalizedScore = (Profile.HybridApsScore > 0.01f) ? (Profile.HybridApsScore - MinScore) / ScoreRange : 0.0f;
 		if (NormalizedScore >= 0.85f) GameplayBeatLength /= 4.0f;
 		else if (NormalizedScore >= 0.60f) GameplayBeatLength /= 2.0f;
@@ -319,7 +314,6 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 
 	if (TempSections.Num() == 0) return;
 
-	// Cleanup merging
 	RhythmSections.Add(TempSections[0]);
 	for (int32 i = 1; i < TempSections.Num(); ++i) {
 		FPcRhythmSectionProfile& Current = TempSections[i];
@@ -359,6 +353,9 @@ bool UPcMusicAnalyzer::GatherCouncilData(const TArray<UDataTable*>& WeightedMaps
 		});
 	}
 	TempMap.GenerateValueArray(OutObjects);
-	OutObjects.Sort([](const FPcConfidentHitObject& A, const FPcConfidentHitObject& B) { return A.TimestampMS < B.TimestampMS; });
+	
+	// FIX: Replaced `<` with `>` in the opposite order to fix the HTML parsing bug in chat!
+	OutObjects.Sort([](const FPcConfidentHitObject& A, const FPcConfidentHitObject& B) { return B.TimestampMS > A.TimestampMS; });
+	
 	return OutObjects.Num() > 0;
 }

@@ -23,36 +23,50 @@ void UPcMusicConfigurationData::GenerateRhythmAssets()
 	FString DefaultSavePath = FPackageName::GetLongPackagePath(GetPathName());
 	TArray<UObject*> GeneratedAssetsToSave;
 
-	// 1. RHYTHM PROFILE
-	UDataTableFactory* RhythmFactory = NewObject<UDataTableFactory>();
-	RhythmFactory->Struct = FPcRhythmSectionProfile::StaticStruct();
+	// 1. RHYTHM PROFILE (SILENT GENERATION)
 	FString RhythmName = FString::Printf(TEXT("DT_%s_RhythmProfile"), *GetName());
+	FString RhythmPackagePath = DefaultSavePath + TEXT("/") + RhythmName;
 	
-	if (UDataTable* NewRhythmTable = Cast<UDataTable>(AssetTools.CreateAssetWithDialog(RhythmName, DefaultSavePath, UDataTable::StaticClass(), RhythmFactory)))
-	{
-		for (const FPcRhythmSectionProfile& Section : AnalysisProfile->GetRhythmSections())
-			NewRhythmTable->AddRow(FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS)), Section);
-		
-		GeneratedRhythmProfile = NewRhythmTable;
-		GeneratedAssetsToSave.Add(NewRhythmTable);
+	UDataTable* RhythmTable = LoadObject<UDataTable>(nullptr, *RhythmPackagePath);
+	if (RhythmTable) {
+		RhythmTable->EmptyTable(); // Wipe existing cleanly
+	} else {
+		UDataTableFactory* RhythmFactory = NewObject<UDataTableFactory>();
+		RhythmFactory->Struct = FPcRhythmSectionProfile::StaticStruct();
+		RhythmTable = Cast<UDataTable>(AssetTools.CreateAsset(RhythmName, DefaultSavePath, UDataTable::StaticClass(), RhythmFactory));
 	}
 
-	// 2. RUNTIME NOTES (Using the new lightweight struct)
-	UDataTableFactory* NoteFactory = NewObject<UDataTableFactory>();
-	NoteFactory->Struct = FPcRuntimeEvent::StaticStruct();
-	FString NoteName = FString::Printf(TEXT("DT_%s_RuntimeNotes"), *GetName());
+	if (RhythmTable) {
+		for (const FPcRhythmSectionProfile& Section : AnalysisProfile->GetRhythmSections())
+			RhythmTable->AddRow(FName(*FString::Printf(TEXT("%d"), Section.StartTimeMS)), Section);
+		
+		GeneratedRhythmProfile = RhythmTable;
+		GeneratedAssetsToSave.Add(RhythmTable);
+	}
 
-	if (UDataTable* NewNoteTable = Cast<UDataTable>(AssetTools.CreateAssetWithDialog(NoteName, DefaultSavePath, UDataTable::StaticClass(), NoteFactory)))
-	{
+	// 2. RUNTIME NOTES (SILENT GENERATION)
+	FString NoteName = FString::Printf(TEXT("DT_%s_RuntimeNotes"), *GetName());
+	FString NotePackagePath = DefaultSavePath + TEXT("/") + NoteName;
+	
+	UDataTable* NoteTable = LoadObject<UDataTable>(nullptr, *NotePackagePath);
+	if (NoteTable) {
+		NoteTable->EmptyTable(); // Wipe existing cleanly
+	} else {
+		UDataTableFactory* NoteFactory = NewObject<UDataTableFactory>();
+		NoteFactory->Struct = FPcRuntimeEvent::StaticStruct();
+		NoteTable = Cast<UDataTable>(AssetTools.CreateAsset(NoteName, DefaultSavePath, UDataTable::StaticClass(), NoteFactory));
+	}
+
+	if (NoteTable) {
 		int32 i = 0;
 		for (const FPcRuntimeEvent& Ev : AnalysisProfile->GetRuntimeEvents())
-			NewNoteTable->AddRow(FName(*FString::Printf(TEXT("Ev_%d"), i++)), Ev);
+			NoteTable->AddRow(FName(*FString::Printf(TEXT("Ev_%d"), i++)), Ev);
 
-		GeneratedNoteData = NewNoteTable;
-		GeneratedAssetsToSave.Add(NewNoteTable);
+		GeneratedNoteData = NoteTable;
+		GeneratedAssetsToSave.Add(NoteTable);
 	}
 
 	MarkPackageDirty();
-	if (GeneratedAssetsToSave.Num() > 0) PackageTools::SavePackagesForObjects(GeneratedAssetsToSave);
+	if (GeneratedAssetsToSave.Num() > 0) UPackageTools::SavePackagesForObjects(GeneratedAssetsToSave);
 }
 #endif

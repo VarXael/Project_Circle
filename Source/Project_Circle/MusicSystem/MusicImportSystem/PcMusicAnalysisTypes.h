@@ -22,27 +22,27 @@ enum class EPcMovementPresetOverride : uint8
 };
 
 USTRUCT(BlueprintType)
+struct FPcMovementPreset
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jump") float BeatsPerJump = 1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Jump") float PeakHeightCM = 200.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed") float MaxGroundSpeed = 900.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Speed") float MaxAirSpeed = 900.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bhop") float ChargeTime = 0.6f;
+};
+
+USTRUCT(BlueprintType)
 struct FPcRhythmSectionProfile : public FTableRowBase
 {
 	GENERATED_BODY()
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rhythm Section")
-	int32 StartTimeMS = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
-	float BPM = 120.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
-	float BeatLengthMS = 500.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section")
-	int32 AnchorTimestampMS = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay")
-	float GameplayBPM = 0.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay")
-	EPcMovementPresetOverride MovementPreset = EPcMovementPresetOverride::Auto;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rhythm Section") int32 StartTimeMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") float BPM = 120.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") float BeatLengthMS = 500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section") int32 AnchorTimestampMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay") float GameplayBPM = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rhythm Section|Gameplay") EPcMovementPresetOverride MovementPreset = EPcMovementPresetOverride::Auto;
 };
 
 UENUM(BlueprintType)
@@ -55,25 +55,14 @@ enum class EPcRuntimeEventType : uint8
 	SongEnd     UMETA(DisplayName = "Song End")
 };
 
-/** The incredibly lightweight runtime event. Completely ignores Osu! stats. */
 USTRUCT(BlueprintType)
 struct FPcRuntimeEvent : public FTableRowBase
 {
 	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
-	int32 TimestampMS = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
-	EPcRuntimeEventType EventType = EPcRuntimeEventType::NoteHit;
-
-	// Context specific value (e.g., NoteType for hits, NewMeter for MeterChange, etc)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
-	int32 Value1 = 0;
-
-	// Context specific value (e.g., HitSound for hits)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event")
-	int32 Value2 = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event") int32 TimestampMS = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event") EPcRuntimeEventType EventType = EPcRuntimeEventType::NoteHit;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event") int32 Value1 = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Event") int32 Value2 = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -93,7 +82,6 @@ USTRUCT(BlueprintType)
 struct FPcImportedMusicData : public FTableRowBase
 {
 	GENERATED_BODY()
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 TimestampMS = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) EPcGameplayEntryType EntryType = EPcGameplayEntryType::HitObject;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float HPDrainRate = 5.0f;
@@ -117,7 +105,6 @@ USTRUCT(BlueprintType)
 struct FPcSongAnalysisParameters
 {
 	GENERATED_BODY()
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) TObjectPtr<UDataTable> GameplayMap = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) TObjectPtr<UDataTable> StructuralBaseMap = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) TArray<TObjectPtr<UDataTable>> WeightedAnalysisMaps;

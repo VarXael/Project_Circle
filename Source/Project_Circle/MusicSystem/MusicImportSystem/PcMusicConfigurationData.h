@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "PcMusicAnalysisTypes.h"
 #include "PcMusicConfigurationData.generated.h"
 
 class UDataTable;
@@ -17,6 +18,19 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|BPM", meta = (ClampMin = "1.0", ClampMax = "300.0"))
 	float DefaultGameplayBPM = 110.f;
+
+	// --- NEW: Pulse Physics Presets (The song dictates the bounce!) ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
+	FPcMovementPreset PulseSlow = { 0.5f, 200.f, 800.f, 800.f, 0.7f };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
+	FPcMovementPreset PulseNormal = { 1.0f, 200.f, 900.f, 900.f, 0.6f };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
+	FPcMovementPreset PulseFast = { 2.0f, 175.f, 1100.f, 1100.f, 0.5f };
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
+	FPcMovementPreset PulseVeryFast = { 4.0f, 150.f, 1400.f, 1400.f, 0.4f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis")
 	TArray<TObjectPtr<UDataTable>> AdditionalAnalysisMaps;

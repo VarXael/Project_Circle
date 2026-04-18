@@ -19,28 +19,14 @@ APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitial
 void APcQPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	if (APlayerController* PC = Cast<APlayerController>(GetController()))
-	{
-		PC->bShowMouseCursor = false;
-		PC->SetInputMode(FInputModeGameOnly());
+	if (APlayerController* PC = Cast<APlayerController>(GetController())) {
+		PC->bShowMouseCursor = false; PC->SetInputMode(FInputModeGameOnly());
 		if (UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 			if (DefaultMappingContext) Sub->AddMappingContext(DefaultMappingContext, 0);
 	}
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) 
-	{
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
 		Sub->OnGameplayBeatTriggered.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBeat);
-		Sub->OnGameplayBPMChanged.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBPMChanged);
-
-		if (Sub->IsReadyForPlayback() && Sub->GetCurrentGameplayBPM() > 0.f)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[DEBUG-CHAR] BeginPlay - Subsystem already active! Manually grabbing BPM: %f"), Sub->GetCurrentGameplayBPM());
-			OnGameplayBPMChanged(Sub->GetCurrentGameplayBPM());
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[DEBUG-CHAR] BeginPlay - Subsystem NOT ready or BPM is 0. Waiting for broadcast."));
-		}
 	}
 }
 
@@ -54,6 +40,7 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EIC->BindAction(IA_Jump, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_JumpPressed);
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
+		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
 	}
 }
 
@@ -73,19 +60,5 @@ void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value) {
 
 void APcQPlayerCharacter::Input_JumpPressed() { if (MoveComp) MoveComp->OnJumpPressed(); }
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
-
+void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
 void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->TriggerBeatJump(); }
-
-void APcQPlayerCharacter::OnGameplayBPMChanged(float NewGameplayBPM) {
-	if (MoveComp) {
-		if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-		{
-			float Subdiv = Sub->GetCurrentSubdivision();
-			EPcMovementPresetOverride Override = Sub->GetCurrentPresetOverride();
-			
-			UE_LOG(LogTemp, Warning, TEXT("[DEBUG-CHAR] Received BPM Change! Passing to MoveComp. BPM: %f | Sub: %f | Override: %d"), NewGameplayBPM, Subdiv, (int32)Override);
-			
-			MoveComp->UpdateBPM(NewGameplayBPM, Subdiv, Override);
-		}
-	}
-}
