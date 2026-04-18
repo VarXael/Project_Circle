@@ -11,6 +11,7 @@ Saved/
 *.pdb
 *.obj
 *.exe
+*.iws
 
 # Except for these (if you have custom build scripts)
 !/Build/*/
