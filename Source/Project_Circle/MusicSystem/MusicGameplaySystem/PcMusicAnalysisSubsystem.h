@@ -40,7 +40,7 @@ public:
 	float GetCurrentGameplayBPM() const { return CurrentGameplayBPM; }
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
-	int32 GetCurrentSubdivision() const { return BeatSubdivision; }
+	float GetCurrentSubdivision() const { return BeatSubdivision; }
 
 	UFUNCTION(BlueprintPure, Category = "Music Analysis")
 	EPcMovementPresetOverride GetCurrentPresetOverride() const { return CurrentPresetOverride; }
@@ -75,7 +75,7 @@ private:
 	
 	float CurrentBPM                   = 0.f;
 	float CurrentGameplayBPM           = 0.f;
-	int32 BeatSubdivision              = 1;
+	float BeatSubdivision              = 1.0f;
 	float DefaultGameplayBPM           = 110.f;
 	EPcMovementPresetOverride CurrentPresetOverride = EPcMovementPresetOverride::Auto;
 };

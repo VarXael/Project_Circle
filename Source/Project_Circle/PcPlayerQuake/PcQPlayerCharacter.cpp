@@ -27,9 +27,20 @@ void APcQPlayerCharacter::BeginPlay()
 			if (DefaultMappingContext) Sub->AddMappingContext(DefaultMappingContext, 0);
 	}
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) 
+	{
 		Sub->OnGameplayBeatTriggered.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBeat);
 		Sub->OnGameplayBPMChanged.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBPMChanged);
+
+		if (Sub->IsReadyForPlayback() && Sub->GetCurrentGameplayBPM() > 0.f)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[DEBUG-CHAR] BeginPlay - Subsystem already active! Manually grabbing BPM: %f"), Sub->GetCurrentGameplayBPM());
+			OnGameplayBPMChanged(Sub->GetCurrentGameplayBPM());
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("[DEBUG-CHAR] BeginPlay - Subsystem NOT ready or BPM is 0. Waiting for broadcast."));
+		}
 	}
 }
 
@@ -68,6 +79,13 @@ void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->Trigge
 void APcQPlayerCharacter::OnGameplayBPMChanged(float NewGameplayBPM) {
 	if (MoveComp) {
 		if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-			MoveComp->UpdateBPM(NewGameplayBPM, Sub->GetCurrentSubdivision(), Sub->GetCurrentPresetOverride());
+		{
+			float Subdiv = Sub->GetCurrentSubdivision();
+			EPcMovementPresetOverride Override = Sub->GetCurrentPresetOverride();
+			
+			UE_LOG(LogTemp, Warning, TEXT("[DEBUG-CHAR] Received BPM Change! Passing to MoveComp. BPM: %f | Sub: %f | Override: %d"), NewGameplayBPM, Subdiv, (int32)Override);
+			
+			MoveComp->UpdateBPM(NewGameplayBPM, Subdiv, Override);
+		}
 	}
 }

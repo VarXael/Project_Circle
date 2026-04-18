@@ -38,7 +38,7 @@ void UPcMusicAnalysisSubsystem::ResetState()
 	NextBeatTimestampMS = 0;
 	CurrentBPM = 0.f;
 	CurrentGameplayBPM = 0.f;
-	BeatSubdivision = 1;
+	BeatSubdivision = 1.0f;
 	CurrentPresetOverride = EPcMovementPresetOverride::Auto;
 }
 
@@ -61,7 +61,6 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 	UpdateRhythmSection(CurrentTimeMs);
 	ProcessBeatTicks(CurrentTimeMs);
 
-	// The beautiful, flattened agnostic event loop
 	while (NextEventIndex < RuntimeEvents.Num() && RuntimeEvents[NextEventIndex].TimestampMS <= CurrentTimeMs)
 	{
 		const FPcRuntimeEvent& Event = RuntimeEvents[NextEventIndex];
@@ -78,7 +77,7 @@ void UPcMusicAnalysisSubsystem::ProcessMusicEvents()
 			OnBreakStart.Broadcast(Event.TimestampMS, Event.Value1);
 			break;
 		case EPcRuntimeEventType::BreakEnd:
-			OnBreakEnd.Broadcast(Event.Value1, Event.TimestampMS); // Value1 was StartTime
+			OnBreakEnd.Broadcast(Event.Value1, Event.TimestampMS);
 			break;
 		case EPcRuntimeEventType::SongEnd:
 			OnSongEnd.Broadcast(Event.TimestampMS / 1000.f);
@@ -113,7 +112,9 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 		if (!FMath::IsNearlyEqual(CurrentGameplayBPM, EffectiveBPM))
 		{
 			CurrentGameplayBPM = EffectiveBPM;
-			BeatSubdivision = FMath::Max(1, FMath::RoundToInt(CurrentGameplayBPM / DefaultGameplayBPM));
+			
+			// We now calculate subdivision as a float so 0.5 (half-time) is respected!
+			BeatSubdivision = FMath::Max(0.125f, CurrentGameplayBPM / DefaultGameplayBPM);
 			OnGameplayBPMChanged.Broadcast(CurrentGameplayBPM);
 		}
 
