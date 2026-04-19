@@ -38,45 +38,29 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Rhythm UI|Threats")
 	TArray<FPcHudThreatEvent> ActiveThreats;
 
-	// ── CROSSHAIR ───────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float        InnerRingRadius    =  7.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float        InnerRingThickness =  1.2f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float        DotSize            =  2.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") FLinearColor CrosshairColor     = FLinearColor(1.f, 1.f, 1.f, 0.92f);
-
-	// The beat-countdown sweep ring: sweeps counterclockwise from 12-o-clock,
-	// draining from a full circle to nothing over one beat cycle.
-	// Gives the player an instant read of "time remaining until pulse" without
-	// any pulsing or visual noise.
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float SweepRingRadius    = 18.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float SweepRingThickness =  2.f;
-
-	// Cardinal tick lengths (fixed — no animation)
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float TickOuter = 15.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float TickInner =  9.f;
+	// ── CROSSHAIR  <<< < • > >>>  ───────────────────────────────────────────
+	// Distance of the fixed gate markers from the centre dot (px).
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairGateDist    = 32.f;
+	// Pixels between each beat step outside the gate.
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairBeatStep    = 40.f;
+	// How many incoming beat chevrons to show.
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") int32 CrosshairBeatsToShow =  2;
+	// Chevron tip-to-back depth (px).
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronWidth  = 9.f;
+	// Chevron half-height (px).
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronHeight = 7.f;
+	// Centre dot half-size (px).
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float DotSize               = 3.f;
 
 	// ── COMBAT METRONOME (Visor Arch) ────────────────────────────────────────
-	//
-	//  The arc centre sits BELOW the screen bottom.  Only the shallow peak of
-	//  a large circle is visible, giving a wide flat visor look instead of a
-	//  tall horseshoe.
-	//
-	//  Quick tuning guide:
-	//    Peak height above screen bottom  ≈  Arc_Radius − Arc_CenterBelowScreen
-	//    Arc spans more of the screen     →  increase both values proportionally
-	//    Arch feels too tall / round      →  increase Arc_CenterBelowScreen
-	//
-	//  Defaults: peak ≈ 200 px, arch spans roughly 80 % of screen width.
-	//
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_CenterBelowScreen = 1100.f;  // was 1010 — pushes arch lower
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Radius            = 1260.f;  // was 1210 — peak ≈ 160 px above screen bottom
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Thickness         =    8.f;  // was 9 — slightly slimmer band
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_CenterBelowScreen = 1100.f; 
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Radius            = 1260.f; 
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Thickness         =    8.f;  
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") int32 Arc_BeatsToShow       =    3;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_FlashWindowPct    =    0.22f;
-
-	// Radians left of the arch's topmost point where the strike gate sits.
-	// 0.18 rad ≈ 10°.  Increase to push the gate further left (larger past zone).
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_StrikeOffsetLeft  = 0.18f;
+	
+	// 0.0 = Far Right, 0.5 = Dead Center, 0.9 = Far Left
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_StrikeGatePercent = 0.88f;
 
 	// ── GLANCE BOARD (Bottom-Left) ──────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_XOffset        = 70.f;
@@ -86,13 +70,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") int32 GlanceBoard_BeatsToShow    =    4;
 
 private:
-	// Geometry for the visor arch, computed once per frame.
 	struct FArcGeom
 	{
-		float CX, CY;       // arc centre (CY is below Canvas->SizeY)
-		float SpawnAngle;   // right limb — where notes enter from
-		float StrikeAngle;  // gate marker
-		float BufferAngle;  // left limb — where notes exit
+		float CX, CY;       
+		float SpawnAngle;   
+		float StrikeAngle;  
+		float BufferAngle;  
 	};
 	FArcGeom BuildArcGeom() const;
 

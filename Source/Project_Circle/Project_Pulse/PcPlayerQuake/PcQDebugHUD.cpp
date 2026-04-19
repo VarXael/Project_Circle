@@ -27,30 +27,21 @@ void APcQDebugHUD::PurgeThreat(int32 TimestampMS)
 
 // =============================================================================
 //  ARCH GEOMETRY
-//
-//  The arc centre sits Arc_CenterBelowScreen pixels below the screen bottom.
-//  The limb angles (SpawnAngle / BufferAngle) are the points where the circle
-//  would intersect y = Canvas->SizeY, i.e. the screen edge.  Notes outside
-//  those angles are below the screen and simply are not drawn.
-//
-//  In canvas angle convention:  0 = right,  -PI/2 = up,  ±PI = left.
-//  The arc travels counterclockwise: spawn (right-ish) → top → buffer (left-ish).
 // =============================================================================
 
 APcQDebugHUD::FArcGeom APcQDebugHUD::BuildArcGeom() const
 {
 	FArcGeom G;
 	G.CX = Canvas->SizeX * 0.5f;
-	G.CY = Canvas->SizeY + Arc_CenterBelowScreen;   // well below the screen
+	G.CY = Canvas->SizeY + Arc_CenterBelowScreen;  
 
-	// sin(limbAngle) = -D/R  where D = Arc_CenterBelowScreen
-	// This is the angle where the circle crosses y = Canvas->SizeY.
 	const float SinLimb = -Arc_CenterBelowScreen / Arc_Radius;
 	const float BaseLimb = FMath::Asin(FMath::Clamp(SinLimb, -1.f, 1.f));
 
-	G.SpawnAngle  = BaseLimb - 0.05f;                      // right limb, nudge just below screen
-	G.BufferAngle = -(PI - FMath::Asin(-SinLimb)) + 0.05f; // left limb,  nudge just below screen
-	G.StrikeAngle = -(PI * 0.5f + Arc_StrikeOffsetLeft);   // gate: slightly left of 12-o-clock
+	G.SpawnAngle  = BaseLimb - 0.05f;                      
+	G.BufferAngle = -(PI - FMath::Asin(-SinLimb)) + 0.05f; 
+	// Lerp between the right limb (Spawn) and left limb (Buffer) based on percentage
+	G.StrikeAngle = FMath::Lerp(G.SpawnAngle, G.BufferAngle, Arc_StrikeGatePercent);   
 
 	return G;
 }
@@ -77,7 +68,6 @@ void APcQDebugHUD::DrawHUD()
 
 			if (IntervalMS > 0.f)
 			{
-				// Shared flash values — computed once, used by arc gate and glance board.
 				const float FlashWindow = IntervalMS * Arc_FlashWindowPct;
 				const float DistToNext  = FMath::Abs((float)(NextBeatMS - CurrentTimeMS));
 				const float DistToPrev  = FMath::Abs(CurrentTimeMS - ((float)NextBeatMS - IntervalMS));
@@ -85,8 +75,6 @@ void APcQDebugHUD::DrawHUD()
 				FlashHard = FMath::Clamp(1.f - (MinDist / (FlashWindow * 0.5f)), 0.f, 1.f);
 				FlashSoft = FMath::Clamp(1.f - (MinDist /  FlashWindow),         0.f, 1.f);
 
-				// Beat-remaining fraction for the crosshair sweep ring.
-				// 1.0 = just after beat (full circle drawn), 0.0 = beat about to fire (arc = 0).
 				const float TimeUntilBeat = MusicSub->GetTimeUntilNextGameplayBeat();
 				BeatRemainingFraction = FMath::Clamp(TimeUntilBeat / (IntervalMS / 1000.f), 0.f, 1.f);
 
@@ -97,7 +85,6 @@ void APcQDebugHUD::DrawHUD()
 		}
 	}
 
-	// Crosshair on top — never obscured by arc or notes.
 	DrawDotCrosshair(BeatRemainingFraction);
 
 	if (APlayerController* PC = GetOwningPlayerController())
@@ -114,16 +101,6 @@ void APcQDebugHUD::DrawHUD()
 
 // =============================================================================
 //  ARC METRONOME (VISOR ARCH)
-//
-//  Because Arc_CenterBelowScreen ≈ Arc_Radius, the arc's limbs dip below the
-//  screen edge, so the player sees only the shallow top portion — a wide visor.
-//
-//  The track is two distinct filled bands:
-//    Active  (spawn → gate)  dark steel-blue, warms cyan near the beat.
-//    Past    (gate → buffer) near-black void: notes here are already done.
-//
-//  Any note whose screen Y exceeds Canvas->SizeY is skipped silently — it is
-//  below the screen and the player would never see it anyway.
 // =============================================================================
 
 void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G,
@@ -133,35 +110,27 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 	const float BufferTimeMS = IntervalMS * 0.5f;
 
 	// ── 1. TRACK ────────────────────────────────────────────────────────────
-
-	// Drop-shadow behind the full arc for contrast against the world geometry.
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 16.f,
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 10.f,
 	              G.SpawnAngle, G.BufferAngle,
-	              FLinearColor(0.f, 0.f, 0.f, 0.50f), 60);
+	              FLinearColor(0.f, 0.f, 0.f, 0.18f), 60);
 
-	// Past zone: dark void, notes here are greyed out.
 	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness,
 	              G.StrikeAngle, G.BufferAngle,
-	              FLinearColor(0.018f, 0.035f, 0.055f, 0.88f), 20);
+	              FLinearColor(0.010f, 0.018f, 0.030f, 0.30f), 20);
 
-	// Active zone: steel-blue, warms toward cyan as the beat approaches.
 	const FLinearColor ActiveColor = FLinearColor::LerpUsingHSV(
-		FLinearColor(0.022f, 0.064f, 0.115f, 0.90f),
-		FLinearColor(0.018f, 0.106f, 0.185f, 0.94f),
+		FLinearColor(0.020f, 0.055f, 0.100f, 0.34f),
+		FLinearColor(0.016f, 0.090f, 0.160f, 0.42f),
 		FlashSoft
 	);
 	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness,
 	              G.SpawnAngle, G.StrikeAngle, ActiveColor, 60);
 
-	// Inner-surface glow hairline on the active zone only.
-	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.4f,
+	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.0f,
 	           G.SpawnAngle, G.StrikeAngle,
-	           FLinearColor(0.4f, 0.85f, 1.f, 0.06f + FlashSoft * 0.26f), 60);
+	           FLinearColor(0.4f, 0.85f, 1.f, 0.025f + FlashSoft * 0.10f), 60);
 
 	// ── 2. NOTES ────────────────────────────────────────────────────────────
-	// Build a unified list of beat + threat entries, sort past-first so
-	// approaching notes always render on top.
-
 	struct FNoteEntry { float TimeDiffMS; bool bIsThreat; int32 ThreatIdx; };
 	TArray<FNoteEntry> AllNotes;
 	AllNotes.Reserve(Arc_BeatsToShow + 2 + ActiveThreats.Num());
@@ -185,7 +154,6 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 		const float TimeDiff = Entry.TimeDiffMS;
 		const bool  bPassed  = TimeDiff < 0.f;
 
-		// Map time offset → angle along the arch.
 		float Angle, Alpha;
 		if (!bPassed)
 		{
@@ -204,7 +172,6 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 		const float NoteX = G.CX + Arc_Radius * FMath::Cos(Angle);
 		const float NoteY = G.CY + Arc_Radius * FMath::Sin(Angle);
 
-		// Skip anything that has dipped below the visible screen edge.
 		if (NoteY > Canvas->SizeY + 4.f) continue;
 
 		if (Entry.bIsThreat)
@@ -215,22 +182,18 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 		{
 			if (bPassed)
 			{
-				// Grey ghost circle — matches the "past zone" darkness.
 				DrawCircleHUD(NoteX, NoteY, 6.f,
 				              FLinearColor(0.20f, 0.24f, 0.34f, Alpha * 1.25f), 1.4f, 16);
 			}
 			else
 			{
-				// Glow corona behind the ring.
 				DrawCircleHUD(NoteX, NoteY, 14.f,
 				              FLinearColor(0.f, 0.80f, 1.f, Alpha * 0.16f), 1.f, 16);
-				// Main ring — next upcoming beat is thicker + brighter.
 				const bool  bIsNext  = TimeDiff < IntervalMS && TimeDiff >= 0.f;
 				const float RingSize = bIsNext ? Arc_Thickness * 0.65f : Arc_Thickness * 0.42f;
 				DrawCircleHUD(NoteX, NoteY, RingSize,
 				              FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 1.f : 0.72f)),
 				              bIsNext ? 2.4f : 1.8f, bIsNext ? 24 : 16);
-				// Bright centre dot.
 				DrawRect(FLinearColor(0.70f, 0.95f, 1.f, Alpha * (bIsNext ? 1.f : 0.7f)),
 				         NoteX - 2.f, NoteY - 2.f, 4.f, 4.f);
 			}
@@ -238,24 +201,20 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 	}
 
 	// ── 3. STRIKE GATE ──────────────────────────────────────────────────────
-
 	const float StrikeX = G.CX + Arc_Radius * FMath::Cos(G.StrikeAngle);
 	const float StrikeY = G.CY + Arc_Radius * FMath::Sin(G.StrikeAngle);
 
-	// Diffuse pre-glow corona (soft, starts building a few frames early).
 	if (FlashSoft > 0.01f)
 	{
 		DrawCircleHUD(StrikeX, StrikeY, 38.f * FlashSoft,
 		              FLinearColor(0.1f, 0.9f, 0.85f, 0.06f * FlashSoft), 1.f, 32);
 	}
-	// Tighter rings — only visible on the hard flash frame.
 	if (FlashHard > 0.01f)
 	{
 		DrawCircleHUD(StrikeX, StrikeY, 22.f, FLinearColor(0.15f, 1.f, 0.90f, 0.12f * FlashHard), 2.f, 32);
 		DrawCircleHUD(StrikeX, StrikeY, 13.f, FLinearColor(0.20f, 1.f, 0.95f, 0.22f * FlashHard), 2.f, 24);
 	}
 
-	// Radial tick mark that grows outward on the beat.
 	const float InnerR = Arc_Radius - Arc_Thickness - 6.f;
 	const float OuterR = Arc_Radius + Arc_Thickness + 6.f + 10.f * FlashHard;
 	const FLinearColor TickColor = FLinearColor::LerpUsingHSV(
@@ -265,7 +224,6 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 	         G.CX + OuterR * FMath::Cos(G.StrikeAngle), G.CY + OuterR * FMath::Sin(G.StrikeAngle),
 	         TickColor, 3.5f + 3.f * FlashHard);
 
-	// Diamond landmark at the gate.
 	const float Dh = 5.f + 3.f * FlashHard;
 	const FLinearColor DC = FLinearColor::LerpUsingHSV(
 		FLinearColor(0.f, 0.5f, 0.55f, 0.70f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
@@ -284,7 +242,6 @@ void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bP
 {
 	if (bPassed)
 	{
-		// Grey ghost diamond, same visual weight as greyed beat circles.
 		const FLinearColor Ghost(0.18f, 0.16f, 0.24f, Alpha * 1.2f);
 		const float Hs = 7.f;
 		DrawLine(NoteX,      NoteY - Hs, NoteX + Hs, NoteY,      Ghost, 1.5f);
@@ -298,28 +255,23 @@ void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bP
 	const FLinearColor CoreCol  = FLinearColor::LerpUsingHSV(Threat.Color, FLinearColor::White, 0.5f)
 	                              * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.85f);
 
-	// Soft corona.
 	DrawCircleHUD(NoteX, NoteY, 17.f,
 	              Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.16f), 1.f, 16);
 
-	// Outer stroke diamond.
 	const float Os = 10.f;
 	DrawLine(NoteX,       NoteY - Os, NoteX + Os, NoteY,       OuterCol, 2.f);
 	DrawLine(NoteX + Os,  NoteY,      NoteX,      NoteY + Os,  OuterCol, 2.f);
 	DrawLine(NoteX,       NoteY + Os, NoteX - Os, NoteY,       OuterCol, 2.f);
 	DrawLine(NoteX - Os,  NoteY,      NoteX,      NoteY - Os,  OuterCol, 2.f);
 
-	// Filled inner core (thick crossing lines simulate fill).
 	const float Is = 5.f;
 	DrawLine(NoteX,       NoteY - Is, NoteX + Is, NoteY,       CoreCol, 5.f);
 	DrawLine(NoteX + Is,  NoteY,      NoteX,      NoteY + Is,  CoreCol, 5.f);
 	DrawLine(NoteX,       NoteY + Is, NoteX - Is, NoteY,       CoreCol, 5.f);
 	DrawLine(NoteX - Is,  NoteY,      NoteX,      NoteY - Is,  CoreCol, 5.f);
 
-	// Label — only show when close enough to matter.
 	if (Alpha > 0.45f && GEngine)
 	{
-		// Outward radial direction (away from arc centre = visually above arc).
 		const float DirX   = NoteX - G.CX;
 		const float DirY   = NoteY - G.CY;
 		const float DirLen = FMath::Sqrt(DirX * DirX + DirY * DirY);
@@ -335,19 +287,7 @@ void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bP
 }
 
 // =============================================================================
-//  CROSSHAIR
-//
-//  The beat-countdown sweep ring replaces the pulsing/contracting behaviour
-//  from v1.  It gives the player a clock-like read of beat timing without any
-//  animation — the ring is a static arc whose LENGTH encodes remaining time.
-//
-//  Sweep convention:
-//    Full circle  (remaining = 1.0) → beat just fired, full beat left to act.
-//    Arc = 0      (remaining = 0.0) → beat imminent, ring about to refill.
-//    Sweeps counterclockwise from 12-o-clock so the "hand" moves naturally.
-//
-//  The ring colour shifts from a neutral white-cyan to a brighter white as
-//  the beat approaches, giving a subtle urgency cue without any flashing.
+//  CROSSHAIR  —  Metal Hellsinger style  <<< < • > >>>
 // =============================================================================
 
 void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
@@ -356,70 +296,72 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
 	const float CX = Canvas->SizeX * 0.5f;
 	const float CY = Canvas->SizeY * 0.5f;
 
-	// ── Beat-countdown sweep ring ────────────────────────────────────────────
+	const float FlashA = FMath::Clamp(1.f - BeatRemainingFraction / 0.15f, 0.f, 1.f);
 
-	// Dark shadow ring behind everything so the crosshair reads on any background.
-	DrawCircleHUD(CX, CY, SweepRingRadius + 1.5f,
-	              FLinearColor(0.f, 0.f, 0.f, 0.55f), SweepRingThickness + 3.f, 48);
+	// ── Unified Chevron Geometry ─────────────────────────────────────────────
+	const float AW      = CrosshairChevronWidth;
+	const float AH      = CrosshairChevronHeight;
+	const float EXTRA_H = 2.0f;  
+	const float THICK   = 3.0f;  
 
-	// Ghost track (always full circle, very faint) so the player can see the
-	// ring "slot" even when it is nearly empty.
-	DrawCircleHUD(CX, CY, SweepRingRadius,
-	              FLinearColor(1.f, 1.f, 1.f, 0.07f), SweepRingThickness, 48);
-
-	if (BeatRemainingFraction > 0.01f)
+	auto DrawChev = [&](float TipX, bool bLeft, float Alpha, FLinearColor Col)
 	{
-		// Urgency ramp: starts in the last 30 % of the cycle.
-		const float Urgency = FMath::Clamp((1.f - BeatRemainingFraction) / 0.30f, 0.f, 1.f);
-		const float R = FMath::Lerp(160.f / 255.f, 1.f, Urgency);
-		const float A = FMath::Lerp(0.44f,         0.92f, Urgency);
+		const float BackX = bLeft ? TipX + AW : TipX - AW; 
+		const float H     = AH + EXTRA_H;
+		
+		// Drop shadow fades completely out to black/transparent so we don't get hard pop-in
+		const FLinearColor Sh(0.f, 0.f, 0.f, FMath::Min(0.5f, Alpha * 0.8f));
+		DrawLine(BackX, CY - H, TipX, CY, Sh, THICK + 2.5f);
+		DrawLine(TipX,  CY,     BackX, CY + H, Sh, THICK + 2.5f);
+		
+		FLinearColor FinalCol = Col;
+		FinalCol.A *= Alpha; 
+		DrawLine(BackX, CY - H, TipX, CY, FinalCol, THICK);
+		DrawLine(TipX,  CY,     BackX, CY + H, FinalCol, THICK);
+	};
 
-		// Arc starts at -PI/2 (12 o'clock) and sweeps CCW for BeatRemainingFraction * 2PI.
-		const float StartAngle = -PI * 0.5f;
-		const float EndAngle   = StartAngle + BeatRemainingFraction * 2.f * PI;
-		DrawArcHUD(CX, CY, SweepRingRadius, SweepRingThickness,
-		           StartAngle, EndAngle,
-		           FLinearColor(R, FMath::Lerp(0.82f, 1.f, Urgency), 1.f, A),
-		           FMath::Max(4, FMath::RoundToInt(48.f * BeatRemainingFraction)));
+	// ── Incoming beats ───────────────────────────────────────────────────────
+	const float MaxBeats = FMath::Max(1.0f, (float)CrosshairBeatsToShow);
 
-		// Small dot at the tip of the sweep arc — acts as a "clock hand" endpoint.
-		if (BeatRemainingFraction > 0.04f)
-		{
-			const float TipX = CX + SweepRingRadius * FMath::Cos(EndAngle);
-			const float TipY = CY + SweepRingRadius * FMath::Sin(EndAngle);
-			DrawRect(FLinearColor(R, 1.f, 1.f, A),
-			         TipX - 1.8f, TipY - 1.8f, 3.6f, 3.6f);
-		}
+	for (int32 i = CrosshairBeatsToShow - 1; i >= 0; --i)
+	{
+		const float d = BeatRemainingFraction + (float)i;
+		
+		// Map distance to a 0.0 to 1.0 curve (0 = at the gate, 1 = spawning)
+		const float DistNormalized = FMath::Clamp(d / MaxBeats, 0.0f, 1.0f);
+		
+		// Invert so 1.0 is full opacity at the gate, 0.0 is invisible far away
+		const float FadeIn = 1.0f - DistNormalized;
+		
+		// Exponential fade: keeps it invisible longer, then smoothly bursts into view
+		const float Alpha = FMath::Pow(FadeIn, 2.0f); 
+		if (Alpha < 0.01f) continue;
+
+		const float Dist = CrosshairGateDist + d * CrosshairBeatStep;
+		
+		// Hard grayscale color. Purely fading out the Alpha, no HSV lerping.
+		FLinearColor NoteCol(0.6f, 0.6f, 0.6f, Alpha);
+		
+		DrawChev(CX - Dist, true, Alpha, NoteCol);
+		DrawChev(CX + Dist, false, Alpha, NoteCol);
 	}
 
-	// ── Static inner reticle ─────────────────────────────────────────────────
+	// ── Fixed gate markers ───────────────────────────────────────────────────
+	const FLinearColor GateResting(0.05f, 0.05f, 0.05f, 0.45f);
+	const FLinearColor GateFlash(1.0f, 1.0f, 1.0f, 1.0f);
+	const FLinearColor GateCol = GateResting + (GateFlash - GateResting) * FlashA;
+	
+	DrawChev(CX - CrosshairGateDist, true,  1.f, GateCol);
+	DrawChev(CX + CrosshairGateDist, false, 1.f, GateCol);
 
-	// Cardinal ticks (N / S / E / W) — fixed, no animation.
-	const float Dirs[4][2] = { {0.f, -1.f}, {0.f, 1.f}, {1.f, 0.f}, {-1.f, 0.f} };
-	for (const auto& Dir : Dirs)
-	{
-		const float Dx = Dir[0], Dy = Dir[1];
-		// Drop-shadow — thicker so the white ticks pop on light backgrounds
-		DrawLine(CX + (TickOuter + 2.f) * Dx, CY + (TickOuter + 2.f) * Dy,
-		         CX + (TickInner - 2.f) * Dx, CY + (TickInner - 2.f) * Dy,
-		         FLinearColor(0.f, 0.f, 0.f, 0.65f), 4.f);
-		// Tick
-		DrawLine(CX + TickOuter * Dx, CY + TickOuter * Dy,
-		         CX + TickInner * Dx, CY + TickInner * Dy,
-		         FLinearColor(1.f, 1.f, 1.f, 0.70f), 1.5f);
-	}
+	// ── Centre dot ───────────────────────────────────────────────────────────
+	const float DR  = DotSize;
+	const FLinearColor DotResting(0.05f, 0.75f, 1.0f, 0.8f);
+	const FLinearColor DotFlash(1.0f, 1.0f, 1.0f, 1.0f);
+	const FLinearColor DotCol = DotResting + (DotFlash - DotResting) * FlashA;
 
-	// Outer ring shadow
-	DrawCircleHUD(CX, CY, InnerRingRadius + 1.f,
-	              FLinearColor(0.f, 0.f, 0.f, 0.45f), InnerRingThickness + 1.f, 32);
-	// Outer ring
-	DrawCircleHUD(CX, CY, InnerRingRadius, CrosshairColor, InnerRingThickness, 32);
-
-	// Centre dot
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.50f),
-	         CX - DotSize - 0.5f, CY - DotSize - 0.5f,
-	         (DotSize + 0.5f) * 2.f, (DotSize + 0.5f) * 2.f);
-	DrawRect(CrosshairColor, CX - DotSize, CY - DotSize, DotSize * 2.f, DotSize * 2.f);
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.8f), CX - DR - 1.f, CY - DR - 1.f, (DR + 1.f) * 2.f, (DR + 1.f) * 2.f);
+	DrawRect(DotCol, CX - DR, CY - DR, DR * 2.f, DR * 2.f);
 }
 
 // =============================================================================
@@ -438,7 +380,6 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 	const float PlayerTrackX = GlanceBoard_XOffset;
 	const float EnemyTrackX  = GlanceBoard_XOffset + GlanceBoard_TrackSpacing;
 
-	// Background panel
 	const float PanelPad = 14.f;
 	const float PanelW   = GlanceBoard_TrackSpacing + PanelPad * 2.f;
 	DrawRect(FLinearColor(0.01f, 0.02f, 0.05f, 0.70f),
@@ -447,7 +388,6 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 	         PlayerTrackX - PanelPad, StrikeY + PanelPad,
 	         FLinearColor(0.f, 0.55f, 0.75f, 0.22f), 1.f);
 
-	// Column labels
 	if (GEngine)
 	{
 		DrawText(TEXT("BEAT"), FLinearColor(0.f, 0.70f, 0.85f, 0.50f),
@@ -456,11 +396,9 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 		         EnemyTrackX  - 6.f, TopY - 14.f, GEngine->GetSmallFont(), 1.f);
 	}
 
-	// Spine lines
 	DrawLine(PlayerTrackX, TopY, PlayerTrackX, StrikeY, FLinearColor(0.f,  0.55f, 0.75f, 0.15f), 1.f);
 	DrawLine(EnemyTrackX,  TopY, EnemyTrackX,  StrikeY, FLinearColor(0.8f, 0.15f, 0.25f, 0.15f), 1.f);
 
-	// Strike line
 	const FLinearColor StrikeLineColor = FLinearColor::LerpUsingHSV(
 		FLinearColor(0.f, 0.45f, 0.55f, 0.35f), FLinearColor(0.16f, 1.f, 1.f, 0.92f), FlashHard);
 	DrawLine(PlayerTrackX - PanelPad, StrikeY, PlayerTrackX - PanelPad + PanelW, StrikeY,
@@ -472,7 +410,6 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 	DrawRect(FLinearColor(1.f, 0.25f, 0.20f, 0.45f + FlashHard * 0.55f),
 	         EnemyTrackX  - SqH * 0.5f, StrikeY - SqH * 0.5f, SqH, SqH);
 
-	// Beat track (cyan dashes)
 	for (int32 i = -1; i <= GlanceBoard_BeatsToShow; ++i)
 	{
 		const float TimeDiffMS = ((float)NextBeatMS + i * IntervalMS) - (float)CurrentTimeMS;
@@ -491,7 +428,6 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 		         PlayerTrackX - DashW * 0.5f, NoteY - DashH * 0.5f, DashW, DashH);
 	}
 
-	// Rhythm NoteHit events (song layer — from subsystem)
 	const float LookaheadSec = (IntervalMS * (float)GlanceBoard_BeatsToShow) / 1000.f;
 	for (const FPcRuntimeEvent& Note : MusicSub->GetUpcomingNotes(LookaheadSec))
 	{
@@ -512,7 +448,6 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 		DrawLine(EnemyTrackX - Dr, NoteY,      EnemyTrackX,      NoteY - Dr, EC, 1.5f);
 	}
 
-	// Manually registered enemy threats (larger diamond so they're distinguishable)
 	for (const FPcHudThreatEvent& Threat : ActiveThreats)
 	{
 		const float TimeDiffMS = (float)(Threat.TimestampMS - CurrentTimeMS);
@@ -617,7 +552,6 @@ void APcQDebugHUD::DrawCircleHUD(float CX, float CY, float Radius, FLinearColor 
 	}
 }
 
-// Inner + outer edge curves only.  Use for glow hairlines and the sweep ring.
 void APcQDebugHUD::DrawArcHUD(float CX, float CY, float Radius, float Thickness,
                                float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
 {
@@ -635,14 +569,12 @@ void APcQDebugHUD::DrawArcHUD(float CX, float CY, float Radius, float Thickness,
 		DrawLine(CX + OuterR * FMath::Cos(A1), CY + OuterR * FMath::Sin(A1),
 		         CX + OuterR * FMath::Cos(A2), CY + OuterR * FMath::Sin(A2), Color, 2.f);
 	}
-	// End caps
 	DrawLine(CX + InnerR * FMath::Cos(StartAngle), CY + InnerR * FMath::Sin(StartAngle),
 	         CX + OuterR * FMath::Cos(StartAngle), CY + OuterR * FMath::Sin(StartAngle), Color, 2.f);
 	DrawLine(CX + InnerR * FMath::Cos(EndAngle),   CY + InnerR * FMath::Sin(EndAngle),
 	         CX + OuterR * FMath::Cos(EndAngle),   CY + OuterR * FMath::Sin(EndAngle),   Color, 2.f);
 }
 
-// Solid filled arc band.  Layered concentric strokes at 2.2 px intervals.
 void APcQDebugHUD::DrawArcFilled(float CX, float CY, float Radius, float Thickness,
                                   float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
 {

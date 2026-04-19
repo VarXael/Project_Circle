@@ -9,6 +9,7 @@ class UCameraComponent;
 class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
+class UPcQHealthComponent;
 
 UCLASS()
 class PROJECT_CIRCLE_API APcQPlayerCharacter : public ACharacter
@@ -23,17 +24,27 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UCameraComponent* CameraComp;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UPcQPlayerMovementComponent* MoveComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") 
+	UCameraComponent* CameraComp;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") 
+	UPcQPlayerMovementComponent* MoveComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") 
+	UPcQHealthComponent* HealthComp;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputMappingContext* DefaultMappingContext;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Move;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Look;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Jump;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_GroundPound;
+	
+	// NEW: The shoot action
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Fire;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityX = 0.4f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite) float LookSensitivityY = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityX = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityY = 0.4f;
 
 private:
 	void Input_Move(const FInputActionValue& Value);
@@ -41,6 +52,10 @@ private:
 	void Input_JumpPressed();
 	void Input_JumpReleased();
 	void Input_GroundPound();
+	
+	// NEW: Combat functions
+	void Input_Fire();
+	bool IsOnBeat() const;
 
 	UFUNCTION() void OnGameplayBeat(float BeatTimestamp);
 };

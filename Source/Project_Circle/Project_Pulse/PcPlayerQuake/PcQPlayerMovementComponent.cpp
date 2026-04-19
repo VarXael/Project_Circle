@@ -1,5 +1,6 @@
 ﻿#include "PcQPlayerMovementComponent.h"
 #include "GameFramework/Character.h"
+#include "Components/CapsuleComponent.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 
 UPcQPlayerMovementComponent::UPcQPlayerMovementComponent()
@@ -18,10 +19,6 @@ UPcQPlayerMovementComponent::UPcQPlayerMovementComponent()
 	bUseSeparateBrakingFriction   = false;
 	BrakingFriction               = 0.f;
 }
-
-// =============================================================================
-//  PURE QUERIES
-// =============================================================================
 
 float UPcQPlayerMovementComponent::GetChargeAlpha() const
 {
@@ -49,6 +46,30 @@ bool UPcQPlayerMovementComponent::IsInBhopChain() const
 
 void UPcQPlayerMovementComponent::TriggerBeatJump()
 {
+	if (BhopState == EBhopState::WallCushioned)
+	{
+		// ── BEAT WALL JUMP ───────────────────────────────────────────────────
+		// Read player's WASD input so they can steer the wall jump
+		FVector WishDir = Acceleration.GetSafeNormal2D();
+		FVector LaunchDir = MagneticWallNormal;
+		
+		// If they are pressing a direction that isn't directly INTO the wall, blend it
+		if (!WishDir.IsZero() && FVector::DotProduct(WishDir, MagneticWallNormal) > -0.3f)
+		{
+			LaunchDir = (MagneticWallNormal + WishDir).GetSafeNormal();
+		}
+
+		Velocity = LaunchDir * WallBounceForce;
+		Velocity.Z = WallBounceForce * 0.7f; // Add vertical pop
+		
+		BhopState = EBhopState::Active;
+		bJumpQueuedForBeat = false;
+		ExitCurveJump();
+		
+		OnBhopLanded.Broadcast(GetHorizontalSpeed());
+		return;
+	}
+
 	if (BhopState != EBhopState::Active) return;
 	if (IsFalling() && Velocity.Z > 0.f) return;
 
@@ -79,7 +100,7 @@ void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
 	if (IsFalling() && BhopState != EBhopState::GroundPounding)
 	{
-		ExitCurveJump(); // abort curve if mid-air
+		ExitCurveJump(); 
 		BhopState  = EBhopState::GroundPounding;
 		Velocity.X = 0.f; Velocity.Y = 0.f; Velocity.Z = GroundPoundSlamSpeed;
 	}
@@ -104,17 +125,6 @@ void UPcQPlayerMovementComponent::CancelAutoBhop()
 
 // =============================================================================
 //  APPLY JUMP VELOCITY
-//
-//  Two paths depending on whether a JumpCurve is assigned:
-//
-//  CURVE PATH  — Stores the beat-sync timing and peak height, sets
-//                GravityScale = 0, and lets TickComponent drive Velocity.Z
-//                frame-by-frame from the curve's position derivative.
-//                The character traces the exact shape the designer drew.
-//
-//  DEFAULT PATH — Existing constant-gravity parabola.  GravityScale is tuned
-//                 so the apex is reached at half the target air time, which
-//                 guarantees landing exactly on the next gameplay beat.
 // =============================================================================
 
 void UPcQPlayerMovementComponent::ApplyJumpVelocity()
@@ -134,7 +144,6 @@ void UPcQPlayerMovementComponent::ApplyJumpVelocity()
 			const float PeakHeight  = Preset.PeakHeightCM;
 			const float TimeToPeak  = TargetAirTime * 0.5f;
 
-			// ── CURVE PATH ───────────────────────────────────────────────────
 			if (JumpCurve)
 			{
 				JumpCurveTimer      = 0.f;
@@ -142,12 +151,9 @@ void UPcQPlayerMovementComponent::ApplyJumpVelocity()
 				JumpCurvePeakHeight = PeakHeight;
 				JumpCurveLaunchZ    = (CharacterOwner) ? CharacterOwner->GetActorLocation().Z : 0.f;
 
-				// Disable engine gravity — we drive Z from the curve derivative.
 				GravityScale        = 0.f;
 				bUsingJumpCurve     = true;
 
-				// Seed an initial upward velocity so the first frame looks right.
-				// Sample a tiny step ahead on the curve to get the derivative at t=0.
 				const float StepT    = 0.001f;
 				const float H0       = JumpCurve->GetFloatValue(0.f)    * PeakHeight;
 				const float H1       = JumpCurve->GetFloatValue(StepT)  * PeakHeight;
@@ -157,7 +163,6 @@ void UPcQPlayerMovementComponent::ApplyJumpVelocity()
 				return;
 			}
 
-			// ── DEFAULT PARABOLA ─────────────────────────────────────────────
 			const float RequiredGravity = (2.f * PeakHeight) / (TimeToPeak * TimeToPeak);
 			const float BaseGravity     = FMath::Abs(GetWorld()->GetDefaultGravityZ());
 			GravityScale                = RequiredGravity / BaseGravity;
@@ -167,22 +172,14 @@ void UPcQPlayerMovementComponent::ApplyJumpVelocity()
 		}
 	}
 
-	// Fallback when music system isn't ready.
 	Velocity.Z = FMath::Max(Velocity.Z, JumpZVelocity);
 	SetMovementMode(MOVE_Falling);
 }
-
-// =============================================================================
-//  EXIT CURVE JUMP
-//  Cleans up curve state and restores gravity.  Safe to call at any time.
-// =============================================================================
 
 void UPcQPlayerMovementComponent::ExitCurveJump()
 {
 	if (!bUsingJumpCurve) return;
 	bUsingJumpCurve = false;
-	// Restore engine gravity.  The next ApplyJumpVelocity will overwrite this
-	// with the beat-tuned value anyway, so 1.0 is a safe resting state.
 	GravityScale = 1.f;
 }
 
@@ -192,6 +189,10 @@ void UPcQPlayerMovementComponent::ExitCurveJump()
 
 void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float remainingTime, int32 Iterations)
 {
+	if (BhopState == EBhopState::WallCushioned) {
+		BhopState = EBhopState::Active; 
+	}
+
 	if (BhopState == EBhopState::GroundPounding)
 	{
 		BhopState = EBhopState::Active;
@@ -206,10 +207,7 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		return;
 	}
 
-	// If a curve jump was still running when we landed (early platform, etc.),
-	// exit cleanly before the base class processes the landing.
 	ExitCurveJump();
-
 	Super::ProcessLanded(Hit, remainingTime, Iterations);
 
 	if (BhopState == EBhopState::Active && bJumpQueuedForBeat)
@@ -224,34 +222,50 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 //  TICK
 // =============================================================================
 
-void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
-                                                 FActorComponentTickFunction* ThisTickFunction)
+void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
+	// ── MAGNETIC CUSHION DETECTION ──────────────────────────────────────────
+	if (MovementMode == MOVE_Falling && BhopState != EBhopState::GroundPounding)
+	{
+		FVector Start = CharacterOwner->GetActorLocation();
+		// Blend velocity and input so we detect walls if they strafe into them
+		FVector SweepDir = (Velocity + Acceleration).GetSafeNormal2D();
+		if (SweepDir.IsZero()) SweepDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+
+		FVector End = Start + SweepDir * WallCushionThickness;
+		FHitResult Hit;
+		FCollisionQueryParams Params;
+		Params.AddIgnoredActor(CharacterOwner);
+		
+		if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, ECC_Visibility, CharacterOwner->GetCapsuleComponent()->GetCollisionShape(), Params))
+		{
+			if (FMath::Abs(Hit.ImpactNormal.Z) < 0.2f) // Verify it is a steep wall
+			{
+				BhopState = EBhopState::WallCushioned;
+				MagneticWallNormal = Hit.ImpactNormal;
+				MagneticWallDistance = Hit.Distance;
+				ExitCurveJump(); // Cancel beat-curves so we don't glitch out
+			}
+			else if (BhopState == EBhopState::WallCushioned) {
+				BhopState = EBhopState::Active;
+			}
+		}
+		else if (BhopState == EBhopState::WallCushioned) {
+			BhopState = EBhopState::Active;
+		}
+	}
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ── Wipe detection ───────────────────────────────────────────────────────
 	const float CurrentSpeed = GetHorizontalSpeed();
-	if (PreviousFrameSpeed > 300.f && CurrentSpeed < 50.f)
-		UE_LOG(LogTemp, Error, TEXT("[DEBUG-BHOP] WIPE DETECTED!"));
 	PreviousFrameSpeed = CurrentSpeed;
 
-	// ── Sync max speed from music system ─────────────────────────────────────
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 	{
 		if (Sub->IsReadyForPlayback())
 			MaxWalkSpeed = Sub->GetCurrentPulsePreset().MaxGroundSpeed;
 	}
 
-	// ── Curve jump — drive Velocity.Z from position derivative ───────────────
-	//
-	//  Sample the curve at the current and next normalised time, compute the
-	//  height difference, and express it as a velocity.  Because GravityScale
-	//  is 0 the engine won't fight us.
-	//
-	//  We deliberately do NOT touch Velocity.X/Y here — horizontal movement
-	//  still goes through the normal PhysWalking / PhysFalling paths so air
-	//  control and momentum feel exactly the same as a standard jump.
-	//
 	if (bUsingJumpCurve && JumpCurve && JumpCurveTotalTime > 0.f)
 	{
 		JumpCurveTimer = FMath::Min(JumpCurveTimer + DeltaTime, JumpCurveTotalTime);
@@ -262,22 +276,20 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		const float HeightNow  = JumpCurve->GetFloatValue(T)     * JumpCurvePeakHeight;
 		const float HeightNext = JumpCurve->GetFloatValue(TNext) * JumpCurvePeakHeight;
 
-		// Express the height delta as a frame velocity.  This is sampled at the
-		// CURRENT time so the driving signal is always ahead of the physics step.
 		Velocity.Z = (HeightNext - HeightNow) / DeltaTime;
 
-		// Curve complete — hand back to normal gravity so the engine can settle
-		// the character onto the floor cleanly.
 		if (JumpCurveTimer >= JumpCurveTotalTime)
 		{
-			ExitCurveJump();
-			// Give a tiny downward nudge so the engine registers the character
-			// as falling and triggers a landing event.
-			Velocity.Z = FMath::Min(Velocity.Z, -10.f);
+			const float BackStep     = 0.005f;
+			const float HTerminal    = JumpCurve->GetFloatValue(1.f)            * JumpCurvePeakHeight;
+			const float HPreTerminal = JumpCurve->GetFloatValue(1.f - BackStep) * JumpCurvePeakHeight;
+			const float TerminalVelZ = (HTerminal - HPreTerminal) / (BackStep * JumpCurveTotalTime);
+
+			ExitCurveJump(); 
+			Velocity.Z = FMath::Min(TerminalVelZ, -80.f);
 		}
 	}
 
-	// ── Charge timer ─────────────────────────────────────────────────────────
 	if (BhopState == EBhopState::Charging)
 	{
 		ChargeTimer += DeltaTime;
@@ -294,7 +306,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 }
 
 // =============================================================================
-//  PHYS WALKING  (custom momentum carry-over, unchanged)
+//  PHYS WALKING
 // =============================================================================
 
 void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
@@ -328,6 +340,35 @@ void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
 void UPcQPlayerMovementComponent::PhysFalling(float deltaTime, int32 Iterations)
 {
 	if (deltaTime < MIN_TICK_TIME) return;
+
+	if (BhopState == EBhopState::WallCushioned)
+	{
+		// 1. Calculate how deep we are in the cushion (0.0 = edge, 1.0 = touching physical wall)
+		float CushionAlpha = 1.0f - FMath::Clamp(MagneticWallDistance / WallCushionThickness, 0.0f, 1.0f);
+		
+		// 2. Soft-Brake the velocity heading INTO the wall (Spring compression)
+		float InwardVel = FVector::DotProduct(Velocity, -MagneticWallNormal);
+		if (InwardVel > 0.f)
+		{
+			// The deeper we get, the harder the magnetic field pushes back
+			float BrakeForce = InwardVel * CushionAlpha * WallCushionStiffness * deltaTime;
+			Velocity += MagneticWallNormal * BrakeForce;
+		}
+
+		// 3. Float Field: Dynamically reduce gravity the deeper we get (down to 10%)
+		// This creates the "hang-time" without taking away upward/downward momentum
+		float CustomGravityScale = FMath::Lerp(1.0f, 0.1f, CushionAlpha);
+		float OldGravityScale = GravityScale;
+		GravityScale *= CustomGravityScale;
+
+		// 4. Call Super to process standard Air Control, Air Friction, and Gravity!
+		// Because we didn't zero out Acceleration, the player can still steer.
+		Super::PhysFalling(deltaTime, Iterations);
+
+		// Restore gravity for next frame
+		GravityScale = OldGravityScale;
+		return;
+	}
 
 	if (BhopState == EBhopState::GroundPounding)
 	{

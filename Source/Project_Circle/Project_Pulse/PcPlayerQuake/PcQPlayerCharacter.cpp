@@ -1,0 +1,151 @@
+#include "PcQPlayerCharacter.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
+#include "Kismet/GameplayStatics.h"
+#include "DrawDebugHelpers.h"
+#include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
+
+APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UPcQPlayerMovementComponent>(ACharacter::CharacterMovementComponentName))
+{
+	MoveComp = Cast<UPcQPlayerMovementComponent>(GetCharacterMovement());
+	
+	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	CameraComp->SetupAttachment(GetCapsuleComponent());
+	CameraComp->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
+	CameraComp->bUsePawnControlRotation = true;
+	
+	HealthComp = CreateDefaultSubobject<UPcQHealthComponent>(TEXT("HealthComp"));
+
+	bUseControllerRotationYaw = true;
+}
+
+void APcQPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	if (APlayerController* PC = Cast<APlayerController>(GetController())) {
+		PC->bShowMouseCursor = false; PC->SetInputMode(FInputModeGameOnly());
+		if (UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+			if (DefaultMappingContext) Sub->AddMappingContext(DefaultMappingContext, 0);
+	}
+
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
+		Sub->OnGameplayBeatTriggered.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBeat);
+	}
+}
+
+void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
+		if (IA_Move) EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Move);
+		if (IA_Look) EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Look);
+		if (IA_Jump) {
+			EIC->BindAction(IA_Jump, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_JumpPressed);
+			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
+		}
+		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
+		
+		// NEW: Bind the Fire Action
+		if (IA_Fire) EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
+	}
+}
+
+void APcQPlayerCharacter::Input_Move(const FInputActionValue& Value) {
+	if (!Controller) return;
+	FVector2D MoveVec = Value.Get<FVector2D>();
+	FRotator Yaw(0.f, Controller->GetControlRotation().Yaw, 0.f);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::X), MoveVec.Y);
+	AddMovementInput(FRotationMatrix(Yaw).GetUnitAxis(EAxis::Y), MoveVec.X);
+}
+
+void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value) {
+	if (!Controller) return;
+	AddControllerYawInput(Value.Get<FVector2D>().X * LookSensitivityX);
+	AddControllerPitchInput(Value.Get<FVector2D>().Y * LookSensitivityY);
+}
+
+void APcQPlayerCharacter::Input_JumpPressed() { if (MoveComp) MoveComp->OnJumpPressed(); }
+void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
+void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
+void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->TriggerBeatJump(); }
+
+// =============================================================================
+//  COMBAT LOGIC
+// =============================================================================
+
+bool APcQPlayerCharacter::IsOnBeat() const
+{
+	UPcMusicAnalysisSubsystem* MusicSub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
+	if (!MusicSub || !MusicSub->IsReadyForPlayback()) return false;
+
+	int32 CurrentTime = MusicSub->GetCurrentPlaybackTimeMS();
+	int32 NextBeat = MusicSub->GetNextGameplayBeatTimeMS();
+	int32 Interval = FMath::RoundToInt(MusicSub->GetGameplayBeatIntervalMS());
+	int32 PrevBeat = NextBeat - Interval;
+
+	int32 DistToNext = FMath::Abs(NextBeat - CurrentTime);
+	int32 DistToPrev = FMath::Abs(CurrentTime - PrevBeat);
+	
+	// 120ms tolerance window (adjust this to make the rhythm window more/less strict)
+	return FMath::Min(DistToNext, DistToPrev) <= 120; 
+}
+
+void APcQPlayerCharacter::Input_Fire()
+{
+	if (!CameraComp) return;
+
+	FVector CamLoc = CameraComp->GetComponentLocation();
+	FVector CamForward = CameraComp->GetForwardVector();
+
+	if (IsOnBeat()) 
+	{
+		// --- ON BEAT: AUTO-SNAP ---
+		TArray<AActor*> Enemies;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APcQEnemyBase::StaticClass(), Enemies);
+
+		APcQEnemyBase* BestEnemy = nullptr;
+		// 0.90 DotProduct is roughly a 25-degree cone from the center of the screen
+		float BestDot = 0.90f; 
+
+		for (AActor* EnemyActor : Enemies)
+		{
+			FVector DirToEnemy = (EnemyActor->GetActorLocation() - CamLoc).GetSafeNormal();
+			float Dot = FVector::DotProduct(CamForward, DirToEnemy);
+
+			if (Dot > BestDot) {
+				BestDot = Dot;
+				BestEnemy = Cast<APcQEnemyBase>(EnemyActor);
+			}
+		}
+
+		if (BestEnemy) {
+			// Found an enemy in the generous cone! Auto-snap hit.
+			UGameplayStatics::ApplyDamage(BestEnemy, BaseDamage, GetController(), this, nullptr);
+			
+			// Draw a thick CYAN line to show the auto-aim worked
+			DrawDebugLine(GetWorld(), CamLoc, BestEnemy->GetActorLocation(), FColor::Cyan, false, 0.5f, 0, 5.0f);
+			UE_LOG(LogTemp, Warning, TEXT("PERFECT BEAT HIT!"));
+			return; // Exit out so we don't fire the standard raycast
+		}
+	}
+	
+	// --- OFF BEAT (Or no enemy in cone): STANDARD RAYCAST ---
+	FHitResult HitResult;
+	FVector EndLoc = CamLoc + (CamForward * 5000.f);
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, CamLoc, EndLoc, ECC_Visibility, QueryParams);
+	
+	if (bHit) {
+		UGameplayStatics::ApplyDamage(HitResult.GetActor(), BaseDamage, GetController(), this, nullptr);
+		// Draw a thin RED line to show standard shooting
+		DrawDebugLine(GetWorld(), CamLoc, HitResult.ImpactPoint, FColor::Red, false, 0.2f, 0, 1.0f);
+	} else {
+		DrawDebugLine(GetWorld(), CamLoc, EndLoc, FColor::Red, false, 0.2f, 0, 1.0f);
+	}
+}
