@@ -94,6 +94,23 @@ void APcQDebugHUD::DrawHUD()
 			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
 			{
 				DrawBhopDebug(MC);
+
+				// Beat action ring pulse — expands and fades when an active on-beat
+				// action fires (bonus hop, slide continuation, GP landing on beat).
+				const float BeatFlash = MC->GetOnBeatFlash();
+				if (BeatFlash > 0.f && Canvas)
+				{
+					const float CX     = Canvas->SizeX * 0.5f;
+					const float CY     = Canvas->SizeY * 0.5f;
+					// Ring starts tight (30px) and expands outward (to 55px) as it fades
+					const float Radius = FMath::Lerp(55.f, 30.f, BeatFlash);
+					// Outer dark shadow so the ring reads on any background
+					DrawCircleHUD(CX, CY, Radius + 1.5f,
+					              FLinearColor(0.f, 0.f, 0.f, BeatFlash * 0.55f), 4.5f, 32);
+					// Bright green ring
+					DrawCircleHUD(CX, CY, Radius,
+					              FLinearColor(0.35f, 1.f, 0.35f, BeatFlash * 0.90f), 2.f, 32);
+				}
 			}
 		}
 	}
@@ -486,20 +503,9 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 
 	EBhopState State = MC->GetBhopState();
 	FString StateStr;
-	if      (State == EBhopState::Idle)           StateStr = TEXT("IDLE");
-	else if (State == EBhopState::Charging)        StateStr = TEXT("CHARGING");
-	else if (State == EBhopState::GroundPounding)  StateStr = TEXT("GROUND POUND");
+	if (State == EBhopState::GroundPounding)  StateStr = TEXT("GROUND POUND");
 	else                                            StateStr = TEXT("BEAT-SYNCED");
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
-
-	if (State == EBhopState::Charging)
-	{
-		const float Alpha = MC->GetChargeAlpha();
-		DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), PanelX, PanelY, 160.f, 10.f);
-		DrawRect(FLinearColor::LerpUsingHSV(FLinearColor::Yellow, FLinearColor::Green, Alpha),
-		         PanelX, PanelY, 160.f * Alpha, 10.f);
-		PanelY += 16.f;
-	}
 
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 	{
@@ -528,8 +534,6 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 {
 	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
-	if (State == EBhopState::Idle)           return FLinearColor(0.5f, 0.5f, 0.5f);
-	if (State == EBhopState::Charging)       return FLinearColor::Yellow;
 	return FLinearColor::Green;
 }
 

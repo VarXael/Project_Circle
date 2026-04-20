@@ -21,6 +21,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 public:
@@ -43,8 +44,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Fire;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityX = 0.4f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityY = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")  float LookSensitivityX = 0.4f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input")  float LookSensitivityY = 0.4f;
+
+	// ── Slide camera ─────────────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slide|Camera") float SlideCameraDropZ  = 25.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slide|Camera") float SlideFOVSqueeze   =  8.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Slide|Camera") float SlideCameraSpeed  =  8.f;
 
 private:
 	void Input_Move(const FInputActionValue& Value);
@@ -52,10 +58,16 @@ private:
 	void Input_JumpPressed();
 	void Input_JumpReleased();
 	void Input_GroundPound();
-	
-	// NEW: Combat functions
 	void Input_Fire();
+	void TryFire();   // shared logic for manual and auto-fire
 	bool IsOnBeat() const;
 
 	UFUNCTION() void OnGameplayBeat(float BeatTimestamp);
+	UFUNCTION() void OnActiveBeatAction_Handler();
+
+	void UpdateCameraEffects(float DeltaTime);
+
+	float DefaultCameraZ    = 60.f;
+	float DefaultFOV        = 90.f;
+	float CurrentSlideAlpha = 0.f;
 };

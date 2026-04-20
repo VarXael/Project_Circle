@@ -11,6 +11,7 @@
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UPcQPlayerMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	PrimaryActorTick.bCanEverTick = true;
 	MoveComp = Cast<UPcQPlayerMovementComponent>(GetCharacterMovement());
 	
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
@@ -26,6 +27,9 @@ APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitial
 void APcQPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	DefaultFOV     = CameraComp ? CameraComp->FieldOfView            : 90.f;
+	DefaultCameraZ = CameraComp ? CameraComp->GetRelativeLocation().Z : 60.f;
+	if (MoveComp) MoveComp->OnActiveBeatAction.AddDynamic(this, &APcQPlayerCharacter::OnActiveBeatAction_Handler);
 	if (APlayerController* PC = Cast<APlayerController>(GetController())) {
 		PC->bShowMouseCursor = false; PC->SetInputMode(FInputModeGameOnly());
 		if (UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
@@ -73,6 +77,27 @@ void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpR
 void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
 void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->TriggerBeatJump(); }
 
+void APcQPlayerCharacter::OnActiveBeatAction_Handler()
+{
+	TryFire();
+}
+
+void APcQPlayerCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	UpdateCameraEffects(DeltaTime);
+}
+
+void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
+{
+	if (!CameraComp || !MoveComp) return;
+	const float SlideTarget  = MoveComp->IsSliding() ? 1.f : 0.f;
+	CurrentSlideAlpha        = FMath::FInterpTo(CurrentSlideAlpha, SlideTarget, DeltaTime, SlideCameraSpeed);
+	const float NewCameraZ   = FMath::Lerp(DefaultCameraZ, DefaultCameraZ - SlideCameraDropZ, CurrentSlideAlpha);
+	CameraComp->SetRelativeLocation(FVector(0.f, 0.f, NewCameraZ));
+	CameraComp->SetFieldOfView(FMath::Lerp(DefaultFOV, DefaultFOV - SlideFOVSqueeze, CurrentSlideAlpha));
+}
+
 // =============================================================================
 //  COMBAT LOGIC
 // =============================================================================
@@ -94,9 +119,12 @@ bool APcQPlayerCharacter::IsOnBeat() const
 	return FMath::Min(DistToNext, DistToPrev) <= 120; 
 }
 
-void APcQPlayerCharacter::Input_Fire()
+void APcQPlayerCharacter::Input_Fire() { TryFire(); }
+
+void APcQPlayerCharacter::TryFire()
 {
 	if (!CameraComp) return;
+	if (MoveComp && MoveComp->IsWallSwimming()) return;
 
 	FVector CamLoc = CameraComp->GetComponentLocation();
 	FVector CamForward = CameraComp->GetForwardVector();
