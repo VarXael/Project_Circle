@@ -89,7 +89,7 @@ private:
 	                     int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
 	                     float FlashHard);
 	void DrawBhopDebug(UPcQPlayerMovementComponent* MC);
-	FLinearColor GetStateColor(EBhopState State) const;
+	FLinearColor GetStateColor(EPlayerMoveState State) const;
 
 	// Primitives
 	void DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color,

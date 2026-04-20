@@ -1,7 +1,6 @@
 ﻿#include "PcQPlayerMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
-#include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 
 // =============================================================================
 //  CONSTRUCTOR
@@ -37,27 +36,8 @@ bool UPcQPlayerMovementComponent::IsInBhopChain() const
 	return GetHorizontalSpeed() > MaxWalkSpeed * 1.05f;
 }
 
-// Symmetric beat window: catches actions both OnBeatWindowMS before AND after a beat.
-bool UPcQPlayerMovementComponent::IsOnBeat() const
-{
-	UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
-	if (!Sub || !Sub->IsReadyForPlayback()) return false;
-	const int32 CurrentMS  = Sub->GetCurrentPlaybackTimeMS();
-	const int32 NextBeatMS = Sub->GetNextGameplayBeatTimeMS();
-	const int32 IntervalMS = FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS());
-	const int32 PrevBeatMS = NextBeatMS - IntervalMS;
-	// Checks distance to NEXT beat (before it) AND to PREVIOUS beat (after it)
-	const int32 MinDist = FMath::Min(FMath::Abs(NextBeatMS - CurrentMS),
-	                                 FMath::Abs(CurrentMS  - PrevBeatMS));
-	return MinDist <= OnBeatWindowMS;
-}
-
 // =============================================================================
-//  BEAT ACTION FLASH
-//
-//  Call this whenever a successful active on-beat action occurs.
-//  Sets the timer that the HUD reads to draw the ring pulse.
-//  Also broadcasts OnActiveBeatAction so the character can auto-fire.
+//  BEAT FLASH
 // =============================================================================
 
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
@@ -67,121 +47,30 @@ void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 }
 
 // =============================================================================
-//  TRIGGER BEAT JUMP
-//
-//  Priority:
-//    1. WallSwim  → horizontal eject
-//    2. Sliding   → check GP continuation flag; decrement phase or bounce
-//    3. On ground → auto-bounce (+ bonus if flagged)
-//    4. In air ↑  → skip (still rising)
-//    5. In air ↓  → coyote queue
-// =============================================================================
-
-void UPcQPlayerMovementComponent::TriggerBeatJump()
-{
-	// 1. Wall swim eject
-	if (BhopState == EBhopState::WallSwim)
-	{
-		EjectFromWall();
-		return;
-	}
-
-	// 2. Slide — 2-beat immunity system
-	if (BhopState == EBhopState::Sliding && IsMovingOnGround())
-	{
-		if (bSlideContinueRequested)
-		{
-			// Player pressed GP near this beat — reset to full speed, both phases
-			bSlideContinueRequested = false;
-			SlidePhase    = 2;
-			bSlidePerfect = true;
-
-			FVector Dir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-			if (Dir.IsZero() && CharacterOwner)
-				Dir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
-
-			Velocity.X = Dir.X * SlideSpeed;
-			Velocity.Y = Dir.Y * SlideSpeed;
-			Velocity.Z = 0.f;
-
-			TriggerOnBeatFlash();  // auto-fire + ring pulse
-			UE_LOG(LogTemp, Log, TEXT("[Slide] Continued — phase reset to 2, perfect."));
-		}
-		else
-		{
-			// No GP press — decrement phase
-			SlidePhase--;
-
-			if (SlidePhase <= 0)
-			{
-				// Time expired — world bounces the player out of the slide
-				BhopState     = EBhopState::Active;
-				bSlidePerfect = false;
-				ApplyJumpVelocity();
-				OnBhopLanded.Broadcast(GetHorizontalSpeed());
-				UE_LOG(LogTemp, Log, TEXT("[Slide] Expired — bouncing."));
-			}
-			else
-			{
-				// Phase 1 (second beat): mark as decaying
-				bSlidePerfect = false;
-				UE_LOG(LogTemp, Log, TEXT("[Slide] Phase → %d (decaying)."), SlidePhase);
-			}
-		}
-		return;
-	}
-
-	// 3–5. Standard active bounce
-	if (BhopState != EBhopState::Active) return;
-
-	if (IsMovingOnGround())
-	{
-		ApplyJumpVelocity();
-
-		if (bBonusHopRequested)
-		{
-			Velocity.X *= BonusHopMultiplier;
-			Velocity.Y *= BonusHopMultiplier;
-			bBonusHopRequested = false;
-			TriggerOnBeatFlash();  // auto-fire + ring pulse
-			UE_LOG(LogTemp, Log, TEXT("[BonusHop] Fired! Speed=%.0f"), GetHorizontalSpeed());
-		}
-
-		OnBhopLanded.Broadcast(GetHorizontalSpeed());
-	}
-	else if (IsFalling() && Velocity.Z > 0.f)
-	{
-		return;  // still rising
-	}
-	else
-	{
-		bJumpQueuedForBeat = true;
-		BeatQueueTimer     = BeatCoyoteWindow;
-	}
-}
-
-// =============================================================================
 //  INPUT
 // =============================================================================
 
 void UPcQPlayerMovementComponent::OnJumpPressed()
 {
-	if (BhopState == EBhopState::WallSwim)       return;
-	if (BhopState == EBhopState::GroundPounding) return;
-	if (BhopState == EBhopState::Sliding)        return;  // slide absorbs jump input
-
-	if (IsOnBeat())
+	if (MoveState == EPlayerMoveState::WallSwim)
 	{
-		// On-beat press: flag the bonus. TriggerBeatJump consumes it on the next bounce.
-		// If the beat fires essentially simultaneously, the flag is already set.
-		bBonusHopRequested = true;
-		UE_LOG(LogTemp, Log, TEXT("[BonusHop] Flagged on beat."));
+		// Jump while in a wall → manual eject, no beat required
+		EjectFromWall(false);
+		return;
 	}
-	else
+
+	if (MoveState == EPlayerMoveState::Sliding)
 	{
-		// Off-beat: fixed 1-beat manual jump. No penalty, no sync adjustment.
-		if (IsMovingOnGround())
-			ApplyFixedBeatJump();
+		// Jump cancels slide and launches normally
+		ExitSlide();
+	}
+
+	if (MoveState == EPlayerMoveState::GroundPounding) return;
+
+	if (IsMovingOnGround())
+	{
+		ApplyJumpArc(JumpPeakHeightCM, JumpAirTimeSec);
+		GPBufferTimer = GPBufferSec;  // start the GP lockout window
 	}
 }
 
@@ -189,103 +78,113 @@ void UPcQPlayerMovementComponent::OnJumpReleased() { /* no-op */ }
 
 void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
-	if (BhopState == EBhopState::WallSwim) return;
-
-	// GP while sliding → request continuation for this beat
-	if (BhopState == EBhopState::Sliding && IsMovingOnGround())
-	{
-		bSlideContinueRequested = true;
-		return;
-	}
+	if (MoveState == EPlayerMoveState::WallSwim)    return;
+	if (MoveState == EPlayerMoveState::GroundPounding) return;
 
 	if (IsMovingOnGround())
 	{
-		// Ground GP → enter slide
-		// On-beat: perfect slide (both phases full speed)
-		// Off-beat: standard slide (phase 2 full, phase 1 decays)
-		BhopState     = EBhopState::Sliding;
-		SlidePhase    = 2;
-		bSlidePerfect = IsOnBeat();
+		// Ground GP: same as slide input, but with a strong initial boost
+		EnterSlide(ESlideStrength::Strong, StrongSlideMinSpeed);
+		TriggerOnBeatFlash();
+		return;
+	}
+
+	// Air GP — only allowed after buffer expires
+	if (GPBufferTimer > 0.f)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[GP] Blocked by buffer (%.2fs remaining)"), GPBufferTimer);
+		return;
+	}
+
+	if (IsFalling())
+	{
 		ExitCurveJump();
-
-		FVector Dir = Acceleration.GetSafeNormal2D();
-		if (Dir.IsZero() && CharacterOwner)
-			Dir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
-
-		Velocity.X = Dir.X * SlideSpeed;
-		Velocity.Y = Dir.Y * SlideSpeed;
-		Velocity.Z = 0.f;
-
-		UE_LOG(LogTemp, Log, TEXT("[Slide] Entered from ground. Perfect=%d"), bSlidePerfect ? 1 : 0);
-	}
-	else if (IsFalling() && BhopState != EBhopState::GroundPounding)
-	{
-		// Air GP → slam down; ProcessLanded will enter Sliding
-		ExitCurveJump();
-		BhopState  = EBhopState::GroundPounding;
-		Velocity.X = 0.f; Velocity.Y = 0.f; Velocity.Z = GroundPoundSlamSpeed;
+		MoveState  = EPlayerMoveState::GroundPounding;
+		Velocity.X = 0.f; Velocity.Y = 0.f; Velocity.Z = GPSlamSpeed;
 	}
 }
 
-// =============================================================================
-//  APPLY JUMP VELOCITY  — beat-synced, targets the next gameplay beat
-// =============================================================================
-
-void UPcQPlayerMovementComponent::ApplyJumpVelocity()
+void UPcQPlayerMovementComponent::OnSlidePressed()
 {
-	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+	bSlideHeld = true;
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+	if (MoveState == EPlayerMoveState::WallSwim)    return;
+	if (MoveState == EPlayerMoveState::GroundPounding) return;
+
+	if (IsMovingOnGround() && MoveState != EPlayerMoveState::Sliding)
 	{
-		if (Sub->IsReadyForPlayback())
-		{
-			const FPcMovementPreset& Preset  = Sub->GetCurrentPulsePreset();
-			const float GameplayInterval     = Sub->GetGameplayBeatIntervalMS() / 1000.f;
-			float TargetAirTime              = Sub->GetTimeUntilNextGameplayBeat();
-			if (TargetAirTime < GameplayInterval * 0.25f) TargetAirTime += GameplayInterval;
-			ApplyArcWithAirTime(Preset.PeakHeightCM, TargetAirTime);
-			return;
-		}
+		// Simple ground slide: weak, just preserves current momentum
+		EnterSlide(ESlideStrength::Weak, GetHorizontalSpeed());
 	}
-	Velocity.Z = FMath::Max(Velocity.Z, JumpZVelocity);
-	SetMovementMode(MOVE_Falling);
+}
+
+void UPcQPlayerMovementComponent::OnSlideReleased()
+{
+	bSlideHeld = false;
+
+	// Releasing slide exits the slide early (player chose to stand up)
+	if (MoveState == EPlayerMoveState::Sliding)
+		ExitSlide();
 }
 
 // =============================================================================
-//  APPLY FIXED BEAT JUMP  — manual off-beat jump, always exactly 1 beat long
+//  SLIDE
 // =============================================================================
 
-void UPcQPlayerMovementComponent::ApplyFixedBeatJump()
+void UPcQPlayerMovementComponent::EnterSlide(ESlideStrength Strength, float EntrySpeed)
 {
-	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+	MoveState            = EPlayerMoveState::Sliding;
+	CurrentSlideStrength = Strength;
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-	{
-		if (Sub->IsReadyForPlayback())
-		{
-			const FPcMovementPreset& Preset = Sub->GetCurrentPulsePreset();
-			const float AirTime             = Sub->GetGameplayBeatIntervalMS() / 1000.f;
-			ApplyArcWithAirTime(Preset.PeakHeightCM, AirTime);
-			return;
-		}
-	}
-	Velocity.Z = FMath::Max(Velocity.Z, JumpZVelocity);
-	SetMovementMode(MOVE_Falling);
+	// Set slide velocity in WASD direction (or forward if no input)
+	FVector Dir = Acceleration.GetSafeNormal2D();
+	if (Dir.IsZero() && CharacterOwner)
+		Dir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+
+	const float Speed  = Strength == ESlideStrength::Strong
+	                   ? FMath::Max(EntrySpeed, StrongSlideMinSpeed)
+	                   : FMath::Min(EntrySpeed, WeakSlideMaxSpeed);
+
+	Velocity.X = Dir.X * Speed;
+	Velocity.Y = Dir.Y * Speed;
+	Velocity.Z = 0.f;
+
+	UE_LOG(LogTemp, Log, TEXT("[Slide] Entered %s. Speed=%.0f"),
+	       Strength == ESlideStrength::Strong ? TEXT("STRONG") : TEXT("WEAK"), Speed);
 }
 
-void UPcQPlayerMovementComponent::ApplyArcWithAirTime(float PeakHeightCM, float AirTimeSec)
+void UPcQPlayerMovementComponent::ExitSlide()
+{
+	if (MoveState != EPlayerMoveState::Sliding) return;
+	MoveState = EPlayerMoveState::Normal;
+	UE_LOG(LogTemp, Log, TEXT("[Slide] Exited."));
+}
+
+float UPcQPlayerMovementComponent::GetCurrentSlideDecay() const
+{
+	return CurrentSlideStrength == ESlideStrength::Strong ? StrongSlideDecay : WeakSlideDecay;
+}
+
+// =============================================================================
+//  JUMP ARC
+//
+//  Fixed peak height and air time — completely independent of the beat.
+//  The pulsing floor uses the same function but passes its own values.
+// =============================================================================
+
+void UPcQPlayerMovementComponent::ApplyJumpArc(float PeakHeightCM, float AirTimeSec)
 {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+
 	const float TimeToPeak = AirTimeSec * 0.5f;
 
 	if (JumpCurve)
 	{
+		bUsingJumpCurve     = true;
 		JumpCurveTimer      = 0.f;
 		JumpCurveTotalTime  = AirTimeSec;
 		JumpCurvePeakHeight = PeakHeightCM;
-		JumpCurveLaunchZ    = CharacterOwner ? CharacterOwner->GetActorLocation().Z : 0.f;
 		GravityScale        = 0.f;
-		bUsingJumpCurve     = true;
 		const float H0      = JumpCurve->GetFloatValue(0.f)    * PeakHeightCM;
 		const float H1      = JumpCurve->GetFloatValue(0.001f) * PeakHeightCM;
 		Velocity.Z          = (H1 - H0) / (0.001f * AirTimeSec);
@@ -307,16 +206,95 @@ void UPcQPlayerMovementComponent::ExitCurveJump()
 }
 
 // =============================================================================
+//  FLOOR PULSE CHECK
+//
+//  Called every tick while grounded.  Samples the actor beneath the player
+//  and checks if it has a UPcBeatSurfaceComponent with WantsToLaunch().
+//  If yes: consume the pulse, launch.
+//
+//  The player doesn't subscribe to anything.  The surface sets a flag and
+//  the player reads it when they're ready.  No timing mismatch possible.
+// =============================================================================
+
+void UPcQPlayerMovementComponent::CheckFloorPulse()
+{
+	// Must be grounded and not already doing something beat-triggered
+	if (!IsMovingOnGround()) return;
+	if (MoveState == EPlayerMoveState::GroundPounding) return;
+
+	// Don't launch the player out of a slide — let them keep sliding.
+	// The beat surface can still boost their slide speed though (Boost type).
+	const AActor* FloorActor = CurrentFloor.HitResult.GetActor();
+	if (!FloorActor) return;
+
+	UPcBeatSurfaceComponent* Surface = FloorActor->FindComponentByClass<UPcBeatSurfaceComponent>();
+	if (!Surface || !Surface->WantsToLaunch()) return;
+
+	Surface->ConsumePulse();
+
+	if (Surface->SurfaceType == EPcBeatSurfaceType::Floor)
+	{
+		if (MoveState == EPlayerMoveState::Sliding)
+		{
+			// Beat fires under a sliding player: boost the slide instead of launching
+			const FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+			const float Boost   = Surface->BoostSpeed > 0.f ? Surface->BoostSpeed : StrongSlideMinSpeed;
+			Velocity.X = Dir2D.X * FMath::Max(GetHorizontalSpeed(), Boost);
+			Velocity.Y = Dir2D.Y * FMath::Max(GetHorizontalSpeed(), Boost);
+			TriggerOnBeatFlash();
+			UE_LOG(LogTemp, Log, TEXT("[BeatSurface] Floor boost → slide."));
+			return;
+		}
+
+		// Normal launch
+		ExitSlide();
+		ExitCurveJump();
+
+		const float LaunchZ    = Surface->FloorLaunchOverride > 0.f
+		                       ? Surface->FloorLaunchOverride : JumpZVelocity;
+		const float PeakHeight = Surface->FloorLaunchOverride > 0.f
+		                       ? 0.f : JumpPeakHeightCM; // 0 → use LaunchZ directly
+
+		if (PeakHeight > 0.f)
+			ApplyJumpArc(PeakHeight, JumpAirTimeSec);
+		else
+		{
+			Velocity.Z   = LaunchZ;
+			GravityScale = 1.f;
+			SetMovementMode(MOVE_Falling);
+		}
+
+		TriggerOnBeatFlash();
+		OnBhopLanded.Broadcast(GetHorizontalSpeed());
+		UE_LOG(LogTemp, Log, TEXT("[BeatSurface] Floor launched player."));
+	}
+	else if (Surface->SurfaceType == EPcBeatSurfaceType::Boost && MoveState == EPlayerMoveState::Sliding)
+	{
+		const FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+		Velocity.X = Dir2D.X * (GetHorizontalSpeed() + Surface->BoostSpeed);
+		Velocity.Y = Dir2D.Y * (GetHorizontalSpeed() + Surface->BoostSpeed);
+		TriggerOnBeatFlash();
+	}
+}
+
+// =============================================================================
 //  WALL SWIM
 // =============================================================================
 
 void UPcQPlayerMovementComponent::EnterWallSwim(const FHitResult& Hit)
 {
-	if (BhopState == EBhopState::WallSwim) return;
+	if (MoveState == EPlayerMoveState::WallSwim) return;
+
 	ExitCurveJump();
-	BhopState       = EBhopState::WallSwim;
+	ExitSlide();
+	MoveState       = EPlayerMoveState::WallSwim;
 	SwimEntryNormal = Hit.ImpactNormal;
 	Velocity       *= WallSwim_EntryVelocityRetain;
+
+	// Cache the beat surface if the wall has one — used for beat-eject
+	SwimWallSurface = nullptr;
+	if (AActor* WallActor = Hit.GetActor())
+		SwimWallSurface = WallActor->FindComponentByClass<UPcBeatSurfaceComponent>();
 
 	if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
 	{
@@ -326,24 +304,43 @@ void UPcQPlayerMovementComponent::EnterWallSwim(const FHitResult& Hit)
 
 	SetMovementMode(MOVE_Flying);
 	OnWallSwimChanged.Broadcast(1.f);
+	UE_LOG(LogTemp, Log, TEXT("[WallSwim] Entered. HasBeatSurface=%d"),
+	       SwimWallSurface.IsValid() ? 1 : 0);
 }
 
-void UPcQPlayerMovementComponent::EjectFromWall()
+void UPcQPlayerMovementComponent::EjectFromWall(bool bBeatEject)
 {
 	if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
-		Cap->SetCollisionProfileName(SwimPrevCollisionProfile.IsNone() ? FName(TEXT("Pawn")) : SwimPrevCollisionProfile);
+		Cap->SetCollisionProfileName(SwimPrevCollisionProfile.IsNone()
+		                             ? FName(TEXT("Pawn")) : SwimPrevCollisionProfile);
 
-	BhopState = EBhopState::Active;
+	MoveState = EPlayerMoveState::Normal;
 
 	FVector EjectDir = Acceleration.GetSafeNormal2D();
 	if (EjectDir.IsNearlyZero()) EjectDir = SwimEntryNormal;
 
-	const float EjectSpeed = FMath::Max(GetHorizontalSpeed(), MaxWalkSpeed) * WallSwim_EjectHorizMultiplier;
-	Velocity.X   = EjectDir.X * EjectSpeed;
-	Velocity.Y   = EjectDir.Y * EjectSpeed;
-	Velocity.Z   = WallSwim_EjectUpKick;  // small fixed kick, normal gravity does the rest
+	if (bBeatEject && SwimWallSurface.IsValid())
+	{
+		// Beat eject: strong, horizontal-biased, uses surface parameters
+		const UPcBeatSurfaceComponent* Surf = SwimWallSurface.Get();
+		Velocity.X   = EjectDir.X * Surf->WallEjectSpeed;
+		Velocity.Y   = EjectDir.Y * Surf->WallEjectSpeed;
+		Velocity.Z   = Surf->WallEjectUpKick;
+		TriggerOnBeatFlash();
+		UE_LOG(LogTemp, Log, TEXT("[WallSwim] Beat eject. Speed=%.0f"), GetHorizontalSpeed());
+	}
+	else
+	{
+		// Manual eject (Jump pressed): normal jump speed, let arc take over
+		Velocity.X   = EjectDir.X * WallSwim_ManualEjectSpeed;
+		Velocity.Y   = EjectDir.Y * WallSwim_ManualEjectSpeed;
+		Velocity.Z   = WallSwim_ManualEjectUpKick;
+		UE_LOG(LogTemp, Log, TEXT("[WallSwim] Manual eject."));
+	}
+
 	GravityScale = 1.f;
 	SetMovementMode(MOVE_Falling);
+	SwimWallSurface = nullptr;
 	OnWallSwimChanged.Broadcast(0.f);
 }
 
@@ -358,80 +355,82 @@ bool UPcQPlayerMovementComponent::IsAboveGround() const
 }
 
 // =============================================================================
-//  HANDLE IMPACT
+//  HANDLE IMPACT — wall swim entry point
 // =============================================================================
 
 void UPcQPlayerMovementComponent::HandleImpact(const FHitResult& Hit, float TimeSlice,
                                                 const FVector& MoveDelta)
 {
 	if (MovementMode == MOVE_Falling
-	    && BhopState != EBhopState::WallSwim
-	    && BhopState != EBhopState::GroundPounding)
+	    && MoveState != EPlayerMoveState::WallSwim
+	    && MoveState != EPlayerMoveState::GroundPounding)
 	{
-		if (FMath::Abs(Hit.ImpactNormal.Z) < 0.4f
-		    && GetHorizontalSpeed() >= WallSwim_EnterMinSpeed)
+		// Only enter swim if the wall has a UPcBeatSurfaceComponent of Wall type
+		// OR if we want all steep walls to be swimmable (comment out the Surface check).
+		const float WallDot = FMath::Abs(Hit.ImpactNormal.Z);
+		if (WallDot < 0.4f && GetHorizontalSpeed() >= WallSwim_EnterMinSpeed)
 		{
-			EnterWallSwim(Hit);
-			return;
+			// Check for beat surface — only walls tagged as beat walls trigger swim
+			UPcBeatSurfaceComponent* Surface = Hit.GetActor()
+			    ? Hit.GetActor()->FindComponentByClass<UPcBeatSurfaceComponent>() : nullptr;
+
+			if (Surface && Surface->SurfaceType == EPcBeatSurfaceType::Wall)
+			{
+				EnterWallSwim(Hit);
+				return;
+			}
 		}
 	}
+
 	Super::HandleImpact(Hit, TimeSlice, MoveDelta);
 }
 
 // =============================================================================
 //  PROCESS LANDED
-//
-//  Ground pound landing → Sliding (NOT a jump).
-//  Checks IsOnBeat() to determine if auto-fire should trigger.
 // =============================================================================
 
 void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float remainingTime,
                                                  int32 Iterations)
 {
-	if (BhopState == EBhopState::WallSwim)
+	// Landed while ghosted (fell through thin floor)
+	if (MoveState == EPlayerMoveState::WallSwim)
 	{
 		if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
-			Cap->SetCollisionProfileName(SwimPrevCollisionProfile.IsNone() ? FName(TEXT("Pawn")) : SwimPrevCollisionProfile);
-		BhopState = EBhopState::Active;
+			Cap->SetCollisionProfileName(SwimPrevCollisionProfile.IsNone()
+			                            ? FName(TEXT("Pawn")) : SwimPrevCollisionProfile);
+		MoveState       = EPlayerMoveState::Normal;
+		SwimWallSurface = nullptr;
 		OnWallSwimChanged.Broadcast(0.f);
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
 		return;
 	}
 
-	if (BhopState == EBhopState::GroundPounding)
+	if (MoveState == EPlayerMoveState::GroundPounding)
 	{
-		// Enter slide on landing — NOT a jump.
-		BhopState     = EBhopState::Sliding;
-		SlidePhase    = 2;
-		bSlidePerfect = false;  // air landing is never "perfect" — phase 1 full, phase 2 decays
+		// GP landing: slide if slide held, otherwise brief freeze
 		ExitCurveJump();
-
-		// Direction: carry pre-slam horizontal, or use look direction if straight down
-		FVector Dir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-		if (Dir.IsZero() && CharacterOwner)
-			Dir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
-
-		const float EntrySpeed = FMath::Max(GetHorizontalSpeed(), SlideSpeed * 0.5f);
-		Velocity.X = Dir.X * EntrySpeed;
-		Velocity.Y = Dir.Y * EntrySpeed;
-		Velocity.Z = 0.f;
-
-		// If landing was on-beat, fire the weapon
-		if (IsOnBeat()) TriggerOnBeatFlash();
+		MoveState = EPlayerMoveState::Normal;
 
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
+
+		if (bSlideHeld)
+		{
+			// Slide input was held → strong slide immediately, no freeze
+			const float ImpactSpeed = FMath::Abs(Velocity.Z);  // use the fall speed
+			EnterSlide(ESlideStrength::Strong, FMath::Max(ImpactSpeed * 0.6f, StrongSlideMinSpeed));
+		}
+		else
+		{
+			// No slide input → brief freeze ("thud" feel)
+			bGPImpactPending = true;
+			GPFreezeTimer    = GPImpactFreezeSec;
+			Velocity.X = 0.f; Velocity.Y = 0.f; Velocity.Z = 0.f;
+		}
 		return;
 	}
 
 	ExitCurveJump();
 	Super::ProcessLanded(Hit, remainingTime, Iterations);
-
-	if (BhopState == EBhopState::Active && bJumpQueuedForBeat)
-	{
-		bJumpQueuedForBeat = false;
-		ApplyJumpVelocity();
-		OnBhopLanded.Broadcast(GetHorizontalSpeed());
-	}
 }
 
 // =============================================================================
@@ -441,25 +440,56 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                                  FActorComponentTickFunction* ThisTickFunction)
 {
-	// Wall swim physics
-	if (BhopState == EBhopState::WallSwim)
+	// ── GP freeze ────────────────────────────────────────────────────────────
+	if (GPFreezeTimer > 0.f)
+	{
+		GPFreezeTimer -= DeltaTime;
+		if (GPFreezeTimer <= 0.f)
+		{
+			GPFreezeTimer    = 0.f;
+			bGPImpactPending = false;
+		}
+		else
+		{
+			// While frozen: zero velocity, skip normal physics
+			Velocity = FVector::ZeroVector;
+			// Call Super but return immediately after so we skip everything else
+			Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+			return;
+		}
+	}
+
+	// ── GP buffer countdown ───────────────────────────────────────────────────
+	if (GPBufferTimer > 0.f) GPBufferTimer -= DeltaTime;
+
+	// ── Wall swim physics ─────────────────────────────────────────────────────
+	if (MoveState == EPlayerMoveState::WallSwim)
 	{
 		const float HR = FMath::Pow(1.f - FMath::Clamp(WallSwim_Damping   * DeltaTime, 0.f, 0.99f), 1.f);
 		const float UR = FMath::Pow(1.f - FMath::Clamp(WallSwim_UpDamping * DeltaTime, 0.f, 0.99f), 1.f);
 		Velocity.X *= HR; Velocity.Y *= HR;
 		Velocity.Z  = Velocity.Z < 0.f ? Velocity.Z * HR : Velocity.Z * UR;
 		if (!IsAboveGround() && Velocity.Z < 0.f) Velocity.Z = 0.f;
+
+		// Check if the wall surface we're in wants to eject us
+		if (SwimWallSurface.IsValid() && SwimWallSurface->WantsToLaunch())
+		{
+			SwimWallSurface->ConsumePulse();
+			EjectFromWall(true);  // beat eject
+		}
 	}
 
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	PreviousFrameSpeed = GetHorizontalSpeed();
+	// ── Floor pulse check ─────────────────────────────────────────────────────
+	// Runs AFTER Super so CurrentFloor is valid for this frame.
+	CheckFloorPulse();
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-		if (Sub->IsReadyForPlayback())
-			MaxWalkSpeed = Sub->GetCurrentPulsePreset().MaxGroundSpeed;
+	// ── Beat flash decay ──────────────────────────────────────────────────────
+	if (OnBeatFlashTimer > 0.f)
+		OnBeatFlashTimer = FMath::Max(0.f, OnBeatFlashTimer - DeltaTime);
 
-	// Curve jump tick
+	// ── Curve jump tick ───────────────────────────────────────────────────────
 	if (bUsingJumpCurve && JumpCurve && JumpCurveTotalTime > 0.f)
 	{
 		JumpCurveTimer    = FMath::Min(JumpCurveTimer + DeltaTime, JumpCurveTotalTime);
@@ -478,54 +508,46 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 			Velocity.Z = FMath::Min((HT - HPre) / (BackStep * JumpCurveTotalTime), -80.f);
 		}
 	}
-
-	// Beat flash timer
-	if (OnBeatFlashTimer > 0.f)
-		OnBeatFlashTimer = FMath::Max(0.f, OnBeatFlashTimer - DeltaTime);
-
-	if (bJumpQueuedForBeat && (BeatQueueTimer -= DeltaTime) <= 0.f)
-		bJumpQueuedForBeat = false;
 }
 
 // =============================================================================
 //  PHYS WALKING
-//
-//  During slide, gently brings speed down toward the phase target.
-//  The EffTarget logic in the base preserves speed above MaxWalkSpeed,
-//  which keeps the slide momentum without fighting the deceleration.
 // =============================================================================
 
 void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
 {
 	if (deltaTime < MIN_TICK_TIME) return;
 
-	// Slide speed management
-	if (BhopState == EBhopState::Sliding)
+	// Slide deceleration
+	if (MoveState == EPlayerMoveState::Sliding)
 	{
-		const float SlideSpeedTarget = bSlidePerfect ? SlideSpeed : SlideSpeed * SlideDecayFactor;
-		const float CurrentH         = GetHorizontalSpeed();
-
-		if (CurrentH > SlideSpeedTarget + 1.f)
+		const float CurrentH = GetHorizontalSpeed();
+		if (CurrentH < SlideExitSpeed)
 		{
-			// Gradually bring speed toward target (gently in decay phase, instant on reset)
-			const float NewH   = FMath::FInterpTo(CurrentH, SlideSpeedTarget, deltaTime, SlideDecayInterpSpeed);
+			ExitSlide();  // too slow — stand up
+		}
+		else
+		{
+			// Apply decay toward exit speed
+			const float NewH    = FMath::FInterpTo(CurrentH, SlideExitSpeed, deltaTime, GetCurrentSlideDecay());
 			const FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
 			Velocity.X = Dir2D.X * NewH;
 			Velocity.Y = Dir2D.Y * NewH;
 		}
 	}
 
-	float TargetSpeed = MaxWalkSpeed;
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-		if (Sub->IsReadyForPlayback()) TargetSpeed = Sub->GetCurrentPulsePreset().MaxGroundSpeed;
-
 	const FVector WishDir   = Acceleration.GetSafeNormal2D();
 	FVector       Vel2D(Velocity.X, Velocity.Y, 0.f);
 	const float   Spd       = Vel2D.Size();
-	const float   EffTarget = (Spd > TargetSpeed && !WishDir.IsZero()) ? Spd : TargetSpeed;
-	const FVector NewVel2D  = FMath::VInterpTo(Vel2D, WishDir * EffTarget, deltaTime,
-	                          WishDir.IsZero() ? CustomGroundFriction : CustomGroundAcceleration);
-	Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
+	const float   EffTarget = (Spd > MaxWalkSpeed && !WishDir.IsZero()) ? Spd : MaxWalkSpeed;
+
+	// During slide, let the slide physics drive velocity — don't fight it with normal accel
+	if (MoveState != EPlayerMoveState::Sliding)
+	{
+		const FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * EffTarget, deltaTime,
+		                         WishDir.IsZero() ? CustomGroundFriction : CustomGroundAcceleration);
+		Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
+	}
 
 	FVector Saved = Acceleration; Acceleration = FVector::ZeroVector;
 	Super::PhysWalking(deltaTime, Iterations);
@@ -540,20 +562,16 @@ void UPcQPlayerMovementComponent::PhysFalling(float deltaTime, int32 Iterations)
 {
 	if (deltaTime < MIN_TICK_TIME) return;
 
-	if (BhopState == EBhopState::GroundPounding)
+	if (MoveState == EPlayerMoveState::GroundPounding)
 	{
 		Acceleration = FVector::ZeroVector; Velocity.X = 0.f; Velocity.Y = 0.f;
 		Super::PhysFalling(deltaTime, Iterations);
 		return;
 	}
 
-	float TargetAirSpeed = MaxWalkSpeed;
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-		if (Sub->IsReadyForPlayback()) TargetAirSpeed = Sub->GetCurrentPulsePreset().MaxAirSpeed;
-
 	const FVector WishDir  = Acceleration.GetSafeNormal2D();
 	const FVector Vel2D(Velocity.X, Velocity.Y, 0.f);
-	const FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * TargetAirSpeed, deltaTime,
+	const FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * MaxWalkSpeed, deltaTime,
 	                         WishDir.IsZero() ? CustomAirFriction : CustomAirAcceleration);
 	Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
 

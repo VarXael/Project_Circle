@@ -94,23 +94,6 @@ void APcQDebugHUD::DrawHUD()
 			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
 			{
 				DrawBhopDebug(MC);
-
-				// Beat action ring pulse — expands and fades when an active on-beat
-				// action fires (bonus hop, slide continuation, GP landing on beat).
-				const float BeatFlash = MC->GetOnBeatFlash();
-				if (BeatFlash > 0.f && Canvas)
-				{
-					const float CX     = Canvas->SizeX * 0.5f;
-					const float CY     = Canvas->SizeY * 0.5f;
-					// Ring starts tight (30px) and expands outward (to 55px) as it fades
-					const float Radius = FMath::Lerp(55.f, 30.f, BeatFlash);
-					// Outer dark shadow so the ring reads on any background
-					DrawCircleHUD(CX, CY, Radius + 1.5f,
-					              FLinearColor(0.f, 0.f, 0.f, BeatFlash * 0.55f), 4.5f, 32);
-					// Bright green ring
-					DrawCircleHUD(CX, CY, Radius,
-					              FLinearColor(0.35f, 1.f, 0.35f, BeatFlash * 0.90f), 2.f, 32);
-				}
 			}
 		}
 	}
@@ -501,10 +484,12 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		PanelY += LineH;
 	};
 
-	EBhopState State = MC->GetBhopState();
+	EPlayerMoveState State = MC->GetMoveState();
 	FString StateStr;
-	if (State == EBhopState::GroundPounding)  StateStr = TEXT("GROUND POUND");
-	else                                            StateStr = TEXT("BEAT-SYNCED");
+	if      (State == EPlayerMoveState::GroundPounding) StateStr = TEXT("GROUND POUND");
+	else if (State == EPlayerMoveState::Sliding)        StateStr = TEXT("SLIDING");
+	else if (State == EPlayerMoveState::WallSwim)       StateStr = TEXT("WALL SWIM");
+	else                                                StateStr = TEXT("NORMAL");
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
@@ -512,9 +497,6 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		Row(TEXT("PRESET:"),   Sub->GetActivePresetName(),                                     FLinearColor::Yellow);
 		Row(TEXT("GAME BPM:"), FString::Printf(TEXT("%.1f"), Sub->GetCurrentGameplayBPM()));
 	}
-
-	Row(TEXT("COYOTE:"), MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"),
-	    MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 
 	const float HSpeed    = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White;
@@ -529,14 +511,17 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 	    MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
 	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"),
 	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
+	Row(TEXT("SLIDING:"),  MC->IsSliding()       ? TEXT("YES") : TEXT("NO"),
+	    MC->IsSliding() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 }
 
-FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
+FLinearColor APcQDebugHUD::GetStateColor(EPlayerMoveState State) const
 {
-	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
+	if (State == EPlayerMoveState::GroundPounding) return FLinearColor::Red;
+	if (State == EPlayerMoveState::WallSwim)       return FLinearColor(0.f, 0.8f, 1.f);
+	if (State == EPlayerMoveState::Sliding)        return FLinearColor::Yellow;
 	return FLinearColor::Green;
 }
-
 // =============================================================================
 //  PRIMITIVES
 // =============================================================================
