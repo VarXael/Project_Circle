@@ -6,6 +6,7 @@
 #include "PcQDebugHUD.generated.h"
 
 class UPcMusicAnalysisSubsystem;
+class APcQPlayerCharacter;
 
 // ---------------------------------------------------------------------------
 //  Registered by an enemy during its telegraph phase.
@@ -89,7 +90,8 @@ private:
 	                     int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
 	                     float FlashHard);
 	void DrawBhopDebug(UPcQPlayerMovementComponent* MC);
-	FLinearColor GetStateColor(EPlayerMoveState State) const;
+	void DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC);
+	FLinearColor GetStateColor(EBhopState State) const;
 
 	// Primitives
 	void DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color,

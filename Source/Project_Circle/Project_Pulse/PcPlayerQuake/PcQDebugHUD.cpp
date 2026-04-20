@@ -1,4 +1,6 @@
 #include "PcQDebugHUD.h"
+
+#include "PcQPlayerCharacter.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Character.h"
 #include "Engine/Canvas.h"
@@ -94,6 +96,19 @@ void APcQDebugHUD::DrawHUD()
 			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
 			{
 				DrawBhopDebug(MC);
+
+				// ── Beat action ring flash ─────────────────────────────────
+				const float BeatFlash = MC->GetOnBeatFlash();
+				if (BeatFlash > 0.f && Canvas)
+				{
+					const float CX = Canvas->SizeX * 0.5f, CY = Canvas->SizeY * 0.5f;
+					const float R  = FMath::Lerp(55.f, 30.f, BeatFlash);
+					DrawCircleHUD(CX, CY, R + 1.5f, FLinearColor(0.f, 0.f, 0.f, BeatFlash * 0.55f), 4.5f, 32);
+					DrawCircleHUD(CX, CY, R,        FLinearColor(0.35f, 1.f, 0.35f, BeatFlash * 0.90f), 2.f, 32);
+				}
+
+				// ── Ability cooldown bars ───────────────────────────────────
+				if (Canvas) DrawAbilityBars(MC, PC);
 			}
 		}
 	}
@@ -484,12 +499,12 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		PanelY += LineH;
 	};
 
-	EPlayerMoveState State = MC->GetMoveState();
+	EBhopState State = MC->GetBhopState();
 	FString StateStr;
-	if      (State == EPlayerMoveState::GroundPounding) StateStr = TEXT("GROUND POUND");
-	else if (State == EPlayerMoveState::Sliding)        StateStr = TEXT("SLIDING");
-	else if (State == EPlayerMoveState::WallSwim)       StateStr = TEXT("WALL SWIM");
-	else                                                StateStr = TEXT("NORMAL");
+	if      (State == EBhopState::PowerBoost)     StateStr = TEXT("BOOST");
+	else if (State == EBhopState::GroundPounding)  StateStr = TEXT("GROUND POUND");
+	else if (State == EBhopState::WallSwim)        StateStr = TEXT("WALL SWIM");
+	else                                            StateStr = TEXT("ACTIVE");
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
@@ -497,6 +512,9 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 		Row(TEXT("PRESET:"),   Sub->GetActivePresetName(),                                     FLinearColor::Yellow);
 		Row(TEXT("GAME BPM:"), FString::Printf(TEXT("%.1f"), Sub->GetCurrentGameplayBPM()));
 	}
+
+	Row(TEXT("COYOTE:"), MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"),
+	    MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 
 	const float HSpeed    = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White;
@@ -511,17 +529,128 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 	    MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
 	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"),
 	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
-	Row(TEXT("SLIDING:"),  MC->IsSliding()       ? TEXT("YES") : TEXT("NO"),
-	    MC->IsSliding() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 }
 
-FLinearColor APcQDebugHUD::GetStateColor(EPlayerMoveState State) const
+FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 {
-	if (State == EPlayerMoveState::GroundPounding) return FLinearColor::Red;
-	if (State == EPlayerMoveState::WallSwim)       return FLinearColor(0.f, 0.8f, 1.f);
-	if (State == EPlayerMoveState::Sliding)        return FLinearColor::Yellow;
-	return FLinearColor::Green;
+	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
+	if (State == EBhopState::WallSwim)       return FLinearColor(0.f, 0.82f, 1.f);
+	if (State == EBhopState::PowerBoost)     return FLinearColor(1.f, 0.55f, 0.f);
+	return FLinearColor::Green;  // Active
 }
+
+// =============================================================================
+//  ABILITY BARS  (bottom-right: BOOST / D-JUMP / FIRE)
+//
+//  Each bar:  background track → colored fill (drains while on cooldown)
+//             Label left, status right
+//             Pulses on the beat when ready
+//             Shows ACTIVE when ability is running
+// =============================================================================
+
+void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC)
+{
+	if (!Canvas) return;
+
+	const float BarW = 130.f, BarH = 20.f, Gap = 6.f;
+	const float BarX = Canvas->SizeX - BarW - 22.f;
+	const float BaseY = Canvas->SizeY - 24.f;
+
+	// Flash on beat (shared)
+	const float BeatFlash = MC ? MC->GetOnBeatFlash() : 0.f;
+
+	// Pistol cooldown from character
+	float PistolCoolAlpha = 0.f;
+	if (APcQPlayerCharacter* PCChar = Cast<APcQPlayerCharacter>(PC->GetPawn()))
+		PistolCoolAlpha = PCChar->GetPistolCooldownAlpha();
+
+	struct FBarDef
+	{
+		FString      Label;
+		FString      Status;
+		FLinearColor Color;
+		float        FillAlpha;   // 0=empty (all cooldown), 1=full (ready)
+		bool         bActive;
+	};
+
+	TArray<FBarDef> Bars;
+
+	// BOOST bar
+	{
+		FBarDef B;
+		B.Label  = TEXT("BOOST");
+		const float CoolAlpha = MC ? MC->GetBoostCooldownAlpha() : 0.f;
+		B.bActive   = MC && MC->IsPowerBoosting();
+		B.FillAlpha = B.bActive ? 1.f : (1.f - CoolAlpha);
+		B.Status    = B.bActive ? TEXT("ACTIVE") : (CoolAlpha <= 0.f ? TEXT("READY") : TEXT("--"));
+		B.Color     = FLinearColor(1.f, 0.55f, 0.f);
+		Bars.Add(B);
+	}
+
+	// DOUBLE JUMP bar
+	{
+		FBarDef B;
+		B.Label     = TEXT("D-JUMP");
+		const float CoolAlpha = MC ? MC->GetDoubleJumpCooldownAlpha() : 0.f;
+		B.bActive   = false;
+		B.FillAlpha = 1.f - CoolAlpha;
+		B.Status    = CoolAlpha <= 0.f ? TEXT("READY") : TEXT("--");
+		B.Color     = FLinearColor(0.f, 0.72f, 1.f);
+		Bars.Add(B);
+	}
+
+	// FIRE bar
+	{
+		FBarDef B;
+		B.Label     = TEXT("FIRE");
+		B.bActive   = false;
+		B.FillAlpha = 1.f - PistolCoolAlpha;
+		B.Status    = PistolCoolAlpha <= 0.f ? TEXT("READY") : TEXT("--");
+		B.Color     = FLinearColor(0.88f, 0.20f, 0.32f);
+		Bars.Add(B);
+	}
+
+	for (int32 i = 0; i < Bars.Num(); ++i)
+	{
+		const FBarDef& B  = Bars[i];
+		const float    BY = BaseY - i * (BarH + Gap);
+		const bool bReady = B.FillAlpha >= 1.f;
+
+		// Dark background
+		DrawRect(FLinearColor(0.02f, 0.04f, 0.08f, 0.92f), BarX - 2.f, BY - 2.f, BarW + 4.f, BarH + 4.f);
+
+		// Track
+		DrawRect(B.Color * FLinearColor(1,1,1, 0.15f), BarX, BY, BarW, BarH);
+
+		// Fill — pulses when active boost, otherwise steady
+		if (B.bActive)
+		{
+			// Pulsing fill for active state — use BeatFlash to drive
+			const float PulseAlpha = 0.55f + 0.35f * BeatFlash;
+			DrawRect(B.Color * FLinearColor(1,1,1,PulseAlpha), BarX, BY, BarW, BarH);
+		}
+		else if (B.FillAlpha > 0.f)
+		{
+			const float FillAlpha = bReady ? 0.85f : 0.50f;
+			DrawRect(B.Color * FLinearColor(1,1,1,FillAlpha), BarX, BY, BarW * B.FillAlpha, BarH);
+		}
+
+		// Beat-ready pulse overlay
+		if (bReady && BeatFlash > 0.01f)
+			DrawRect(B.Color * FLinearColor(1,1,1, BeatFlash * 0.40f), BarX, BY, BarW, BarH);
+
+		// Labels
+		if (GEngine)
+		{
+			const FLinearColor LabelCol = bReady
+				? B.Color * FLinearColor(1,1,1, 1.0f)
+				: FLinearColor(0.55f, 0.60f, 0.68f, 0.85f);
+			DrawText(B.Label,  LabelCol, BarX + 5.f,           BY + 6.f, GEngine->GetSmallFont(), 1.f);
+			DrawText(B.Status, LabelCol, BarX + BarW - 32.f,   BY + 6.f, GEngine->GetSmallFont(), 1.f);
+		}
+	}
+}
+
 // =============================================================================
 //  PRIMITIVES
 // =============================================================================
