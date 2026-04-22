@@ -94,22 +94,81 @@ void APcQDebugHUD::DrawHUD()
 		{
 			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
 			{
-				// Subscribe to combo events once
 				if (!MC->OnComboEvent.IsAlreadyBound(this, &APcQDebugHUD::OnComboEvent))
 					MC->OnComboEvent.AddDynamic(this, &APcQDebugHUD::OnComboEvent);
 				DrawBhopDebug(MC);
 
-				// ── Beat action ring flash ─────────────────────────────────
-				const float BeatFlash = MC->GetOnBeatFlash();
-				if (BeatFlash > 0.f && Canvas)
+				const float BeatFlash  = MC->GetOnBeatFlash();
+				const float CX         = Canvas->SizeX * 0.5f;
+
+				// ── NEW: SCREEN EDGE PULSE (Peripheral rhythm help) ───────────
+				if (BeatFlash > 0.01f)
 				{
-					const float CX = Canvas->SizeX * 0.5f, CY = Canvas->SizeY * 0.5f;
-					const float R  = FMath::Lerp(55.f, 30.f, BeatFlash);
-					DrawCircleHUD(CX, CY, R + 1.5f, FLinearColor(0.f, 0.f, 0.f, BeatFlash * 0.55f), 4.5f, 32);
-					DrawCircleHUD(CX, CY, R,        FLinearColor(0.35f, 1.f, 0.35f, BeatFlash * 0.90f), 2.f, 32);
+					// Soft cyan vignette that flashes on the edge of the monitor
+					const FLinearColor EdgeCol(0.1f, 0.8f, 1.0f, BeatFlash * 0.15f); 
+					const float Th = 15.f + (BeatFlash * 25.f); 
+					
+					DrawRect(EdgeCol, 0, 0, Canvas->SizeX, Th); // Top
+					DrawRect(EdgeCol, 0, Canvas->SizeY - Th, Canvas->SizeX, Th); // Bottom
+					DrawRect(EdgeCol, 0, 0, Th, Canvas->SizeY); // Left
+					DrawRect(EdgeCol, Canvas->SizeX - Th, 0, Th, Canvas->SizeY); // Right
 				}
 
-				// ── Ability cooldown bars ───────────────────────────────────
+				// ── Auto-jump indicator ───────────────────────────────────────
+				if (MC->IsAutoJumping() && GEngine)
+				{
+					const float AX = CX - 40.f;
+					const float AY = Canvas->SizeY - 112.f;
+					const float Pulse = 0.55f + 0.45f * FlashSoft;
+					const FLinearColor AJCol(0.6f, 1.f, 0.3f, Pulse);
+					DrawRect(FLinearColor(0,0,0,0.7f), AX - 2.f, AY - 2.f, 84.f, 14.f);
+					DrawRect(AJCol * FLinearColor(1,1,1,0.3f), AX, AY, 80.f, 10.f);
+					DrawText(TEXT("AUTO JUMP"), AJCol, AX + 4.f, AY + 1.f, GEngine->GetSmallFont(), 1.f);
+				}
+
+				// ── Boost fuel bar ─────────────────
+				{
+					const float BoostCool   = MC->GetBoostCooldownAlpha();
+					const float BoostActive = MC->GetBoostActiveAlpha();
+					const bool  bIsBoosting = MC->IsPowerBoosting();
+					const FLinearColor BoostCol(1.f, 0.55f, 0.05f);
+
+					const float BW  = 240.f;
+					const float BH  =   8.f;
+					const float BX  = CX - BW * 0.5f;
+					const float BY  = Canvas->SizeY - 100.f;
+
+					DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.75f), BX - 2.f, BY - 2.f, BW + 4.f, BH + 4.f);
+					DrawRect(FLinearColor(0.05f, 0.04f, 0.02f, 1.f), BX, BY, BW, BH);
+
+					float FillRatio = 0.f;
+					float FillAlpha = 0.f;
+					if (bIsBoosting) {
+						FillRatio = BoostActive;
+						FillAlpha = 0.85f + BeatFlash * 0.15f;
+					} else if (BoostCool > 0.f) {
+						FillRatio = 1.f - BoostCool;
+						FillAlpha = 0.25f;
+					} else {
+						FillRatio = 1.f;
+						FillAlpha = 0.6f + FlashSoft * 0.3f;
+					}
+					
+					if (FillRatio > 0.01f)
+						DrawRect(BoostCol * FLinearColor(1,1,1,FillAlpha), BX, BY, BW * FillRatio, BH);
+
+					const float BA = bIsBoosting ? (0.7f + BeatFlash*0.3f) : (BoostCool <= 0.f ? 0.55f : 0.2f);
+					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY,       BW, 1.f);
+					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY+BH-1.f, BW, 1.f);
+					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY,       1.f, BH);
+					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX+BW-1.f, BY, 1.f, BH);
+
+					if (GEngine) {
+						const FString BLabel = bIsBoosting ? TEXT("BOOST") : (BoostCool > 0.f ? TEXT("BOOST CD") : TEXT("BOOST RDY"));
+						DrawText(BLabel, BoostCol * FLinearColor(1,1,1,FillAlpha + 0.2f), BX + 4.f, BY - 13.f, GEngine->GetSmallFont(), 1.f);
+					}
+				}
+
 				if (Canvas) DrawAbilityBars(MC, PC);
 				if (Canvas) DrawComboFeed();
 			}
@@ -611,106 +670,103 @@ FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 
 void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC)
 {
-	if (!Canvas) return;
+	if (!Canvas || !GEngine) return;
 
-	const float BarW = 130.f, BarH = 20.f, Gap = 6.f;
-	const float BarX = Canvas->SizeX - BarW - 22.f;
-	const float BaseY = Canvas->SizeY - 24.f;
+	// Three square ability icons, bottom-center of screen.
+	// Each shows: fill draining during CD, bright when ready, number overlay.
+	const float IconSz  = 52.f;   // square icon size
+	const float IconGap = 10.f;
+	const float TotalW  = IconSz * 2.f + IconGap * 1.f;
+	const float StartX  = (Canvas->SizeX - TotalW) * 0.5f;
+	const float IconY   = Canvas->SizeY - IconSz - 20.f;
 
-	// Flash on beat (shared)
 	const float BeatFlash = MC ? MC->GetOnBeatFlash() : 0.f;
 
-	// Pistol cooldown from character
-	float PistolCoolAlpha = 0.f;
-	if (APcQPlayerCharacter* PCChar = Cast<APcQPlayerCharacter>(PC->GetPawn()))
-		PistolCoolAlpha = PCChar->GetPistolCooldownAlpha();
+	float PistolCoolAlpha = 0.f, PistolBaseSec = 0.5f;
+	if (APcQPlayerCharacter* Ch = Cast<APcQPlayerCharacter>(PC->GetPawn()))
+	{
+		PistolCoolAlpha = Ch->GetPistolCooldownAlpha();
+		PistolBaseSec   = Ch->PistolBaseCooldownSec;
+	}
 
-	struct FBarDef
+	const float DJCoolAlpha = MC ? MC->GetDoubleJumpCooldownAlpha() : 0.f;
+
+	struct FIcon
 	{
 		FString      Label;
-		FString      Status;
-		FLinearColor Color;
-		float        FillAlpha;   // 0=empty (all cooldown), 1=full (ready)
+		FLinearColor Col;
+		float        Fill;
 		bool         bActive;
+		float        CoolSec;
 	};
+	FIcon Icons[2];
 
-	TArray<FBarDef> Bars;
+	Icons[0] = { TEXT("DJUMP"), FLinearColor(0.18f, 0.65f, 1.f),
+	             1.f - DJCoolAlpha, false,
+	             DJCoolAlpha * (MC ? MC->DoubleJumpBaseCooldownSec : 2.f) };
 
-	// BOOST bar
+	Icons[1] = { TEXT("FIRE"),  FLinearColor(0.9f, 0.18f, 0.28f),
+	             1.f - PistolCoolAlpha, false,
+	             PistolCoolAlpha * PistolBaseSec };
+
+	for (int32 i = 0; i < 2; ++i)
 	{
-		FBarDef B;
-		B.Label  = TEXT("BOOST");
-		const float CoolAlpha = MC ? MC->GetBoostCooldownAlpha() : 0.f;
-		B.bActive   = MC && MC->IsPowerBoosting();
-		// During active boost: show remaining fuel drain. During CD: show recovery.
-		const float ActiveAlpha = MC ? MC->GetBoostActiveAlpha() : 0.f;
-		B.FillAlpha = B.bActive ? ActiveAlpha : (1.f - CoolAlpha);
-		B.Status    = B.bActive ? TEXT("ACTIVE") : (CoolAlpha <= 0.f ? TEXT("READY") : TEXT("--"));
-		B.Color     = FLinearColor(1.f, 0.55f, 0.f);
-		Bars.Add(B);
-	}
+		const FIcon& Ic    = Icons[i];
+		const float  IX    = StartX + i * (IconSz + IconGap);
+		const bool   bRdy  = Ic.Fill >= 1.f && !Ic.bActive;
+		const bool   bOnCD = Ic.Fill  < 1.f && !Ic.bActive;
 
-	// DOUBLE JUMP bar
-	{
-		FBarDef B;
-		B.Label     = TEXT("D-JUMP");
-		const float CoolAlpha = MC ? MC->GetDoubleJumpCooldownAlpha() : 0.f;
-		B.bActive   = false;
-		B.FillAlpha = 1.f - CoolAlpha;
-		B.Status    = CoolAlpha <= 0.f ? TEXT("READY") : TEXT("--");
-		B.Color     = FLinearColor(0.f, 0.72f, 1.f);
-		Bars.Add(B);
-	}
+		// ── Shadow ──────────────────────────────────────────────────────────
+		DrawRect(FLinearColor(0,0,0,0.82f), IX - 3.f, IconY - 3.f, IconSz + 6.f, IconSz + 6.f);
 
-	// FIRE bar
-	{
-		FBarDef B;
-		B.Label     = TEXT("FIRE");
-		B.bActive   = false;
-		B.FillAlpha = 1.f - PistolCoolAlpha;
-		B.Status    = PistolCoolAlpha <= 0.f ? TEXT("READY") : TEXT("--");
-		B.Color     = FLinearColor(0.88f, 0.20f, 0.32f);
-		Bars.Add(B);
-	}
+		// ── Background ──────────────────────────────────────────────────────
+		DrawRect(FLinearColor(0.03f, 0.04f, 0.08f, 1.f), IX, IconY, IconSz, IconSz);
 
-	for (int32 i = 0; i < Bars.Num(); ++i)
-	{
-		const FBarDef& B  = Bars[i];
-		const float    BY = BaseY - i * (BarH + Gap);
-		const bool bReady = B.FillAlpha >= 1.f;
+		// ── Fill — drains from top, full when ready ──────────────────────────
+		// Fill rises from the bottom: empty at bottom, full = whole icon lit.
+		const float FillH     = IconSz * Ic.Fill;
+		const float FillY     = IconY + IconSz - FillH;
+		const float FillAlpha = bRdy  ? (0.75f + BeatFlash * 0.20f) :
+		                        Ic.bActive ? 0.88f : 0.28f;
+		if (FillH > 0.5f)
+			DrawRect(Ic.Col * FLinearColor(1,1,1, FillAlpha), IX, FillY, IconSz, FillH);
 
-		// Dark background
-		DrawRect(FLinearColor(0.02f, 0.04f, 0.08f, 0.92f), BarX - 2.f, BY - 2.f, BarW + 4.f, BarH + 4.f);
+		// ── Active pulse overlay ─────────────────────────────────────────────
+		if (Ic.bActive && BeatFlash > 0.01f)
+			DrawRect(FLinearColor(1,1,1, BeatFlash * 0.22f), IX, FillY, IconSz, FillH);
 
-		// Track
-		DrawRect(B.Color * FLinearColor(1,1,1, 0.15f), BarX, BY, BarW, BarH);
+		// ── Border — thin, colored, brighter when ready ──────────────────────
+		const float BorderA = bRdy ? (0.85f + BeatFlash * 0.15f) : (Ic.bActive ? 0.70f : 0.22f);
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY,           IconSz, 2.f);  // top
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY+IconSz-2.f,IconSz, 2.f);  // bottom
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY,           2.f, IconSz);  // left
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX+IconSz-2.f,IconY,           2.f, IconSz);  // right
 
-		// Fill — pulses when active boost, otherwise steady
-		if (B.bActive)
+		// ── On-beat bright border flash ──────────────────────────────────────
+		if (bRdy && BeatFlash > 0.05f)
 		{
-			// Pulsing fill for active state — use BeatFlash to drive
-			const float PulseAlpha = 0.55f + 0.35f * BeatFlash;
-			DrawRect(B.Color * FLinearColor(1,1,1,PulseAlpha), BarX, BY, BarW, BarH);
-		}
-		else if (B.FillAlpha > 0.f)
-		{
-			const float FillAlpha = bReady ? 0.85f : 0.50f;
-			DrawRect(B.Color * FLinearColor(1,1,1,FillAlpha), BarX, BY, BarW * B.FillAlpha, BarH);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY,           IconSz, 2.f);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY+IconSz-2.f,IconSz, 2.f);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY,           2.f, IconSz);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX+IconSz-2.f,IconY,           2.f, IconSz);
 		}
 
-		// Beat-ready pulse overlay
-		if (bReady && BeatFlash > 0.01f)
-			DrawRect(B.Color * FLinearColor(1,1,1, BeatFlash * 0.40f), BarX, BY, BarW, BarH);
+		// ── Label (top of icon) ──────────────────────────────────────────────
+		const FLinearColor TextCol = bRdy ? Ic.Col * FLinearColor(1,1,1,1.f)
+		                                  : (Ic.bActive ? Ic.Col * FLinearColor(1,1,1,1.f)
+		                                               : FLinearColor(0.40f, 0.45f, 0.55f, 0.90f));
+		DrawText(Ic.Label, TextCol, IX + 4.f, IconY + 4.f, GEngine->GetSmallFont(), 1.f);
 
-		// Labels
-		if (GEngine)
-		{
-			const FLinearColor LabelCol = bReady
-				? B.Color * FLinearColor(1,1,1, 1.0f)
-				: FLinearColor(0.55f, 0.60f, 0.68f, 0.85f);
-			DrawText(B.Label,  LabelCol, BarX + 5.f,           BY + 6.f, GEngine->GetSmallFont(), 1.f);
-			DrawText(B.Status, LabelCol, BarX + BarW - 32.f,   BY + 6.f, GEngine->GetSmallFont(), 1.f);
-		}
+		// ── Center number: CD seconds or READY/ACTIVE ─────────────────────────
+		FString NumStr;
+		if (Ic.bActive)
+			NumStr = FString::Printf(TEXT("%.1f"), Ic.Fill);
+		else if (bOnCD)
+			NumStr = FString::Printf(TEXT("%.1f"), Ic.CoolSec);
+		// Ready: no center text — the full bright fill is the signal
+
+		if (!NumStr.IsEmpty())
+			DrawText(NumStr, TextCol, IX + 8.f, IconY + IconSz * 0.5f - 4.f, GEngine->GetSmallFont(), 1.f);
 	}
 }
 

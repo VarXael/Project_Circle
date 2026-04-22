@@ -52,8 +52,6 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
 		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
-		
-		// NEW: Bind the Fire Action
 		if (IA_Fire) EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
 	}
 }
@@ -75,13 +73,15 @@ void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value) {
 void APcQPlayerCharacter::Input_JumpPressed() { if (MoveComp) MoveComp->OnJumpPressed(); }
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
 void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
-void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->TriggerBeatJump(); }
 
-void APcQPlayerCharacter::OnActiveBeatAction_Handler()
-{
-	// Universal on-beat reset: pistol CD cleared
-	PistolCooldown = 0.f;
+void APcQPlayerCharacter::OnGameplayBeat(float) 
+{ 
+	// Make the camera physically thud on every beat to visualize rhythm implicitly
+	BeatFOVOffset = CameraBeatPunch; 
+	if (MoveComp) MoveComp->TriggerBeatJump(); 
 }
+
+void APcQPlayerCharacter::OnActiveBeatAction_Handler() { PistolCooldown = 0.f; }
 
 void APcQPlayerCharacter::Tick(float DeltaTime)
 {
@@ -93,20 +93,24 @@ void APcQPlayerCharacter::Tick(float DeltaTime)
 void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
 {
 	if (!CameraComp || !MoveComp) return;
+	
+	// Smoothly resolve the beat pulse back to 0 quickly
+	BeatFOVOffset = FMath::FInterpTo(BeatFOVOffset, 0.f, DeltaTime, 12.f);
+	
 	const float Target = MoveComp->IsPowerBoosting() ? 1.f : 0.f;
 	CurrentBoostAlpha  = FMath::FInterpTo(CurrentBoostAlpha, Target, DeltaTime, BoostCameraSpeed);
+	
 	CameraComp->SetRelativeLocation(FVector(0.f, 0.f, FMath::Lerp(DefaultCameraZ, DefaultCameraZ - BoostCameraDropZ, CurrentBoostAlpha)));
-	CameraComp->SetFieldOfView(FMath::Lerp(DefaultFOV, DefaultFOV + BoostFOVGain, CurrentBoostAlpha));
+	
+	// Apply both the slide FOV and subtract the rhythm pulse FOV
+	float BaseFOV = FMath::Lerp(DefaultFOV, DefaultFOV + BoostFOVGain, CurrentBoostAlpha);
+	CameraComp->SetFieldOfView(BaseFOV - BeatFOVOffset);
 }
 
 float APcQPlayerCharacter::GetPistolCooldownAlpha() const
 {
 	return PistolCooldown <= 0.f ? 0.f : FMath::Clamp(PistolCooldown / FMath::Max(PistolBaseCooldownSec, 0.01f), 0.f, 1.f);
 }
-
-// =============================================================================
-//  COMBAT LOGIC
-// =============================================================================
 
 bool APcQPlayerCharacter::IsOnBeat() const
 {
@@ -121,8 +125,9 @@ bool APcQPlayerCharacter::IsOnBeat() const
 	int32 DistToNext = FMath::Abs(NextBeat - CurrentTime);
 	int32 DistToPrev = FMath::Abs(CurrentTime - PrevBeat);
 	
-	// 120ms tolerance window (adjust this to make the rhythm window more/less strict)
-	return FMath::Min(DistToNext, DistToPrev) <= 120; 
+	// Pulled directly from the movement component to ensure perfectly aligned windows
+	int32 Window = MoveComp ? MoveComp->OnBeatWindowMS : 160; 
+	return FMath::Min(DistToNext, DistToPrev) <= Window; 
 }
 
 void APcQPlayerCharacter::Input_Fire() { TryFire(); }
@@ -134,10 +139,6 @@ void APcQPlayerCharacter::TryFire()
 
 	const bool bOnBeat = IsOnBeat();
 
-	// On-beat = free shot: fires regardless of cooldown, then RESETS CD to 0
-	//   so the player can immediately fire again if they want.
-	// Off-beat + CD active = blocked.
-	// Off-beat + CD ready  = fires normally, starts CD.
 	if (PistolCooldown > 0.f && !bOnBeat)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[Pistol] Blocked — cooldown %.2fs remaining."), PistolCooldown);
@@ -149,16 +150,12 @@ void APcQPlayerCharacter::TryFire()
 
 	if (bOnBeat)
 	{
-		// On-beat shot: reset CD to 0 (free shot — can fire again immediately)
-		// Also refreshes DJ and extends boost via NotifyGunFired.
 		PistolCooldown = 0.f;
 		if (MoveComp) MoveComp->NotifyGunFired();
 		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
-		UE_LOG(LogTemp, Log, TEXT("[Pistol] On-beat — CD reset, DJ+boost refreshed."));
 	}
 	else
 	{
-		// Normal shot: start CD. No DJ/boost refresh.
 		UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
 		PistolCooldown = (Sub && Sub->IsReadyForPlayback() && MoveComp)
 		               ? MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec)
@@ -168,37 +165,38 @@ void APcQPlayerCharacter::TryFire()
 
 	if (IsOnBeat()) 
 	{
-		// --- ON BEAT: AUTO-SNAP ---
-		TArray<AActor*> Enemies;
-		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APcQEnemyBase::StaticClass(), Enemies);
+		TArray<FHitResult> OutHits;
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(5000.f); 
+		FCollisionQueryParams QueryParams;
+		QueryParams.AddIgnoredActor(this);
+		
+		GetWorld()->SweepMultiByChannel(OutHits, CamLoc, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QueryParams);
 
 		APcQEnemyBase* BestEnemy = nullptr;
-		// 0.90 DotProduct is roughly a 25-degree cone from the center of the screen
 		float BestDot = 0.90f; 
 
-		for (AActor* EnemyActor : Enemies)
+		for (const FHitResult& Hit : OutHits)
 		{
-			FVector DirToEnemy = (EnemyActor->GetActorLocation() - CamLoc).GetSafeNormal();
-			float Dot = FVector::DotProduct(CamForward, DirToEnemy);
+			if (APcQEnemyBase* EnemyActor = Cast<APcQEnemyBase>(Hit.GetActor()))
+			{
+				FVector DirToEnemy = (EnemyActor->GetActorLocation() - CamLoc).GetSafeNormal();
+				float Dot = FVector::DotProduct(CamForward, DirToEnemy);
 
-			if (Dot > BestDot) {
-				BestDot = Dot;
-				BestEnemy = Cast<APcQEnemyBase>(EnemyActor);
+				if (Dot > BestDot) {
+					BestDot = Dot;
+					BestEnemy = EnemyActor;
+				}
 			}
 		}
 
 		if (BestEnemy) {
-			// Found an enemy in the generous cone! Auto-snap hit.
 			UGameplayStatics::ApplyDamage(BestEnemy, BaseDamage, GetController(), this, nullptr);
-			
-			// Draw a thick CYAN line to show the auto-aim worked
 			DrawDebugLine(GetWorld(), CamLoc, BestEnemy->GetActorLocation(), FColor::Cyan, false, 0.5f, 0, 5.0f);
 			UE_LOG(LogTemp, Warning, TEXT("PERFECT BEAT HIT!"));
-			return; // Exit out so we don't fire the standard raycast
+			return; 
 		}
 	}
 	
-	// --- OFF BEAT (Or no enemy in cone): STANDARD RAYCAST ---
 	FHitResult HitResult;
 	FVector EndLoc = CamLoc + (CamForward * 5000.f);
 	FCollisionQueryParams QueryParams;
@@ -208,7 +206,6 @@ void APcQPlayerCharacter::TryFire()
 	
 	if (bHit) {
 		UGameplayStatics::ApplyDamage(HitResult.GetActor(), BaseDamage, GetController(), this, nullptr);
-		// Draw a thin RED line to show standard shooting
 		DrawDebugLine(GetWorld(), CamLoc, HitResult.ImpactPoint, FColor::Red, false, 0.2f, 0, 1.0f);
 	} else {
 		DrawDebugLine(GetWorld(), CamLoc, EndLoc, FColor::Red, false, 0.2f, 0, 1.0f);

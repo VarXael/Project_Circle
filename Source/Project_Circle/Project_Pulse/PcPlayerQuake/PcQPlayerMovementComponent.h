@@ -15,7 +15,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBhopCancelled);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBhopLanded, float, HorizontalSpeed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWallSwimChanged, float, SwimAlpha);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnActiveBeatAction);
-// Label + color for the combo feed HUD. Fires whenever a notable action occurs.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnComboEvent, const FString&, Label, FLinearColor, Color);
 
 UCLASS(Blueprintable, BlueprintType)
@@ -40,9 +39,9 @@ public:
 	UFUNCTION(BlueprintPure) bool        HasQueuedJump()      const { return bJumpQueuedForBeat; }
 	UFUNCTION(BlueprintPure) bool        IsWallSwimming()     const { return BhopState == EBhopState::WallSwim; }
 	UFUNCTION(BlueprintPure) bool        IsPowerBoosting()    const { return BhopState == EBhopState::PowerBoost; }
+	UFUNCTION(BlueprintPure) bool        IsAutoJumping()      const { return bAutoJumpActive; }
 
 	UFUNCTION(BlueprintPure) float GetBoostCooldownAlpha()      const;
-	// 0=expired/ready, 1=just started. Shows remaining boost fuel when active.
 	UFUNCTION(BlueprintPure) float GetBoostActiveAlpha()        const;
 	UFUNCTION(BlueprintPure) float GetDoubleJumpCooldownAlpha() const;
 	UFUNCTION(BlueprintPure) float GetBeatSnappedDuration(float BaseSec) const;
@@ -64,8 +63,7 @@ public:
 	UPROPERTY(BlueprintAssignable) FOnActiveBeatAction  OnActiveBeatAction;
 	UPROPERTY(BlueprintAssignable) FOnComboEvent        OnComboEvent;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Curve",
-	          meta = (DisplayName = "Jump Shape Curve (optional)"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Curve")
 	TObjectPtr<UCurveFloat> JumpCurve = nullptr;
 
 	// ── Auto jump ─────────────────────────────────────────────────────────────
@@ -80,26 +78,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Queue") float BeatCoyoteWindow         =  0.25f;
 
 	// ── Speed management ──────────────────────────────────────────────────────
-	// Overspeed decays toward MaxWalkSpeed when above it.  Fast enough to pull
-	// back runaway speed, slow enough that good play maintains the advantage.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Speed") float OverspeedDecayRate = 180.f;
-	// Absolute hard cap: MaxWalkSpeed * HardSpeedCapMult. Nothing exceeds this.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Speed") float HardSpeedCapMult   =   4.f;
 
 	// ── Jump input buffer ─────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Buffer") float JumpInputBufferWindow = 0.22f;
 
 	// ── Jump chain bonuses ────────────────────────────────────────────────────
-	// GP → Jump: flat horizontal bonus added in current WASD direction.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Chain") float GPJumpHorizBoost     = 400.f;
-	// GP → Boost → Jump: multiplier on top of GPJumpHorizBoost for the extra chain.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Chain") float GPBoostJumpHorizMult = 1.8f;
-	// Window after GP landing where combo is available (sec).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Chain") float GPComboWindowSec     = 0.45f;
 
 	// ── On-beat bonus hop ─────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop") float BonusHopSpeedBoost = 300.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop") int32 OnBeatWindowMS     = 120;
+	
+	// WIDENED THE RHYTHM WINDOW (Was 120, now 160 for forgiveness)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop") int32 OnBeatWindowMS     = 160;
 
 	// ── Power Boost ───────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Power Boost") float BoostSpeedMultiplier = 1.55f;
@@ -111,20 +105,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Double Jump") float DoubleJumpBaseCooldownSec = 2.0f;
 
 	// ── Ground Pound ──────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundSlamSpeed = -4000.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundSlamSpeed = -2800.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundCancelDelay = 0.18f;
 
 	// ── Slide ─────────────────────────────────────────────────────────────────
-	// Speed-based: slide is active as long as horizontal speed > SlideExitMinSpeed.
-	// Exits naturally when momentum bleeds off, or when hitting something.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideEntryBoost    = 400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideFriction      =   1.2f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideSteerStrength =  10.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideExitMinSpeed  = 250.f;
 
 	// ── Wall Spring ───────────────────────────────────────────────────────────
-	// Hit a steep wall mid-air → brief compression (velocity decays quickly)
-	// → auto-eject back on expiry, or Jump for immediate strong eject.
-	// Beat firing during compression gives a speed bonus on eject.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_EnterMinSpeed    = 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_CompressionSec   = 0.22f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_CompressionDecay =  14.f;
@@ -132,17 +122,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_BeatEjectBoost   =  400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_JumpEjectUpKick  =  350.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_FloorCheckDist   =  150.f;
-	// After ejecting, how long before wall spring can trigger again (prevents jitter).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_EjectImmunitySec =   0.40f;
-	// Minimum upward kick on auto-eject (no jump pressed).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_AutoEjectUpKick   =  450.f;
 
 	// ── Beat feedback ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Feedback") float OnBeatFlashDuration = 0.35f;
 
 protected:
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void PhysWalking(float deltaTime, int32 Iterations) override;
 	virtual void PhysFalling(float deltaTime, int32 Iterations) override;
 	virtual void ProcessLanded(const FHitResult& Hit, float remainingTime, int32 Iterations) override;
@@ -154,36 +141,41 @@ private:
 	float      BeatQueueTimer     = 0.f;
 	float      PreviousFrameSpeed = 0.f;
 
+	// Input buffers
 	bool  bJumpInputBuffered   = false;
 	float JumpInputBufferTimer = 0.f;
+	bool  bGPInputBuffered     = false;
+	float GPInputBufferTimer   = 0.f;
+	
 	bool  bBonusHopRequested   = false;
-	bool  bAutoJumpActive      = false;  // set by on-beat jump press, cancelled by jump press
+	bool  bAutoJumpActive      = false;  
 
-	// GP combo state
+	float GPCancelTimer = 0.f;   
+
 	bool  bGPLandedRecently     = false;
-	bool  bBoostActiveOnGPLand  = false;  // was boost running when GP landed?
+	bool  bBoostActiveOnGPLand  = false;  
 	float GPComboTimer          = 0.f;
 
-	// Power boost
 	float BoostTimer    = 0.f;
 	float BoostCooldown = 0.f;
 
-	// Double jump (in-air only; resets to ready on landing)
 	bool  bDoubleJumpUsed    = false;
 	float DoubleJumpCooldown = 0.f;
 
-	// Flash
 	float OnBeatFlashTimer = 0.f;
 	void  TriggerOnBeatFlash();
-	void  PushCombo(const FString& Label, FLinearColor Color);  // fires OnComboEvent
+	void  PushCombo(const FString& Label, FLinearColor Color);  
 
 	bool  IsOnBeat()   const;
 	bool  BoostReady() const { return BoostCooldown <= 0.f && BhopState != EBhopState::PowerBoost; }
 	bool  DJumpReady() const { return DoubleJumpCooldown <= 0.f && !bDoubleJumpUsed; }
+	
+	// Helper to dynamically check if we are close enough to the floor to buffer a jump (prevents eating DJ)
+	bool  CanBufferLanding() const;
 
 	void  ActivateBoost();
 	void  ExitBoost();
-	void  ExecutePlayerJump(bool bFromBoost = false);  // bFromBoost: was in PowerBoost when jump pressed
+	void  ExecutePlayerJump(bool bFromBoost = false);  
 
 	void ApplyJumpVelocity();
 	void ApplyFixedBeatJump();
@@ -196,12 +188,11 @@ private:
 	float JumpCurvePeakHeight = 0.f;
 	float JumpCurveLaunchZ    = 0.f;
 
-	// Wall spring
 	FName   WallPrevCollisionProfile = NAME_None;
 	FVector WallEntryNormal          = FVector::ZeroVector;
 	float   WallCompressionTimer     = 0.f;
-	bool    bWallBeatPending         = false;  // beat fired during compression
-	float   WallEjectImmunityTimer   = 0.f;    // blocks re-entry after eject
+	bool    bWallBeatPending         = false;  
+	float   WallEjectImmunityTimer   = 0.f;    
 
 	void  EnterWallSpring(const FHitResult& Hit);
 	void  EjectFromWall(bool bBeatBoost, bool bJumpEject);

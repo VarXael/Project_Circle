@@ -39,8 +39,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Look;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Jump;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_GroundPound;
-	
-	// NEW: The shoot action
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Fire;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
@@ -55,6 +53,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boost|Camera") float BoostCameraDropZ = 22.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boost|Camera") float BoostFOVGain     =  8.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boost|Camera") float BoostCameraSpeed =  8.f;
+	
+	// NEW: Camera Heartbeat Pulse (Makes the rhythm clearly readable in the world)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feedback") float CameraBeatPunch = 3.f;
 
 private:
 	void Input_Move(const FInputActionValue& Value);
@@ -70,8 +71,11 @@ private:
 	UFUNCTION() void OnActiveBeatAction_Handler();
 
 	void UpdateCameraEffects(float DeltaTime);
+	
 	float DefaultCameraZ     = 60.f;
 	float DefaultFOV         = 90.f;
 	float CurrentBoostAlpha  = 0.f;
 	float PistolCooldown     = 0.f;
+	
+	float BeatFOVOffset      = 0.f; // Controls the camera pulse
 };
