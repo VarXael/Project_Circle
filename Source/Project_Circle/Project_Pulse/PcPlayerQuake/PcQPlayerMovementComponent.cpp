@@ -87,14 +87,22 @@ void UPcQPlayerMovementComponent::ExitBoost()
 {
 	BhopState     = EBhopState::Active;
 	BoostTimer    = 0.f;
+	BoostGraceTimer = BoostGraceWindowSec;
 	BoostCooldown = GetBeatSnappedDuration(BoostBaseCooldownSec);
 }
 
 void UPcQPlayerMovementComponent::NotifyGunFired()
 {
 	if (BhopState == EBhopState::PowerBoost) {
-		BoostTimer = GetBeatSnappedDuration(BoostBaseDurationSec);
+		BoostTimer = BoostBaseDurationSec;  
+		BoostGraceTimer = 0.f;
 		PushCombo(TEXT("BOOST RESET"), FLinearColor(1.f, 0.55f, 0.15f));
+	} else if (BoostGraceTimer > 0.f) {
+		BoostGraceTimer = 0.f;
+		BhopState     = EBhopState::PowerBoost;
+		BoostTimer    = BoostBaseDurationSec;
+		BoostCooldown = 0.f;
+		PushCombo(TEXT("BOOST REVIVE"), FLinearColor(1.f, 0.75f, 0.15f));
 	}
 	if (bDoubleJumpUsed) {
 		bDoubleJumpUsed    = false;
@@ -121,13 +129,11 @@ void UPcQPlayerMovementComponent::ExecutePlayerJump(bool bFromBoost)
 		if (WD.IsZero() && CharacterOwner) WD = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 		
 		if (!WD.IsZero()) {
-			// FIXED: Guarantee massive launch! Base slide speed + 600 flat bonus.
 			const float LaunchSpd = FMath::Max(PreJumpH, MaxWalkSpeed * BoostSpeedMultiplier) + 600.f;
 			Velocity.X = WD.X * LaunchSpd;
 			Velocity.Y = WD.Y * LaunchSpd;
 		}
 		PushCombo(TEXT("BOOST JUMP"), FLinearColor(1.f, 0.55f, 0.15f));
-		bAutoJumpActive = true; 
 	}
 	else if (bGPLandedRecently && GPComboTimer > 0.f) {
 		const FVector WishDir = Acceleration.GetSafeNormal2D().IsZero() ? Dir2D : Acceleration.GetSafeNormal2D();
@@ -172,9 +178,26 @@ void UPcQPlayerMovementComponent::TriggerBeatJump()
 	}
 
 	if (IsMovingOnGround()) {
-		if (BhopState == EBhopState::Active) {
-			if (bAutoJumpEnabled || bAutoJumpActive) {
-				ExecutePlayerJump(false);
+		if (BhopState == EBhopState::PowerBoost)
+		{
+			// The Dash Pump! Hitting the beat while sliding restores speed if lost.
+			const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
+			const FVector Dir2D  = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+			if (!Dir2D.IsZero() && GetHorizontalSpeed() < BoostSpd)
+			{
+				Velocity.X = Dir2D.X * BoostSpd;
+				Velocity.Y = Dir2D.Y * BoostSpd;
+				PushCombo(TEXT("SLIDE PUMP"), FLinearColor(1.f, 0.7f, 0.15f));
+			}
+			TriggerOnBeatFlash();
+		}
+		else if (BhopState == EBhopState::Active)
+		{
+			if (bAutoJumpEnabled || bAutoJumpActive)
+			{
+				TriggerOnBeatFlash();
+				// Auto-Jumps are ALWAYS boosted jumps!
+				ExecutePlayerJump(true);  
 				OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			}
 		}
@@ -190,7 +213,6 @@ bool UPcQPlayerMovementComponent::CanBufferLanding() const
 	if (!CharacterOwner) return false;
 	if (Velocity.Z >= 0.f) return false; 
 
-	// FIXED: Include Capsule Half Height so we correctly measure distance from the FEET, not the center of the body!
 	float CapsuleHalfHeight = 90.f;
 	if (UCapsuleComponent* Cap = CharacterOwner->GetCapsuleComponent()) {
 		CapsuleHalfHeight = Cap->GetUnscaledCapsuleHalfHeight();
@@ -244,14 +266,30 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 
 	if (IsMovingOnGround())
 	{
-		if (BhopState == EBhopState::PowerBoost) {
-			ExitBoost();
-			ExecutePlayerJump(true); // From Boost -> BOOST JUMP
+		if (BhopState == EBhopState::PowerBoost || bSlideImpulseActive) {
+			if (BhopState == EBhopState::PowerBoost) ExitBoost();
+			ExecutePlayerJump(true); 
 			OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			return;
 		}
 
-		if (bOnBeat) bBonusHopRequested = true;
+		if (bOnBeat)
+		{
+			bBonusHopRequested = true;
+			if (!bAutoJumpActive)
+			{
+				bAutoJumpActive = true;
+				PushCombo(TEXT("AUTO JUMP ON"), FLinearColor(0.55f, 1.f, 0.35f));
+			}
+		} 
+		else 
+		{
+			// Jumping off-beat manually EXITS auto-jump
+			if (bAutoJumpActive) {
+				bAutoJumpActive = false;
+				PushCombo(TEXT("AUTO JUMP OFF"), FLinearColor(0.5f, 0.5f, 0.5f));
+			}
+		}
 
 		ExecutePlayerJump(false);
 		OnBhopLanded.Broadcast(GetHorizontalSpeed());
@@ -280,53 +318,69 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 		} else {
 			bJumpInputBuffered   = true;
 			JumpInputBufferTimer = JumpInputBufferWindow;
+			bAutoJumpActive      = false;
 		}
 	}
 }
 
 void UPcQPlayerMovementComponent::OnJumpReleased() {}
 
+void UPcQPlayerMovementComponent::OnSlidePressed()
+{
+	bSlideImpulseActive = true;
+	SlideImpulseTimer   = SlideImpulseDuration;
+
+	if (bAutoJumpActive) {
+		bAutoJumpActive = false;
+		PushCombo(TEXT("AUTO JUMP OFF"), FLinearColor(0.5f, 0.5f, 0.5f));
+	}
+
+	// DASH IS INSTANT ON GROUND!
+	if (IsMovingOnGround() && BhopState != EBhopState::PowerBoost) {
+		DoBriefDash();
+	}
+}
+
+void UPcQPlayerMovementComponent::OnSlideReleased() {}
+
+void UPcQPlayerMovementComponent::DoBriefDash()
+{
+	if (BhopState == EBhopState::PowerBoost) return; 
+
+	FVector DashDir = Acceleration.GetSafeNormal2D();
+	if (DashDir.IsZero()) DashDir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (DashDir.IsZero() && CharacterOwner) DashDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+
+	if (!DashDir.IsZero())
+	{
+		// Give them a flat burst of speed (or maintain if already going faster)
+		float TargetSpeed = FMath::Max(GetHorizontalSpeed(), DashImpulseSpeed);
+		Velocity.X = DashDir.X * TargetSpeed;
+		Velocity.Y = DashDir.Y * TargetSpeed;
+		PushCombo(TEXT("DASH"), FLinearColor(1.f, 0.65f, 0.2f));
+	}
+}
+
+void UPcQPlayerMovementComponent::ActivateSlide()
+{
+	if (BhopState == EBhopState::PowerBoost) return;
+	
+	BhopState     = EBhopState::PowerBoost;
+	BoostTimer    = BoostBaseDurationSec;
+	BoostCooldown = 0.f;
+	bAutoJumpActive = false;
+
+	PushCombo(TEXT("SLIDE"), FLinearColor(1.f, 0.55f, 0.15f));
+}
+
 void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
 	if (BhopState == EBhopState::WallSwim) return;
 
-	const bool bOnBeat = IsOnBeat();
-	if (bOnBeat) TriggerOnBeatFlash();
+	bAutoJumpActive = false; 
 
-	if (IsMovingOnGround())
+	if (IsFalling() && BhopState != EBhopState::GroundPounding)
 	{
-		if (!BoostReady() && !bOnBeat) return;
-		if (BhopState == EBhopState::PowerBoost) return;
-
-		// FIXED: Ground Pound ALWAYS turns into a Slide on the ground, and ALWAYS cancels Auto-Jump.
-		BhopState     = EBhopState::PowerBoost;
-		BoostTimer    = GetBeatSnappedDuration(BoostBaseDurationSec);
-		BoostCooldown = 0.f;
-		bAutoJumpActive = false; 
-
-		FVector Dir2D = Acceleration.GetSafeNormal2D();
-		if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-
-		const float EntrySpd = GetHorizontalSpeed() + (bOnBeat ? SlideEntryBoost : 0.f);
-		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-		const float StartSpd = FMath::Max(EntrySpd, BoostSpd);
-
-		if (!Dir2D.IsZero()) {
-			Velocity.X = Dir2D.X * StartSpd;
-			Velocity.Y = Dir2D.Y * StartSpd;
-		}
-		Velocity.Z = 0.f;
-
-		PushCombo(bOnBeat ? TEXT("PERFECT SLIDE") : TEXT("SLIDE"), FLinearColor(1.f, 0.55f, 0.15f));
-	}
-	else if (IsFalling() && BhopState != EBhopState::GroundPounding)
-	{
-		if (CanBufferLanding()) {
-			bGPInputBuffered   = true;
-			GPInputBufferTimer = JumpInputBufferWindow; 
-			return;
-		}
-
 		ExitCurveJump();
 		BhopState     = EBhopState::GroundPounding;
 		GPCancelTimer = 0.f;
@@ -402,6 +456,7 @@ void UPcQPlayerMovementComponent::EnterWallSpring(const FHitResult& Hit)
 
 	BhopState            = EBhopState::WallSwim;
 	WallEntryNormal      = Hit.ImpactNormal;
+	WallEntrySpeed       = GetHorizontalSpeed();
 	WallCompressionTimer = 0.f;
 	bWallBeatPending     = false;
 
@@ -429,7 +484,7 @@ void UPcQPlayerMovementComponent::EjectFromWall(bool bBeatBoost, bool bJumpEject
 		if (EjectDir.IsZero()) EjectDir = WallEntryNormal;
 	}
 
-	float EjectSpd = Wall_EjectSpeed;
+	float EjectSpd = FMath::Max(WallEntrySpeed, Wall_EjectSpeed);
 	if (bBeatBoost) EjectSpd += Wall_BeatEjectBoost;
 
 	if (FVector::DotProduct(EjectDir, WallEntryNormal) < 0.1f)
@@ -484,22 +539,9 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	if (BhopState == EBhopState::GroundPounding)
 	{
 		ExitCurveJump();
-		const FVector WishDir2D = Acceleration.GetSafeNormal2D();
-		const bool bHasInput    = !WishDir2D.IsZero();
-
 		BhopState     = EBhopState::PowerBoost;
 		BoostTimer    = GetBeatSnappedDuration(BoostBaseDurationSec);
 		BoostCooldown = 0.f;
-
-		const float BaseSpd  = MaxWalkSpeed * BoostSpeedMultiplier;
-		const float EntrySpd = IsOnBeat() ? BaseSpd + SlideEntryBoost : BaseSpd;
-		if (bHasInput) {
-			Velocity.X = WishDir2D.X * EntrySpd;
-			Velocity.Y = WishDir2D.Y * EntrySpd;
-		} else {
-			Velocity.X = 0.f; Velocity.Y = 0.f;
-		}
-		Velocity.Z = 0.f;
 
 		bGPLandedRecently    = true;
 		bBoostActiveOnGPLand = true;
@@ -513,14 +555,6 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		}
 		
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
-
-		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f)
-		{
-			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
-			ExitBoost();
-			ExecutePlayerJump(true); 
-			OnBhopLanded.Broadcast(GetHorizontalSpeed());
-		}
 		return;
 	}
 
@@ -534,13 +568,6 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 	if (BhopState == EBhopState::Active)
 	{
-		if (bGPInputBuffered && GPInputBufferTimer > 0.f) {
-			bGPInputBuffered = false; GPInputBufferTimer = 0.f;
-			// FIXED: Always triggers a slide upon landing. No Springboard hijacking!
-			OnGroundPoundPressed();
-			return;
-		}
-
 		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f) {
 			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
 			const bool bWasFromGP = bGPLandedRecently && GPComboTimer > 0.f;
@@ -548,6 +575,10 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 			if (IsOnBeat()) {
 				bBonusHopRequested = true;
 				TriggerOnBeatFlash();
+				if (!bAutoJumpActive) {
+					bAutoJumpActive = true;
+					PushCombo(TEXT("AUTO JUMP ON"), FLinearColor(0.55f, 1.f, 0.35f));
+				}
 			} 
 			ExecutePlayerJump(bWasFromGP);
 			OnBhopLanded.Broadcast(GetHorizontalSpeed());
@@ -635,6 +666,8 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 
 	if (BoostCooldown           > 0.f) BoostCooldown           = FMath::Max(0.f, BoostCooldown           - DeltaTime);
+	if (BoostGraceTimer         > 0.f) BoostGraceTimer         = FMath::Max(0.f, BoostGraceTimer         - DeltaTime);
+	if (SlideImpulseTimer       > 0.f) { SlideImpulseTimer -= DeltaTime; if (SlideImpulseTimer <= 0.f) bSlideImpulseActive = false; }
 	if (WallEjectImmunityTimer  > 0.f) WallEjectImmunityTimer  = FMath::Max(0.f, WallEjectImmunityTimer  - DeltaTime);
 	if (DoubleJumpCooldown      > 0.f) DoubleJumpCooldown      = FMath::Max(0.f, DoubleJumpCooldown      - DeltaTime);
 	if (OnBeatFlashTimer        > 0.f) OnBeatFlashTimer        = FMath::Max(0.f, OnBeatFlashTimer        - DeltaTime);
@@ -646,7 +679,6 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	
 	if (BhopState == EBhopState::GroundPounding) GPCancelTimer += DeltaTime;
 	if (bJumpInputBuffered) { JumpInputBufferTimer -= DeltaTime; if (JumpInputBufferTimer <= 0.f) bJumpInputBuffered = false; }
-	if (bGPInputBuffered)   { GPInputBufferTimer   -= DeltaTime; if (GPInputBufferTimer   <= 0.f) bGPInputBuffered   = false; }
 	if (bJumpQueuedForBeat) { BeatQueueTimer       -= DeltaTime; if (BeatQueueTimer       <= 0.f) bJumpQueuedForBeat = false; }
 }
 

@@ -29,6 +29,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnJumpReleased();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundReleased();
+	UFUNCTION(BlueprintCallable, Category = "Movement") void OnSlidePressed();   // starts impulse window — next jump is boosted
+	UFUNCTION(BlueprintCallable, Category = "Movement") void OnSlideReleased();  // clears impulse
+	UFUNCTION(BlueprintCallable, Category = "Movement") void DoBriefDash();      // quick velocity burst in WASD direction
+	UFUNCTION(BlueprintCallable, Category = "Movement") void ActivateSlide();    // enters PowerBoost slide
 	UFUNCTION(BlueprintCallable, Category = "Beat Sync") void TriggerBeatJump();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void NotifyGunFired();
 
@@ -100,6 +104,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Power Boost") float BoostBaseDurationSec = 2.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Power Boost") float BoostBaseCooldownSec = 3.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Power Boost") float BoostExtendPerShot   = 0.5f;
+	// Short window after boost expires where any beat re-activates it for free.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Power Boost") float BoostGraceWindowSec  = 0.35f;
 
 	// ── Double Jump ───────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Double Jump") float DoubleJumpBaseCooldownSec = 2.0f;
@@ -109,7 +115,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundCancelDelay = 0.18f;
 
 	// ── Slide ─────────────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideEntryBoost    = 400.f;
+	// Impulse window: how long after pressing slide the next jump counts as a boost jump.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideImpulseDuration = 0.45f;
+	// Brief dash speed when slide is quickly tapped on the ground.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float DashImpulseSpeed     = 1400.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideEntryBoost      = 400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideFriction      =   1.2f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideSteerStrength =  10.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Slide") float SlideExitMinSpeed  = 250.f;
@@ -150,7 +160,9 @@ private:
 	bool  bBonusHopRequested   = false;
 	bool  bAutoJumpActive      = false;  
 
-	float GPCancelTimer = 0.f;   
+	float GPCancelTimer      = 0.f;
+	bool  bSlideImpulseActive = false;  // set on slide press; makes next jump boosted
+	float SlideImpulseTimer   = 0.f;   // counts down; cleared when 0
 
 	bool  bGPLandedRecently     = false;
 	bool  bBoostActiveOnGPLand  = false;  
@@ -158,6 +170,7 @@ private:
 
 	float BoostTimer    = 0.f;
 	float BoostCooldown = 0.f;
+	float BoostGraceTimer = 0.f;  // counts down after boost expires
 
 	bool  bDoubleJumpUsed    = false;
 	float DoubleJumpCooldown = 0.f;
@@ -190,6 +203,7 @@ private:
 
 	FName   WallPrevCollisionProfile = NAME_None;
 	FVector WallEntryNormal          = FVector::ZeroVector;
+	float   WallEntrySpeed           = 0.f;    // speed at wall entry, used for exit speed calc
 	float   WallCompressionTimer     = 0.f;
 	bool    bWallBeatPending         = false;  
 	float   WallEjectImmunityTimer   = 0.f;    

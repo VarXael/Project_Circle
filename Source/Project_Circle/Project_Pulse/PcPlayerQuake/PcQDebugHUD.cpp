@@ -6,10 +6,6 @@
 #include "Engine/Engine.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 
-// =============================================================================
-//  THREAT API
-// =============================================================================
-
 void APcQDebugHUD::RegisterThreat(int32 TimestampMS, const FString& Label, FLinearColor Color)
 {
 	FPcHudThreatEvent& Ev = ActiveThreats.AddDefaulted_GetRef();
@@ -20,15 +16,8 @@ void APcQDebugHUD::RegisterThreat(int32 TimestampMS, const FString& Label, FLine
 
 void APcQDebugHUD::PurgeThreat(int32 TimestampMS)
 {
-	ActiveThreats.RemoveAll([TimestampMS](const FPcHudThreatEvent& Ev)
-	{
-		return Ev.TimestampMS == TimestampMS;
-	});
+	ActiveThreats.RemoveAll([TimestampMS](const FPcHudThreatEvent& Ev) { return Ev.TimestampMS == TimestampMS; });
 }
-
-// =============================================================================
-//  ARCH GEOMETRY
-// =============================================================================
 
 APcQDebugHUD::FArcGeom APcQDebugHUD::BuildArcGeom() const
 {
@@ -41,15 +30,10 @@ APcQDebugHUD::FArcGeom APcQDebugHUD::BuildArcGeom() const
 
 	G.SpawnAngle  = BaseLimb - 0.05f;                      
 	G.BufferAngle = -(PI - FMath::Asin(-SinLimb)) + 0.05f; 
-	// Lerp between the right limb (Spawn) and left limb (Buffer) based on percentage
 	G.StrikeAngle = FMath::Lerp(G.SpawnAngle, G.BufferAngle, Arc_StrikeGatePercent);   
 
 	return G;
 }
-
-// =============================================================================
-//  ENTRY POINT
-// =============================================================================
 
 void APcQDebugHUD::DrawHUD()
 {
@@ -100,30 +84,42 @@ void APcQDebugHUD::DrawHUD()
 
 				const float BeatFlash  = MC->GetOnBeatFlash();
 				const float CX         = Canvas->SizeX * 0.5f;
+				const float CY         = Canvas->SizeY * 0.5f;
+				const float W          = Canvas->SizeX;
+				const float H          = Canvas->SizeY;
+				const bool  bAutoJumping = MC->IsAutoJumping();
 
-				// ── NEW: SCREEN EDGE PULSE (Peripheral rhythm help) ───────────
-				if (BeatFlash > 0.01f)
+				// ── CLEAN AUTO-JUMP SYNC VISUALS ────────────────────────────────────
+				if (bAutoJumping)
 				{
-					// Soft cyan vignette that flashes on the edge of the monitor
-					const FLinearColor EdgeCol(0.1f, 0.8f, 1.0f, BeatFlash * 0.15f); 
-					const float Th = 15.f + (BeatFlash * 25.f); 
+					// 1. Soft screen glow (subtle, non-intrusive)
+					const float GlowAlpha = 0.05f + 0.12f * FlashSoft;
+					DrawRect(FLinearColor(0.2f, 1.f, 0.4f, GlowAlpha), 0.f, 0.f, W, 20.f); 
+					DrawRect(FLinearColor(0.2f, 1.f, 0.4f, GlowAlpha), 0.f, H - 20.f, W, 20.f);
+
+					// 2. Hexagonal Sync Reticle around the crosshair
+					// It breathes with the beat, making the rhythm visible right where you aim.
+					const float R = 28.f + 6.f * FlashSoft;
+					const float T = 1.5f + 1.f * FlashSoft;
+					const FLinearColor SyncCol(0.25f, 1.f, 0.45f, 0.4f + 0.6f * FlashSoft);
 					
-					DrawRect(EdgeCol, 0, 0, Canvas->SizeX, Th); // Top
-					DrawRect(EdgeCol, 0, Canvas->SizeY - Th, Canvas->SizeX, Th); // Bottom
-					DrawRect(EdgeCol, 0, 0, Th, Canvas->SizeY); // Left
-					DrawRect(EdgeCol, Canvas->SizeX - Th, 0, Th, Canvas->SizeY); // Right
-				}
+					// Draw 6-sided brackets
+					for (int i = 0; i < 6; ++i)
+					{
+						float A1 = (i * 60.f) * (PI / 180.f);
+						float A2 = ((i + 1) * 60.f) * (PI / 180.f);
+						// Draw only the corners of the hex, leaving gaps
+						float MidA = (A1 + A2) * 0.5f;
+						DrawLine(CX + R * FMath::Cos(A1), CY + R * FMath::Sin(A1), 
+						         CX + R * FMath::Cos(FMath::Lerp(A1, MidA, 0.5f)), CY + R * FMath::Sin(FMath::Lerp(A1, MidA, 0.5f)), SyncCol, T);
+						DrawLine(CX + R * FMath::Cos(A2), CY + R * FMath::Sin(A2), 
+						         CX + R * FMath::Cos(FMath::Lerp(A2, MidA, 0.5f)), CY + R * FMath::Sin(FMath::Lerp(A2, MidA, 0.5f)), SyncCol, T);
+					}
 
-				// ── Auto-jump indicator ───────────────────────────────────────
-				if (MC->IsAutoJumping() && GEngine)
-				{
+					// 3. Text Indicator
 					const float AX = CX - 40.f;
-					const float AY = Canvas->SizeY - 112.f;
-					const float Pulse = 0.55f + 0.45f * FlashSoft;
-					const FLinearColor AJCol(0.6f, 1.f, 0.3f, Pulse);
-					DrawRect(FLinearColor(0,0,0,0.7f), AX - 2.f, AY - 2.f, 84.f, 14.f);
-					DrawRect(AJCol * FLinearColor(1,1,1,0.3f), AX, AY, 80.f, 10.f);
-					DrawText(TEXT("AUTO JUMP"), AJCol, AX + 4.f, AY + 1.f, GEngine->GetSmallFont(), 1.f);
+					const float AY = CY + 45.f; 
+					if (GEngine) DrawText(TEXT("SYNCED"), SyncCol, AX + 18.f, AY, GEngine->GetSmallFont(), 1.f);
 				}
 
 				// ── Boost fuel bar ─────────────────
@@ -176,70 +172,42 @@ void APcQDebugHUD::DrawHUD()
 	}
 }
 
-// =============================================================================
-//  ARC METRONOME (VISOR ARCH)
-// =============================================================================
-
 void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G,
                                      int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
                                      float FlashHard, float FlashSoft)
 {
 	const float BufferTimeMS = IntervalMS * 0.5f;
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 10.f, G.SpawnAngle, G.BufferAngle, FLinearColor(0.f, 0.f, 0.f, 0.18f), 60);
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness, G.StrikeAngle, G.BufferAngle, FLinearColor(0.010f, 0.018f, 0.030f, 0.30f), 20);
 
-	// ── 1. TRACK ────────────────────────────────────────────────────────────
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 10.f,
-	              G.SpawnAngle, G.BufferAngle,
-	              FLinearColor(0.f, 0.f, 0.f, 0.18f), 60);
+	const FLinearColor ActiveColor = FLinearColor::LerpUsingHSV(FLinearColor(0.020f, 0.055f, 0.100f, 0.34f), FLinearColor(0.016f, 0.090f, 0.160f, 0.42f), FlashSoft);
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness, G.SpawnAngle, G.StrikeAngle, ActiveColor, 60);
+	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.0f, G.SpawnAngle, G.StrikeAngle, FLinearColor(0.4f, 0.85f, 1.f, 0.025f + FlashSoft * 0.10f), 60);
 
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness,
-	              G.StrikeAngle, G.BufferAngle,
-	              FLinearColor(0.010f, 0.018f, 0.030f, 0.30f), 20);
-
-	const FLinearColor ActiveColor = FLinearColor::LerpUsingHSV(
-		FLinearColor(0.020f, 0.055f, 0.100f, 0.34f),
-		FLinearColor(0.016f, 0.090f, 0.160f, 0.42f),
-		FlashSoft
-	);
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness,
-	              G.SpawnAngle, G.StrikeAngle, ActiveColor, 60);
-
-	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.0f,
-	           G.SpawnAngle, G.StrikeAngle,
-	           FLinearColor(0.4f, 0.85f, 1.f, 0.025f + FlashSoft * 0.10f), 60);
-
-	// ── 2. NOTES ────────────────────────────────────────────────────────────
 	struct FNoteEntry { float TimeDiffMS; bool bIsThreat; int32 ThreatIdx; };
 	TArray<FNoteEntry> AllNotes;
 	AllNotes.Reserve(Arc_BeatsToShow + 2 + ActiveThreats.Num());
 
-	for (int32 i = -1; i <= Arc_BeatsToShow; ++i)
-	{
+	for (int32 i = -1; i <= Arc_BeatsToShow; ++i) {
 		const float Diff = ((float)NextBeatMS + i * IntervalMS) - (float)CurrentTimeMS;
-		if (Diff >= -BufferTimeMS && Diff <= IntervalMS * (float)Arc_BeatsToShow)
-			AllNotes.Add({ Diff, false, -1 });
+		if (Diff >= -BufferTimeMS && Diff <= IntervalMS * (float)Arc_BeatsToShow) AllNotes.Add({ Diff, false, -1 });
 	}
-	for (int32 Ti = 0; Ti < ActiveThreats.Num(); ++Ti)
-	{
+	for (int32 Ti = 0; Ti < ActiveThreats.Num(); ++Ti) {
 		const float Diff = (float)(ActiveThreats[Ti].TimestampMS - CurrentTimeMS);
-		if (Diff >= -BufferTimeMS && Diff <= IntervalMS * (float)Arc_BeatsToShow)
-			AllNotes.Add({ Diff, true, Ti });
+		if (Diff >= -BufferTimeMS && Diff <= IntervalMS * (float)Arc_BeatsToShow) AllNotes.Add({ Diff, true, Ti });
 	}
 	AllNotes.Sort([](const FNoteEntry& A, const FNoteEntry& B) { return A.TimeDiffMS < B.TimeDiffMS; });
 
-	for (const FNoteEntry& Entry : AllNotes)
-	{
+	for (const FNoteEntry& Entry : AllNotes) {
 		const float TimeDiff = Entry.TimeDiffMS;
 		const bool  bPassed  = TimeDiff < 0.f;
 
 		float Angle, Alpha;
-		if (!bPassed)
-		{
+		if (!bPassed) {
 			const float Progress = FMath::Clamp(TimeDiff / (IntervalMS * (float)Arc_BeatsToShow), 0.f, 1.f);
 			Angle = FMath::Lerp(G.StrikeAngle, G.SpawnAngle, Progress);
 			Alpha = FMath::Lerp(1.f, 0.25f, Progress);
-		}
-		else
-		{
+		} else {
 			const float Progress = FMath::Clamp(FMath::Abs(TimeDiff) / BufferTimeMS, 0.f, 1.f);
 			Angle = FMath::Lerp(G.StrikeAngle, G.BufferAngle, Progress);
 			Alpha = 1.f - Progress;
@@ -251,121 +219,72 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 
 		if (NoteY > Canvas->SizeY + 4.f) continue;
 
-		if (Entry.bIsThreat)
-		{
-			DrawThreatNote(NoteX, NoteY, Alpha, bPassed, ActiveThreats[Entry.ThreatIdx], G);
-		}
-		else
-		{
-			if (bPassed)
-			{
-				DrawCircleHUD(NoteX, NoteY, 6.f,
-				              FLinearColor(0.20f, 0.24f, 0.34f, Alpha * 1.25f), 1.4f, 16);
-			}
-			else
-			{
-				DrawCircleHUD(NoteX, NoteY, 14.f,
-				              FLinearColor(0.f, 0.80f, 1.f, Alpha * 0.16f), 1.f, 16);
+		if (Entry.bIsThreat) DrawThreatNote(NoteX, NoteY, Alpha, bPassed, ActiveThreats[Entry.ThreatIdx], G);
+		else {
+			if (bPassed) {
+				DrawCircleHUD(NoteX, NoteY, 6.f, FLinearColor(0.20f, 0.24f, 0.34f, Alpha * 1.25f), 1.4f, 16);
+			} else {
+				DrawCircleHUD(NoteX, NoteY, 14.f, FLinearColor(0.f, 0.80f, 1.f, Alpha * 0.16f), 1.f, 16);
 				const bool  bIsNext  = TimeDiff < IntervalMS && TimeDiff >= 0.f;
 				const float RingSize = bIsNext ? Arc_Thickness * 0.65f : Arc_Thickness * 0.42f;
-				DrawCircleHUD(NoteX, NoteY, RingSize,
-				              FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 1.f : 0.72f)),
-				              bIsNext ? 2.4f : 1.8f, bIsNext ? 24 : 16);
-				DrawRect(FLinearColor(0.70f, 0.95f, 1.f, Alpha * (bIsNext ? 1.f : 0.7f)),
-				         NoteX - 2.f, NoteY - 2.f, 4.f, 4.f);
+				DrawCircleHUD(NoteX, NoteY, RingSize, FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 1.f : 0.72f)), bIsNext ? 2.4f : 1.8f, bIsNext ? 24 : 16);
+				DrawRect(FLinearColor(0.70f, 0.95f, 1.f, Alpha * (bIsNext ? 1.f : 0.7f)), NoteX - 2.f, NoteY - 2.f, 4.f, 4.f);
 			}
 		}
 	}
 
-	// ── 3. STRIKE GATE ──────────────────────────────────────────────────────
 	const float StrikeX = G.CX + Arc_Radius * FMath::Cos(G.StrikeAngle);
 	const float StrikeY = G.CY + Arc_Radius * FMath::Sin(G.StrikeAngle);
 
-	if (FlashSoft > 0.01f)
-	{
-		DrawCircleHUD(StrikeX, StrikeY, 38.f * FlashSoft,
-		              FLinearColor(0.1f, 0.9f, 0.85f, 0.06f * FlashSoft), 1.f, 32);
-	}
-	if (FlashHard > 0.01f)
-	{
+	if (FlashSoft > 0.01f) DrawCircleHUD(StrikeX, StrikeY, 38.f * FlashSoft, FLinearColor(0.1f, 0.9f, 0.85f, 0.06f * FlashSoft), 1.f, 32);
+	if (FlashHard > 0.01f) {
 		DrawCircleHUD(StrikeX, StrikeY, 22.f, FLinearColor(0.15f, 1.f, 0.90f, 0.12f * FlashHard), 2.f, 32);
 		DrawCircleHUD(StrikeX, StrikeY, 13.f, FLinearColor(0.20f, 1.f, 0.95f, 0.22f * FlashHard), 2.f, 24);
 	}
 
 	const float InnerR = Arc_Radius - Arc_Thickness - 6.f;
 	const float OuterR = Arc_Radius + Arc_Thickness + 6.f + 10.f * FlashHard;
-	const FLinearColor TickColor = FLinearColor::LerpUsingHSV(
-		FLinearColor(0.f,   0.55f, 0.65f, 0.55f),
-		FLinearColor(0.16f, 1.f,   1.f,   1.f  ), FlashHard);
-	DrawLine(G.CX + InnerR * FMath::Cos(G.StrikeAngle), G.CY + InnerR * FMath::Sin(G.StrikeAngle),
-	         G.CX + OuterR * FMath::Cos(G.StrikeAngle), G.CY + OuterR * FMath::Sin(G.StrikeAngle),
-	         TickColor, 3.5f + 3.f * FlashHard);
+	const FLinearColor TickColor = FLinearColor::LerpUsingHSV(FLinearColor(0.f, 0.55f, 0.65f, 0.55f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
+	DrawLine(G.CX + InnerR * FMath::Cos(G.StrikeAngle), G.CY + InnerR * FMath::Sin(G.StrikeAngle), G.CX + OuterR * FMath::Cos(G.StrikeAngle), G.CY + OuterR * FMath::Sin(G.StrikeAngle), TickColor, 3.5f + 3.f * FlashHard);
 
 	const float Dh = 5.f + 3.f * FlashHard;
-	const FLinearColor DC = FLinearColor::LerpUsingHSV(
-		FLinearColor(0.f, 0.5f, 0.55f, 0.70f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
-	DrawLine(StrikeX,        StrikeY - Dh, StrikeX + Dh, StrikeY,        DC, 2.f);
-	DrawLine(StrikeX + Dh,  StrikeY,      StrikeX,       StrikeY + Dh,   DC, 2.f);
-	DrawLine(StrikeX,        StrikeY + Dh, StrikeX - Dh, StrikeY,        DC, 2.f);
-	DrawLine(StrikeX - Dh,  StrikeY,      StrikeX,       StrikeY - Dh,   DC, 2.f);
+	const FLinearColor DC = FLinearColor::LerpUsingHSV(FLinearColor(0.f, 0.5f, 0.55f, 0.70f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
+	DrawLine(StrikeX, StrikeY - Dh, StrikeX + Dh, StrikeY, DC, 2.f);
+	DrawLine(StrikeX + Dh, StrikeY, StrikeX, StrikeY + Dh, DC, 2.f);
+	DrawLine(StrikeX, StrikeY + Dh, StrikeX - Dh, StrikeY, DC, 2.f);
+	DrawLine(StrikeX - Dh, StrikeY, StrikeX, StrikeY - Dh, DC, 2.f);
 }
 
-// =============================================================================
-//  THREAT NOTE
-// =============================================================================
-
-void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bPassed,
-                                   const FPcHudThreatEvent& Threat, const FArcGeom& G)
+void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bPassed, const FPcHudThreatEvent& Threat, const FArcGeom& G)
 {
-	if (bPassed)
-	{
+	if (bPassed) {
 		const FLinearColor Ghost(0.18f, 0.16f, 0.24f, Alpha * 1.2f);
 		const float Hs = 7.f;
-		DrawLine(NoteX,      NoteY - Hs, NoteX + Hs, NoteY,      Ghost, 1.5f);
-		DrawLine(NoteX + Hs, NoteY,      NoteX,      NoteY + Hs, Ghost, 1.5f);
-		DrawLine(NoteX,      NoteY + Hs, NoteX - Hs, NoteY,      Ghost, 1.5f);
-		DrawLine(NoteX - Hs, NoteY,      NoteX,      NoteY - Hs, Ghost, 1.5f);
+		DrawLine(NoteX, NoteY - Hs, NoteX + Hs, NoteY, Ghost, 1.5f); DrawLine(NoteX + Hs, NoteY, NoteX, NoteY + Hs, Ghost, 1.5f);
+		DrawLine(NoteX, NoteY + Hs, NoteX - Hs, NoteY, Ghost, 1.5f); DrawLine(NoteX - Hs, NoteY, NoteX, NoteY - Hs, Ghost, 1.5f);
 		return;
 	}
 
 	const FLinearColor OuterCol = Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha);
-	const FLinearColor CoreCol  = FLinearColor::LerpUsingHSV(Threat.Color, FLinearColor::White, 0.5f)
-	                              * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.85f);
+	const FLinearColor CoreCol  = FLinearColor::LerpUsingHSV(Threat.Color, FLinearColor::White, 0.5f) * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.85f);
 
-	DrawCircleHUD(NoteX, NoteY, 17.f,
-	              Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.16f), 1.f, 16);
+	DrawCircleHUD(NoteX, NoteY, 17.f, Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.16f), 1.f, 16);
 
 	const float Os = 10.f;
-	DrawLine(NoteX,       NoteY - Os, NoteX + Os, NoteY,       OuterCol, 2.f);
-	DrawLine(NoteX + Os,  NoteY,      NoteX,      NoteY + Os,  OuterCol, 2.f);
-	DrawLine(NoteX,       NoteY + Os, NoteX - Os, NoteY,       OuterCol, 2.f);
-	DrawLine(NoteX - Os,  NoteY,      NoteX,      NoteY - Os,  OuterCol, 2.f);
+	DrawLine(NoteX, NoteY - Os, NoteX + Os, NoteY, OuterCol, 2.f); DrawLine(NoteX + Os, NoteY, NoteX, NoteY + Os, OuterCol, 2.f);
+	DrawLine(NoteX, NoteY + Os, NoteX - Os, NoteY, OuterCol, 2.f); DrawLine(NoteX - Os, NoteY, NoteX, NoteY - Os, OuterCol, 2.f);
 
 	const float Is = 5.f;
-	DrawLine(NoteX,       NoteY - Is, NoteX + Is, NoteY,       CoreCol, 5.f);
-	DrawLine(NoteX + Is,  NoteY,      NoteX,      NoteY + Is,  CoreCol, 5.f);
-	DrawLine(NoteX,       NoteY + Is, NoteX - Is, NoteY,       CoreCol, 5.f);
-	DrawLine(NoteX - Is,  NoteY,      NoteX,      NoteY - Is,  CoreCol, 5.f);
+	DrawLine(NoteX, NoteY - Is, NoteX + Is, NoteY, CoreCol, 5.f); DrawLine(NoteX + Is, NoteY, NoteX, NoteY + Is, CoreCol, 5.f);
+	DrawLine(NoteX, NoteY + Is, NoteX - Is, NoteY, CoreCol, 5.f); DrawLine(NoteX - Is, NoteY, NoteX, NoteY - Is, CoreCol, 5.f);
 
-	if (Alpha > 0.45f && GEngine)
-	{
-		const float DirX   = NoteX - G.CX;
-		const float DirY   = NoteY - G.CY;
+	if (Alpha > 0.45f && GEngine) {
+		const float DirX = NoteX - G.CX; const float DirY = NoteY - G.CY;
 		const float DirLen = FMath::Sqrt(DirX * DirX + DirY * DirY);
-		const float NormX  = (DirLen > 0.f) ? DirX / DirLen : 0.f;
-		const float NormY  = (DirLen > 0.f) ? DirY / DirLen : -1.f;
-
-		DrawText(Threat.Label,
-		         Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.80f),
-		         NoteX + NormX * 20.f - 12.f,
-		         NoteY + NormY * 20.f -  5.f,
-		         GEngine->GetSmallFont(), 1.f);
+		const float NormX = (DirLen > 0.f) ? DirX / DirLen : 0.f; const float NormY = (DirLen > 0.f) ? DirY / DirLen : -1.f;
+		DrawText(Threat.Label, Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.80f), NoteX + NormX * 20.f - 12.f, NoteY + NormY * 20.f -  5.f, GEngine->GetSmallFont(), 1.f);
 	}
 }
-
-// =============================================================================
-//  CROSSHAIR  —  Metal Hellsinger style  <<< < • > >>>
-// =============================================================================
 
 void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
 {
@@ -375,63 +294,39 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
 
 	const float FlashA = FMath::Clamp(1.f - BeatRemainingFraction / 0.15f, 0.f, 1.f);
 
-	// ── Unified Chevron Geometry ─────────────────────────────────────────────
 	const float AW      = CrosshairChevronWidth;
 	const float AH      = CrosshairChevronHeight;
 	const float EXTRA_H = 2.0f;  
 	const float THICK   = 3.0f;  
 
-	auto DrawChev = [&](float TipX, bool bLeft, float Alpha, FLinearColor Col)
-	{
+	auto DrawChev = [&](float TipX, bool bLeft, float Alpha, FLinearColor Col) {
 		const float BackX = bLeft ? TipX + AW : TipX - AW; 
 		const float H     = AH + EXTRA_H;
-		
-		// Drop shadow fades completely out to black/transparent so we don't get hard pop-in
 		const FLinearColor Sh(0.f, 0.f, 0.f, FMath::Min(0.5f, Alpha * 0.8f));
-		DrawLine(BackX, CY - H, TipX, CY, Sh, THICK + 2.5f);
-		DrawLine(TipX,  CY,     BackX, CY + H, Sh, THICK + 2.5f);
-		
-		FLinearColor FinalCol = Col;
-		FinalCol.A *= Alpha; 
-		DrawLine(BackX, CY - H, TipX, CY, FinalCol, THICK);
-		DrawLine(TipX,  CY,     BackX, CY + H, FinalCol, THICK);
+		DrawLine(BackX, CY - H, TipX, CY, Sh, THICK + 2.5f); DrawLine(TipX,  CY, BackX, CY + H, Sh, THICK + 2.5f);
+		FLinearColor FinalCol = Col; FinalCol.A *= Alpha; 
+		DrawLine(BackX, CY - H, TipX, CY, FinalCol, THICK); DrawLine(TipX,  CY, BackX, CY + H, FinalCol, THICK);
 	};
 
-	// ── Incoming beats ───────────────────────────────────────────────────────
 	const float MaxBeats = FMath::Max(1.0f, (float)CrosshairBeatsToShow);
 
-	for (int32 i = CrosshairBeatsToShow - 1; i >= 0; --i)
-	{
+	for (int32 i = CrosshairBeatsToShow - 1; i >= 0; --i) {
 		const float d = BeatRemainingFraction + (float)i;
-		
-		// Map distance to a 0.0 to 1.0 curve (0 = at the gate, 1 = spawning)
 		const float DistNormalized = FMath::Clamp(d / MaxBeats, 0.0f, 1.0f);
-		
-		// Invert so 1.0 is full opacity at the gate, 0.0 is invisible far away
 		const float FadeIn = 1.0f - DistNormalized;
-		
-		// Exponential fade: keeps it invisible longer, then smoothly bursts into view
 		const float Alpha = FMath::Pow(FadeIn, 2.0f); 
 		if (Alpha < 0.01f) continue;
-
 		const float Dist = CrosshairGateDist + d * CrosshairBeatStep;
-		
-		// Hard grayscale color. Purely fading out the Alpha, no HSV lerping.
 		FLinearColor NoteCol(0.6f, 0.6f, 0.6f, Alpha);
-		
-		DrawChev(CX - Dist, true, Alpha, NoteCol);
-		DrawChev(CX + Dist, false, Alpha, NoteCol);
+		DrawChev(CX - Dist, true, Alpha, NoteCol); DrawChev(CX + Dist, false, Alpha, NoteCol);
 	}
 
-	// ── Fixed gate markers ───────────────────────────────────────────────────
 	const FLinearColor GateResting(0.05f, 0.05f, 0.05f, 0.45f);
 	const FLinearColor GateFlash(1.0f, 1.0f, 1.0f, 1.0f);
 	const FLinearColor GateCol = GateResting + (GateFlash - GateResting) * FlashA;
 	
-	DrawChev(CX - CrosshairGateDist, true,  1.f, GateCol);
-	DrawChev(CX + CrosshairGateDist, false, 1.f, GateCol);
+	DrawChev(CX - CrosshairGateDist, true,  1.f, GateCol); DrawChev(CX + CrosshairGateDist, false, 1.f, GateCol);
 
-	// ── Centre dot ───────────────────────────────────────────────────────────
 	const float DR  = DotSize;
 	const FLinearColor DotResting(0.05f, 0.75f, 1.0f, 0.8f);
 	const FLinearColor DotFlash(1.0f, 1.0f, 1.0f, 1.0f);
@@ -441,54 +336,36 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
 	DrawRect(DotCol, CX - DR, CY - DR, DR * 2.f, DR * 2.f);
 }
 
-// =============================================================================
-//  GLANCE BOARD  (bottom-left, two columns: beats | threats)
-// =============================================================================
-
-void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
-                                    int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
-                                    float FlashHard)
+void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard)
 {
 	if (!Canvas) return;
-
 	const float StrikeY      = Canvas->SizeY * GlanceBoard_ScreenYPercent;
 	const float TopY         = StrikeY - GlanceBoard_Height;
 	const float PixPerBeat   = GlanceBoard_Height / (float)GlanceBoard_BeatsToShow;
 	const float PlayerTrackX = GlanceBoard_XOffset;
 	const float EnemyTrackX  = GlanceBoard_XOffset + GlanceBoard_TrackSpacing;
-
 	const float PanelPad = 14.f;
 	const float PanelW   = GlanceBoard_TrackSpacing + PanelPad * 2.f;
-	DrawRect(FLinearColor(0.01f, 0.02f, 0.05f, 0.70f),
-	         PlayerTrackX - PanelPad, TopY - PanelPad, PanelW, GlanceBoard_Height + PanelPad * 2.f);
-	DrawLine(PlayerTrackX - PanelPad, TopY  - PanelPad,
-	         PlayerTrackX - PanelPad, StrikeY + PanelPad,
-	         FLinearColor(0.f, 0.55f, 0.75f, 0.22f), 1.f);
 
-	if (GEngine)
-	{
-		DrawText(TEXT("BEAT"), FLinearColor(0.f, 0.70f, 0.85f, 0.50f),
-		         PlayerTrackX - 6.f, TopY - 14.f, GEngine->GetSmallFont(), 1.f);
-		DrawText(TEXT("THRT"), FLinearColor(1.f, 0.20f, 0.32f, 0.50f),
-		         EnemyTrackX  - 6.f, TopY - 14.f, GEngine->GetSmallFont(), 1.f);
+	DrawRect(FLinearColor(0.01f, 0.02f, 0.05f, 0.70f), PlayerTrackX - PanelPad, TopY - PanelPad, PanelW, GlanceBoard_Height + PanelPad * 2.f);
+	DrawLine(PlayerTrackX - PanelPad, TopY  - PanelPad, PlayerTrackX - PanelPad, StrikeY + PanelPad, FLinearColor(0.f, 0.55f, 0.75f, 0.22f), 1.f);
+
+	if (GEngine) {
+		DrawText(TEXT("BEAT"), FLinearColor(0.f, 0.70f, 0.85f, 0.50f), PlayerTrackX - 6.f, TopY - 14.f, GEngine->GetSmallFont(), 1.f);
+		DrawText(TEXT("THRT"), FLinearColor(1.f, 0.20f, 0.32f, 0.50f), EnemyTrackX  - 6.f, TopY - 14.f, GEngine->GetSmallFont(), 1.f);
 	}
 
 	DrawLine(PlayerTrackX, TopY, PlayerTrackX, StrikeY, FLinearColor(0.f,  0.55f, 0.75f, 0.15f), 1.f);
 	DrawLine(EnemyTrackX,  TopY, EnemyTrackX,  StrikeY, FLinearColor(0.8f, 0.15f, 0.25f, 0.15f), 1.f);
 
-	const FLinearColor StrikeLineColor = FLinearColor::LerpUsingHSV(
-		FLinearColor(0.f, 0.45f, 0.55f, 0.35f), FLinearColor(0.16f, 1.f, 1.f, 0.92f), FlashHard);
-	DrawLine(PlayerTrackX - PanelPad, StrikeY, PlayerTrackX - PanelPad + PanelW, StrikeY,
-	         StrikeLineColor, 2.f + 1.5f * FlashHard);
+	const FLinearColor StrikeLineColor = FLinearColor::LerpUsingHSV(FLinearColor(0.f, 0.45f, 0.55f, 0.35f), FLinearColor(0.16f, 1.f, 1.f, 0.92f), FlashHard);
+	DrawLine(PlayerTrackX - PanelPad, StrikeY, PlayerTrackX - PanelPad + PanelW, StrikeY, StrikeLineColor, 2.f + 1.5f * FlashHard);
 
 	const float SqH = 5.f + 2.f * FlashHard;
-	DrawRect(StrikeLineColor,
-	         PlayerTrackX - SqH * 0.5f, StrikeY - SqH * 0.5f, SqH, SqH);
-	DrawRect(FLinearColor(1.f, 0.25f, 0.20f, 0.45f + FlashHard * 0.55f),
-	         EnemyTrackX  - SqH * 0.5f, StrikeY - SqH * 0.5f, SqH, SqH);
+	DrawRect(StrikeLineColor, PlayerTrackX - SqH * 0.5f, StrikeY - SqH * 0.5f, SqH, SqH);
+	DrawRect(FLinearColor(1.f, 0.25f, 0.20f, 0.45f + FlashHard * 0.55f), EnemyTrackX  - SqH * 0.5f, StrikeY - SqH * 0.5f, SqH, SqH);
 
-	for (int32 i = -1; i <= GlanceBoard_BeatsToShow; ++i)
-	{
+	for (int32 i = -1; i <= GlanceBoard_BeatsToShow; ++i) {
 		const float TimeDiffMS = ((float)NextBeatMS + i * IntervalMS) - (float)CurrentTimeMS;
 		if (TimeDiffMS < -120.f) continue;
 		const float NoteY = StrikeY - (TimeDiffMS / IntervalMS) * PixPerBeat;
@@ -501,62 +378,43 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 		const bool  bIsNext = (i == 0 && TimeDiffMS >= 0.f);
 		const float DashW   = bIsNext ? 18.f : 14.f;
 		const float DashH   = bIsNext ?  3.f :  2.f;
-		DrawRect(FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 0.92f : 0.65f)),
-		         PlayerTrackX - DashW * 0.5f, NoteY - DashH * 0.5f, DashW, DashH);
+		DrawRect(FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 0.92f : 0.65f)), PlayerTrackX - DashW * 0.5f, NoteY - DashH * 0.5f, DashW, DashH);
 	}
 
 	const float LookaheadSec = (IntervalMS * (float)GlanceBoard_BeatsToShow) / 1000.f;
-	for (const FPcRuntimeEvent& Note : MusicSub->GetUpcomingNotes(LookaheadSec))
-	{
+	for (const FPcRuntimeEvent& Note : MusicSub->GetUpcomingNotes(LookaheadSec)) {
 		const float TimeDiffMS = (float)(Note.TimestampMS - CurrentTimeMS);
 		if (TimeDiffMS < -120.f) continue;
 		const float NoteY = StrikeY - (TimeDiffMS / IntervalMS) * PixPerBeat;
 		if (NoteY < TopY || NoteY > StrikeY + 8.f) continue;
-
 		const float Alpha = (TimeDiffMS >= 0.f)
 			? FMath::Clamp(1.f - TimeDiffMS / (IntervalMS * (float)GlanceBoard_BeatsToShow), 0.f, 1.f)
 			: FMath::Clamp(1.f - FMath::Abs(TimeDiffMS) / 120.f, 0.f, 1.f);
 
-		const float Dr = 5.f;
-		const FLinearColor EC(1.f, 0.15f, 0.25f, Alpha);
-		DrawLine(EnemyTrackX,      NoteY - Dr, EnemyTrackX + Dr, NoteY,      EC, 1.5f);
-		DrawLine(EnemyTrackX + Dr, NoteY,      EnemyTrackX,      NoteY + Dr, EC, 1.5f);
-		DrawLine(EnemyTrackX,      NoteY + Dr, EnemyTrackX - Dr, NoteY,      EC, 1.5f);
-		DrawLine(EnemyTrackX - Dr, NoteY,      EnemyTrackX,      NoteY - Dr, EC, 1.5f);
+		const float Dr = 5.f; const FLinearColor EC(1.f, 0.15f, 0.25f, Alpha);
+		DrawLine(EnemyTrackX, NoteY - Dr, EnemyTrackX + Dr, NoteY, EC, 1.5f); DrawLine(EnemyTrackX + Dr, NoteY, EnemyTrackX, NoteY + Dr, EC, 1.5f);
+		DrawLine(EnemyTrackX, NoteY + Dr, EnemyTrackX - Dr, NoteY, EC, 1.5f); DrawLine(EnemyTrackX - Dr, NoteY, EnemyTrackX, NoteY - Dr, EC, 1.5f);
 	}
 
-	for (const FPcHudThreatEvent& Threat : ActiveThreats)
-	{
+	for (const FPcHudThreatEvent& Threat : ActiveThreats) {
 		const float TimeDiffMS = (float)(Threat.TimestampMS - CurrentTimeMS);
 		if (TimeDiffMS < -120.f) continue;
 		const float NoteY = StrikeY - (TimeDiffMS / IntervalMS) * PixPerBeat;
 		if (NoteY < TopY || NoteY > StrikeY + 8.f) continue;
-
 		const float Alpha = (TimeDiffMS >= 0.f)
 			? FMath::Clamp(1.f - TimeDiffMS / (IntervalMS * (float)GlanceBoard_BeatsToShow), 0.f, 1.f)
 			: FMath::Clamp(1.f - FMath::Abs(TimeDiffMS) / 120.f, 0.f, 1.f);
-
-		const float Dr = 6.f;
-		const FLinearColor TC = Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha);
-		DrawLine(EnemyTrackX,      NoteY - Dr, EnemyTrackX + Dr, NoteY,      TC, 2.f);
-		DrawLine(EnemyTrackX + Dr, NoteY,      EnemyTrackX,      NoteY + Dr, TC, 2.f);
-		DrawLine(EnemyTrackX,      NoteY + Dr, EnemyTrackX - Dr, NoteY,      TC, 2.f);
-		DrawLine(EnemyTrackX - Dr, NoteY,      EnemyTrackX,      NoteY - Dr, TC, 2.f);
+		const float Dr = 6.f; const FLinearColor TC = Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha);
+		DrawLine(EnemyTrackX, NoteY - Dr, EnemyTrackX + Dr, NoteY, TC, 2.f); DrawLine(EnemyTrackX + Dr, NoteY, EnemyTrackX, NoteY + Dr, TC, 2.f);
+		DrawLine(EnemyTrackX, NoteY + Dr, EnemyTrackX - Dr, NoteY, TC, 2.f); DrawLine(EnemyTrackX - Dr, NoteY, EnemyTrackX, NoteY - Dr, TC, 2.f);
 	}
 }
 
-// =============================================================================
-//  BHOP DEBUG PANEL (logic unchanged)
-// =============================================================================
-
 void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 {
-	const float PanelX = 30.f;
-	float PanelY = 30.f;
-	const float LineH = 22.f;
+	const float PanelX = 30.f; float PanelY = 30.f; const float LineH = 22.f;
 
-	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White)
-	{
+	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White) {
 		DrawText(Label + TEXT("  ") + Value, Color, PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
 		PanelY += LineH;
 	};
@@ -569,85 +427,53 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 	else                                            StateStr = TEXT("ACTIVE");
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-	{
-		Row(TEXT("PRESET:"),   Sub->GetActivePresetName(),                                     FLinearColor::Yellow);
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
+		Row(TEXT("PRESET:"),   Sub->GetActivePresetName(), FLinearColor::Yellow);
 		Row(TEXT("GAME BPM:"), FString::Printf(TEXT("%.1f"), Sub->GetCurrentGameplayBPM()));
 	}
 
-	Row(TEXT("COYOTE:"), MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"),
-	    MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
+	Row(TEXT("COYOTE:"), MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"), MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f, 0.5f, 0.5f));
 
 	const float HSpeed    = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White;
 	Row(TEXT("SPEED:"), FString::Printf(TEXT("%.0f u/s"), HSpeed), SpeedCol);
 
 	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), PanelX, PanelY, 160.f, 6.f);
-	DrawRect(SpeedCol, PanelX, PanelY,
-	         160.f * FMath::Clamp(HSpeed / (MC->MaxWalkSpeed * 3.f), 0.f, 1.f), 6.f);
+	DrawRect(SpeedCol, PanelX, PanelY, 160.f * FMath::Clamp(HSpeed / (MC->MaxWalkSpeed * 3.f), 0.f, 1.f), 6.f);
 	PanelY += 14.f;
 
-	Row(TEXT("V SPEED:"),  FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z),
-	    MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
-	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"),
-	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
+	Row(TEXT("V SPEED:"),  FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z), MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
+	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"), MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
 }
-
-
-// =============================================================================
-//  COMBO FEED
-// =============================================================================
 
 void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color)
 {
 	if (!GetWorld()) return;
-	FPcComboFeedEntry E;
-	E.Label  = Label;
-	E.Color  = Color;
-	E.BornAt = GetWorld()->GetTimeSeconds();
+	FPcComboFeedEntry E; E.Label = Label; E.Color = Color; E.BornAt = GetWorld()->GetTimeSeconds();
 	ComboFeed.Add(E);
-	// Trim to max
-	while (ComboFeed.Num() > ComboFeed_MaxEntries)
-		ComboFeed.RemoveAt(0);
+	while (ComboFeed.Num() > ComboFeed_MaxEntries) ComboFeed.RemoveAt(0);
 }
 
 void APcQDebugHUD::DrawComboFeed()
 {
 	if (!Canvas || !GEngine || !GetWorld()) return;
 
-	const float Now    = GetWorld()->GetTimeSeconds();
-	const float FX     = 22.f;
-	const float FBY    = Canvas->SizeY * 0.82f;  // bottom of the feed column
-	const float LineH  = 24.f;
-	const float HalfDur = ComboFeed_FadeDuration * 0.55f;  // full opacity until here
+	const float Now = GetWorld()->GetTimeSeconds();
+	const float FX = 22.f; const float FBY = Canvas->SizeY * 0.82f; const float LineH = 24.f;
+	const float HalfDur = ComboFeed_FadeDuration * 0.55f;
 
-	// Remove fully expired entries
-	ComboFeed.RemoveAll([&](const FPcComboFeedEntry& E)
-	{
-		return (Now - E.BornAt) >= ComboFeed_FadeDuration;
-	});
+	ComboFeed.RemoveAll([&](const FPcComboFeedEntry& E) { return (Now - E.BornAt) >= ComboFeed_FadeDuration; });
 
-	// Draw most recent at bottom, older above
-	for (int32 i = 0; i < ComboFeed.Num(); ++i)
-	{
+	for (int32 i = 0; i < ComboFeed.Num(); ++i) {
 		const FPcComboFeedEntry& E = ComboFeed[ComboFeed.Num() - 1 - i];
-		const float Age   = Now - E.BornAt;
-		const float Alpha = Age < HalfDur
-			? 1.f
-			: FMath::Clamp(1.f - (Age - HalfDur) / (ComboFeed_FadeDuration - HalfDur), 0.f, 1.f);
+		const float Age = Now - E.BornAt;
+		const float Alpha = Age < HalfDur ? 1.f : FMath::Clamp(1.f - (Age - HalfDur) / (ComboFeed_FadeDuration - HalfDur), 0.f, 1.f);
 		if (Alpha < 0.02f) continue;
 
 		const float Y = FBY - i * LineH;
-
-		// Accent bar (3px)
 		DrawRect(E.Color * FLinearColor(1,1,1,Alpha * 0.88f), FX, Y - 14.f, 3.f, 18.f);
-
-		// Text shadow
-		DrawText(E.Label, FLinearColor(0,0,0, Alpha * 0.65f),
-		         FX + 9.f, Y, GEngine->GetSmallFont(), 1.f);
-		// Text
-		DrawText(E.Label, E.Color * FLinearColor(1,1,1,Alpha),
-		         FX + 8.f, Y - 1.f, GEngine->GetSmallFont(), 1.f);
+		DrawText(E.Label, FLinearColor(0,0,0, Alpha * 0.65f), FX + 9.f, Y, GEngine->GetSmallFont(), 1.f);
+		DrawText(E.Label, E.Color * FLinearColor(1,1,1,Alpha), FX + 8.f, Y - 1.f, GEngine->GetSmallFont(), 1.f);
 	}
 }
 
@@ -656,26 +482,14 @@ FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
 	if (State == EBhopState::WallSwim)       return FLinearColor(0.f, 0.82f, 1.f);
 	if (State == EBhopState::PowerBoost)     return FLinearColor(1.f, 0.55f, 0.f);
-	return FLinearColor::Green;  // Active
+	return FLinearColor::Green;
 }
-
-// =============================================================================
-//  ABILITY BARS  (bottom-right: BOOST / D-JUMP / FIRE)
-//
-//  Each bar:  background track → colored fill (drains while on cooldown)
-//             Label left, status right
-//             Pulses on the beat when ready
-//             Shows ACTIVE when ability is running
-// =============================================================================
 
 void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC)
 {
 	if (!Canvas || !GEngine) return;
 
-	// Three square ability icons, bottom-center of screen.
-	// Each shows: fill draining during CD, bright when ready, number overlay.
-	const float IconSz  = 52.f;   // square icon size
-	const float IconGap = 10.f;
+	const float IconSz  = 52.f; const float IconGap = 10.f;
 	const float TotalW  = IconSz * 2.f + IconGap * 1.f;
 	const float StartX  = (Canvas->SizeX - TotalW) * 0.5f;
 	const float IconY   = Canvas->SizeY - IconSz - 20.f;
@@ -683,152 +497,93 @@ void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerContr
 	const float BeatFlash = MC ? MC->GetOnBeatFlash() : 0.f;
 
 	float PistolCoolAlpha = 0.f, PistolBaseSec = 0.5f;
-	if (APcQPlayerCharacter* Ch = Cast<APcQPlayerCharacter>(PC->GetPawn()))
-	{
-		PistolCoolAlpha = Ch->GetPistolCooldownAlpha();
-		PistolBaseSec   = Ch->PistolBaseCooldownSec;
+	if (APcQPlayerCharacter* Ch = Cast<APcQPlayerCharacter>(PC->GetPawn())) {
+		PistolCoolAlpha = Ch->GetPistolCooldownAlpha(); PistolBaseSec   = Ch->PistolBaseCooldownSec;
 	}
 
 	const float DJCoolAlpha = MC ? MC->GetDoubleJumpCooldownAlpha() : 0.f;
 
-	struct FIcon
-	{
-		FString      Label;
-		FLinearColor Col;
-		float        Fill;
-		bool         bActive;
-		float        CoolSec;
-	};
+	struct FIcon { FString Label; FLinearColor Col; float Fill; bool bActive; float CoolSec; };
 	FIcon Icons[2];
 
-	Icons[0] = { TEXT("DJUMP"), FLinearColor(0.18f, 0.65f, 1.f),
-	             1.f - DJCoolAlpha, false,
-	             DJCoolAlpha * (MC ? MC->DoubleJumpBaseCooldownSec : 2.f) };
+	Icons[0] = { TEXT("DJUMP"), FLinearColor(0.18f, 0.65f, 1.f), 1.f - DJCoolAlpha, false, DJCoolAlpha * (MC ? MC->DoubleJumpBaseCooldownSec : 2.f) };
+	Icons[1] = { TEXT("FIRE"),  FLinearColor(0.9f, 0.18f, 0.28f), 1.f - PistolCoolAlpha, false, PistolCoolAlpha * PistolBaseSec };
 
-	Icons[1] = { TEXT("FIRE"),  FLinearColor(0.9f, 0.18f, 0.28f),
-	             1.f - PistolCoolAlpha, false,
-	             PistolCoolAlpha * PistolBaseSec };
+	for (int32 i = 0; i < 2; ++i) {
+		const FIcon& Ic = Icons[i];
+		const float IX = StartX + i * (IconSz + IconGap);
+		const bool bRdy = Ic.Fill >= 1.f && !Ic.bActive;
+		const bool bOnCD = Ic.Fill < 1.f && !Ic.bActive;
 
-	for (int32 i = 0; i < 2; ++i)
-	{
-		const FIcon& Ic    = Icons[i];
-		const float  IX    = StartX + i * (IconSz + IconGap);
-		const bool   bRdy  = Ic.Fill >= 1.f && !Ic.bActive;
-		const bool   bOnCD = Ic.Fill  < 1.f && !Ic.bActive;
-
-		// ── Shadow ──────────────────────────────────────────────────────────
 		DrawRect(FLinearColor(0,0,0,0.82f), IX - 3.f, IconY - 3.f, IconSz + 6.f, IconSz + 6.f);
-
-		// ── Background ──────────────────────────────────────────────────────
 		DrawRect(FLinearColor(0.03f, 0.04f, 0.08f, 1.f), IX, IconY, IconSz, IconSz);
 
-		// ── Fill — drains from top, full when ready ──────────────────────────
-		// Fill rises from the bottom: empty at bottom, full = whole icon lit.
-		const float FillH     = IconSz * Ic.Fill;
-		const float FillY     = IconY + IconSz - FillH;
-		const float FillAlpha = bRdy  ? (0.75f + BeatFlash * 0.20f) :
-		                        Ic.bActive ? 0.88f : 0.28f;
-		if (FillH > 0.5f)
-			DrawRect(Ic.Col * FLinearColor(1,1,1, FillAlpha), IX, FillY, IconSz, FillH);
+		const float FillH = IconSz * Ic.Fill;
+		const float FillY = IconY + IconSz - FillH;
+		const float FillAlpha = bRdy ? (0.75f + BeatFlash * 0.20f) : Ic.bActive ? 0.88f : 0.28f;
+		if (FillH > 0.5f) DrawRect(Ic.Col * FLinearColor(1,1,1, FillAlpha), IX, FillY, IconSz, FillH);
+		if (Ic.bActive && BeatFlash > 0.01f) DrawRect(FLinearColor(1,1,1, BeatFlash * 0.22f), IX, FillY, IconSz, FillH);
 
-		// ── Active pulse overlay ─────────────────────────────────────────────
-		if (Ic.bActive && BeatFlash > 0.01f)
-			DrawRect(FLinearColor(1,1,1, BeatFlash * 0.22f), IX, FillY, IconSz, FillH);
-
-		// ── Border — thin, colored, brighter when ready ──────────────────────
 		const float BorderA = bRdy ? (0.85f + BeatFlash * 0.15f) : (Ic.bActive ? 0.70f : 0.22f);
-		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY,           IconSz, 2.f);  // top
-		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY+IconSz-2.f,IconSz, 2.f);  // bottom
-		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX,           IconY,           2.f, IconSz);  // left
-		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX+IconSz-2.f,IconY,           2.f, IconSz);  // right
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX, IconY, IconSz, 2.f);
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX, IconY+IconSz-2.f, IconSz, 2.f);
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX, IconY, 2.f, IconSz);
+		DrawRect(Ic.Col * FLinearColor(1,1,1, BorderA), IX+IconSz-2.f, IconY, 2.f, IconSz);
 
-		// ── On-beat bright border flash ──────────────────────────────────────
-		if (bRdy && BeatFlash > 0.05f)
-		{
-			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY,           IconSz, 2.f);
-			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY+IconSz-2.f,IconSz, 2.f);
-			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX,           IconY,           2.f, IconSz);
-			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX+IconSz-2.f,IconY,           2.f, IconSz);
+		if (bRdy && BeatFlash > 0.05f) {
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX, IconY, IconSz, 2.f);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX, IconY+IconSz-2.f, IconSz, 2.f);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX, IconY, 2.f, IconSz);
+			DrawRect(Ic.Col * FLinearColor(1,1,1, BeatFlash * 0.90f), IX+IconSz-2.f, IconY, 2.f, IconSz);
 		}
 
-		// ── Label (top of icon) ──────────────────────────────────────────────
-		const FLinearColor TextCol = bRdy ? Ic.Col * FLinearColor(1,1,1,1.f)
-		                                  : (Ic.bActive ? Ic.Col * FLinearColor(1,1,1,1.f)
-		                                               : FLinearColor(0.40f, 0.45f, 0.55f, 0.90f));
+		const FLinearColor TextCol = bRdy ? Ic.Col * FLinearColor(1,1,1,1.f) : (Ic.bActive ? Ic.Col * FLinearColor(1,1,1,1.f) : FLinearColor(0.40f, 0.45f, 0.55f, 0.90f));
 		DrawText(Ic.Label, TextCol, IX + 4.f, IconY + 4.f, GEngine->GetSmallFont(), 1.f);
 
-		// ── Center number: CD seconds or READY/ACTIVE ─────────────────────────
 		FString NumStr;
-		if (Ic.bActive)
-			NumStr = FString::Printf(TEXT("%.1f"), Ic.Fill);
-		else if (bOnCD)
-			NumStr = FString::Printf(TEXT("%.1f"), Ic.CoolSec);
-		// Ready: no center text — the full bright fill is the signal
+		if (Ic.bActive) NumStr = FString::Printf(TEXT("%.1f"), Ic.Fill);
+		else if (bOnCD) NumStr = FString::Printf(TEXT("%.1f"), Ic.CoolSec);
 
-		if (!NumStr.IsEmpty())
-			DrawText(NumStr, TextCol, IX + 8.f, IconY + IconSz * 0.5f - 4.f, GEngine->GetSmallFont(), 1.f);
+		if (!NumStr.IsEmpty()) DrawText(NumStr, TextCol, IX + 8.f, IconY + IconSz * 0.5f - 4.f, GEngine->GetSmallFont(), 1.f);
 	}
 }
 
-// =============================================================================
-//  PRIMITIVES
-// =============================================================================
-
-void APcQDebugHUD::DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color,
-                                  float Thickness, int32 Segments, float AngleOffset)
+void APcQDebugHUD::DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color, float Thickness, int32 Segments, float AngleOffset)
 {
 	if (Segments <= 0) return;
 	const float Step = 2.f * PI / (float)Segments;
-	for (int32 i = 0; i < Segments; ++i)
-	{
-		DrawLine(CX + Radius * FMath::Cos(i       * Step + AngleOffset),
-		         CY + Radius * FMath::Sin(i       * Step + AngleOffset),
-		         CX + Radius * FMath::Cos((i + 1) * Step + AngleOffset),
-		         CY + Radius * FMath::Sin((i + 1) * Step + AngleOffset),
-		         Color, Thickness);
+	for (int32 i = 0; i < Segments; ++i) {
+		DrawLine(CX + Radius * FMath::Cos(i * Step + AngleOffset), CY + Radius * FMath::Sin(i * Step + AngleOffset),
+		         CX + Radius * FMath::Cos((i + 1) * Step + AngleOffset), CY + Radius * FMath::Sin((i + 1) * Step + AngleOffset), Color, Thickness);
 	}
 }
 
-void APcQDebugHUD::DrawArcHUD(float CX, float CY, float Radius, float Thickness,
-                               float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
+void APcQDebugHUD::DrawArcHUD(float CX, float CY, float Radius, float Thickness, float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
 {
 	if (Segments <= 0) return;
 	const float AngleStep = (EndAngle - StartAngle) / (float)Segments;
-	const float InnerR    = Radius - Thickness * 0.5f;
-	const float OuterR    = Radius + Thickness * 0.5f;
+	const float InnerR = Radius - Thickness * 0.5f; const float OuterR = Radius + Thickness * 0.5f;
 
-	for (int32 i = 0; i < Segments; ++i)
-	{
-		const float A1 = StartAngle + i       * AngleStep;
-		const float A2 = StartAngle + (i + 1) * AngleStep;
-		DrawLine(CX + InnerR * FMath::Cos(A1), CY + InnerR * FMath::Sin(A1),
-		         CX + InnerR * FMath::Cos(A2), CY + InnerR * FMath::Sin(A2), Color, 2.f);
-		DrawLine(CX + OuterR * FMath::Cos(A1), CY + OuterR * FMath::Sin(A1),
-		         CX + OuterR * FMath::Cos(A2), CY + OuterR * FMath::Sin(A2), Color, 2.f);
+	for (int32 i = 0; i < Segments; ++i) {
+		const float A1 = StartAngle + i * AngleStep; const float A2 = StartAngle + (i + 1) * AngleStep;
+		DrawLine(CX + InnerR * FMath::Cos(A1), CY + InnerR * FMath::Sin(A1), CX + InnerR * FMath::Cos(A2), CY + InnerR * FMath::Sin(A2), Color, 2.f);
+		DrawLine(CX + OuterR * FMath::Cos(A1), CY + OuterR * FMath::Sin(A1), CX + OuterR * FMath::Cos(A2), CY + OuterR * FMath::Sin(A2), Color, 2.f);
 	}
-	DrawLine(CX + InnerR * FMath::Cos(StartAngle), CY + InnerR * FMath::Sin(StartAngle),
-	         CX + OuterR * FMath::Cos(StartAngle), CY + OuterR * FMath::Sin(StartAngle), Color, 2.f);
-	DrawLine(CX + InnerR * FMath::Cos(EndAngle),   CY + InnerR * FMath::Sin(EndAngle),
-	         CX + OuterR * FMath::Cos(EndAngle),   CY + OuterR * FMath::Sin(EndAngle),   Color, 2.f);
+	DrawLine(CX + InnerR * FMath::Cos(StartAngle), CY + InnerR * FMath::Sin(StartAngle), CX + OuterR * FMath::Cos(StartAngle), CY + OuterR * FMath::Sin(StartAngle), Color, 2.f);
+	DrawLine(CX + InnerR * FMath::Cos(EndAngle), CY + InnerR * FMath::Sin(EndAngle), CX + OuterR * FMath::Cos(EndAngle), CY + OuterR * FMath::Sin(EndAngle), Color, 2.f);
 }
 
-void APcQDebugHUD::DrawArcFilled(float CX, float CY, float Radius, float Thickness,
-                                  float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
+void APcQDebugHUD::DrawArcFilled(float CX, float CY, float Radius, float Thickness, float StartAngle, float EndAngle, FLinearColor Color, int32 Segments)
 {
 	if (Segments <= 0 || Thickness <= 0.f) return;
 	const float AngleStep = (EndAngle - StartAngle) / (float)Segments;
 	const float HalfThick = Thickness * 0.5f;
 
-	for (float dr = -HalfThick; dr <= HalfThick; dr += 2.2f)
-	{
+	for (float dr = -HalfThick; dr <= HalfThick; dr += 2.2f) {
 		const float R = Radius + dr;
-		for (int32 i = 0; i < Segments; ++i)
-		{
-			const float A1 = StartAngle + i       * AngleStep;
-			const float A2 = StartAngle + (i + 1) * AngleStep;
-			DrawLine(CX + R * FMath::Cos(A1), CY + R * FMath::Sin(A1),
-			         CX + R * FMath::Cos(A2), CY + R * FMath::Sin(A2),
-			         Color, 2.5f);
+		for (int32 i = 0; i < Segments; ++i) {
+			const float A1 = StartAngle + i * AngleStep; const float A2 = StartAngle + (i + 1) * AngleStep;
+			DrawLine(CX + R * FMath::Cos(A1), CY + R * FMath::Sin(A1), CX + R * FMath::Cos(A2), CY + R * FMath::Sin(A2), Color, 2.5f);
 		}
 	}
 }
