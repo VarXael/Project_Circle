@@ -59,6 +59,12 @@ float UPcQPlayerMovementComponent::GetBoostCooldownAlpha() const
 	return BoostCooldown <= 0.f ? 0.f : FMath::Clamp(BoostCooldown / FMath::Max(BoostBaseCooldownSec, 0.01f), 0.f, 1.f);
 }
 
+float UPcQPlayerMovementComponent::GetBoostActiveAlpha() const
+{
+	if (BhopState != EBhopState::PowerBoost || BoostTimer <= 0.f) return 0.f;
+	return FMath::Clamp(BoostTimer / FMath::Max(BoostBaseDurationSec, 0.01f), 0.f, 1.f);
+}
+
 float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const
 {
 	if (DoubleJumpCooldown <= 0.f) return bDoubleJumpUsed ? 1.f : 0.f;
@@ -68,7 +74,16 @@ float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
 	OnBeatFlashTimer = OnBeatFlashDuration;
-	OnActiveBeatAction.Broadcast();
+	// Universal rule: any on-beat action resets ALL cooldowns.
+	BoostCooldown      = 0.f;
+	DoubleJumpCooldown = 0.f;
+	bDoubleJumpUsed    = false;
+	OnActiveBeatAction.Broadcast();  // character subscribes to reset pistol CD
+}
+
+void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color)
+{
+	OnComboEvent.Broadcast(Label, Color);
 }
 
 // =============================================================================
@@ -90,6 +105,7 @@ void UPcQPlayerMovementComponent::ActivateBoost()
 	Velocity.Z = 0.f;
 
 	TriggerOnBeatFlash();
+	PushCombo(TEXT("BOOST"), FLinearColor(1.f, 0.55f, 0.15f));
 }
 
 void UPcQPlayerMovementComponent::ExitBoost()
@@ -101,8 +117,22 @@ void UPcQPlayerMovementComponent::ExitBoost()
 
 void UPcQPlayerMovementComponent::NotifyGunFired()
 {
+	// Pistol on-beat: extend boost if active, and refresh DJ so chains continue.
+	// This does NOT give free boost or free DJ — just keeps active ones alive.
 	if (BhopState == EBhopState::PowerBoost && BoostTimer > 0.f)
+	{
 		BoostTimer = FMath::Min(BoostTimer + BoostExtendPerShot, GetBeatSnappedDuration(BoostBaseDurationSec) * 2.f);
+		PushCombo(TEXT("BOOST EXTEND"), FLinearColor(1.f, 0.55f, 0.15f));
+	}
+
+	// Refresh DJ: if used, reset so player can double-jump again immediately.
+	if (bDoubleJumpUsed)
+	{
+		bDoubleJumpUsed    = false;
+		DoubleJumpCooldown = 0.f;
+		PushCombo(TEXT("DJ RESET"), FLinearColor(0.27f, 0.67f, 1.f));
+		UE_LOG(LogTemp, Log, TEXT("[Pistol] DJ refreshed by on-beat shot."));
+	}
 }
 
 // =============================================================================
@@ -113,7 +143,7 @@ void UPcQPlayerMovementComponent::NotifyGunFired()
 //  Preserves horizontal velocity — the arc only sets Z.
 // =============================================================================
 
-void UPcQPlayerMovementComponent::DoJump()
+void UPcQPlayerMovementComponent::ExecutePlayerJump(bool bFromBoost)
 {
 	// Snapshot horizontal before the arc calculation
 	const float PreJumpH  = GetHorizontalSpeed();
@@ -129,7 +159,22 @@ void UPcQPlayerMovementComponent::DoJump()
 		Velocity.Y = Dir2D.Y * PreJumpH;
 	}
 
-	// 2. GP combo bonus
+	// 2. Boost jump — always fires when jumping from boost state.
+	//    This takes priority over GP combo since GP landing immediately enters boost.
+	if (bFromBoost)
+	{
+		const FVector WD = Acceleration.GetSafeNormal2D().IsZero() ? Dir2D : Acceleration.GetSafeNormal2D();
+		if (!WD.IsZero())
+		{
+			const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
+			// Give the jump a strong horizontal kick in WASD direction at boost speed
+			Velocity.X = WD.X * BoostSpd * 1.4f;
+			Velocity.Y = WD.Y * BoostSpd * 1.4f;
+		}
+		PushCombo(TEXT("BOOST JUMP"), FLinearColor(1.f, 0.55f, 0.15f));
+	}
+
+	// 3. GP combo bonus
 	if (bGPLandedRecently && GPComboTimer > 0.f)
 	{
 		const FVector WishDir = Acceleration.GetSafeNormal2D().IsZero() ? Dir2D : Acceleration.GetSafeNormal2D();
@@ -146,7 +191,10 @@ void UPcQPlayerMovementComponent::DoJump()
 		GPComboTimer         = 0.f;
 
 		TriggerOnBeatFlash();
-		UE_LOG(LogTemp, Log, TEXT("[Chain] GP combo jump. Bonus=%.0f BoostChain=%d"), Bonus, bBoostActiveOnGPLand ? 1 : 0);
+		// Note: bBoostActiveOnGPLand was already saved in bWasBoostChain above
+		const bool bWasBoostChain = (Bonus > GPJumpHorizBoost);
+		PushCombo(bWasBoostChain ? TEXT("GP BOOST JUMP") : TEXT("GP COMBO JUMP"), FLinearColor(1.f, 0.9f, 0.15f));
+		UE_LOG(LogTemp, Log, TEXT("[Chain] GP combo jump. Bonus=%.0f"), Bonus);
 	}
 
 	// Bonus hop (on-beat jump press)
@@ -157,6 +205,7 @@ void UPcQPlayerMovementComponent::DoJump()
 		Velocity.Y += WD.Y * BonusHopSpeedBoost;
 		bBonusHopRequested = false;
 		TriggerOnBeatFlash();
+		PushCombo(TEXT("BEAT JUMP"), FLinearColor(1.f, 1.f, 1.f));
 	}
 
 	// Clamp to hard speed cap
@@ -187,15 +236,14 @@ void UPcQPlayerMovementComponent::TriggerBeatJump()
 
 	if (IsMovingOnGround())
 	{
-		if (bAutoJumpEnabled || bBonusHopRequested || BhopState == EBhopState::PowerBoost)
+		const bool bShouldAutoJump = bAutoJumpEnabled || bAutoJumpActive;
+		if (bShouldAutoJump || bBonusHopRequested || BhopState == EBhopState::PowerBoost)
 		{
-			if (bAutoJumpEnabled || bBonusHopRequested)
+			if (bShouldAutoJump || bBonusHopRequested)
 			{
-				// Exit boost before jump so DoJump reads the state correctly
 				const bool bWasBoosting = (BhopState == EBhopState::PowerBoost);
 				if (bWasBoosting) ExitBoost();
-
-				DoJump();
+				ExecutePlayerJump(bWasBoosting);
 				OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			}
 		}
@@ -225,21 +273,46 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 		return;
 	}
 
-	if (IsOnBeat()) bBonusHopRequested = true;
+	const bool bOnBeat = IsOnBeat();
+	if (bOnBeat) bBonusHopRequested = true;
 
 	if (IsMovingOnGround())
 	{
-		DoJump();
+		if (bAutoJumpActive)
+		{
+			// Pressing jump while auto-bouncing cancels it
+			bAutoJumpActive = false;
+			PushCombo(TEXT("AUTO JUMP OFF"), FLinearColor(0.5f, 0.5f, 0.5f));
+			return;
+		}
+		const bool bBoosting = (BhopState == EBhopState::PowerBoost);
+		if (bBoosting) ExitBoost();
+		ExecutePlayerJump(bBoosting);
+		if (bOnBeat)
+		{
+			// On-beat ground jump → start auto-bouncing
+			bAutoJumpActive = true;
+			PushCombo(TEXT("AUTO JUMP ON"), FLinearColor(0.9f, 1.f, 0.5f));
+		}
 		OnBhopLanded.Broadcast(GetHorizontalSpeed());
 	}
 	else if (IsFalling())
 	{
 		if (DJumpReady() || IsOnBeat())
 		{
+			const bool bFreeJump = IsOnBeat();
 			bDoubleJumpUsed    = true;
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
-			DoJump();
-			if (IsOnBeat()) TriggerOnBeatFlash();
+			ExecutePlayerJump(false);
+			PushCombo(TEXT("DOUBLE JUMP"), FLinearColor(0.27f, 0.67f, 1.f));
+			if (bFreeJump)
+			{
+				// On-beat DJ = free: reset CD so next DJ is immediately available
+				bDoubleJumpUsed    = false;
+				DoubleJumpCooldown = 0.f;
+				TriggerOnBeatFlash();
+				PushCombo(TEXT("DJ RESET"), FLinearColor(0.27f, 0.67f, 1.f));
+			}
 		}
 		else
 		{
@@ -257,22 +330,39 @@ void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 
 	if (IsMovingOnGround())
 	{
-		// Slide: on-beat → boost + start slide. Off-beat → slide at current speed.
-		BhopState = EBhopState::PowerBoost;  // reuse boost state for the slide
-		BoostTimer = GetBeatSnappedDuration(BoostBaseDurationSec);
+		// Boost / Slide:
+		//   On-beat  → always activates (bypasses CD), resets CD to 0 after expiry
+		//   Off-beat + CD ready  → activates normally
+		//   Off-beat + CD active → blocked
+		const bool bOnBeat = IsOnBeat();
+		if (!BoostReady() && !bOnBeat)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Boost] Blocked — cooldown %.1fs remaining."), BoostCooldown);
+			return;
+		}
+		if (BhopState == EBhopState::PowerBoost)
+			return;  // already boosting
+
+		BhopState     = EBhopState::PowerBoost;
+		BoostTimer    = GetBeatSnappedDuration(BoostBaseDurationSec);
 		BoostCooldown = 0.f;
 
-		const bool bOnBeat = IsOnBeat();
-		FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-		if (Dir2D.IsZero() && CharacterOwner)
-			Dir2D = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+		// Direction: use current velocity or WASD. Never camera forward.
+		FVector Dir2D = Acceleration.GetSafeNormal2D();
+		if (Dir2D.IsZero())
+			Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+		// If truly no input and standing still: enter boost at minimum speed,
+		// player steers immediately.
 
 		const float EntrySpd = GetHorizontalSpeed() + (bOnBeat ? SlideEntryBoost : 0.f);
 		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-		// Start at whichever is higher: current speed+boost entry, or boost speed
 		const float StartSpd = FMath::Max(EntrySpd, BoostSpd);
-		Velocity.X = Dir2D.X * StartSpd;
-		Velocity.Y = Dir2D.Y * StartSpd;
+		if (!Dir2D.IsZero())
+		{
+			Velocity.X = Dir2D.X * StartSpd;
+			Velocity.Y = Dir2D.Y * StartSpd;
+		}
+		// else: no direction → keep current velocity, boost speed will ramp up via Tick
 		Velocity.Z = 0.f;
 
 		if (bOnBeat) TriggerOnBeatFlash();
@@ -360,6 +450,7 @@ void UPcQPlayerMovementComponent::ExitCurveJump()
 void UPcQPlayerMovementComponent::EnterWallSpring(const FHitResult& Hit)
 {
 	if (BhopState == EBhopState::WallSwim) return;
+	if (WallEjectImmunityTimer > 0.f) return;  // recently ejected — ignore impact
 	ExitCurveJump();
 
 	BhopState            = EBhopState::WallSwim;
@@ -375,6 +466,7 @@ void UPcQPlayerMovementComponent::EnterWallSpring(const FHitResult& Hit)
 	}
 	SetMovementMode(MOVE_Flying);
 	OnWallSwimChanged.Broadcast(1.f);
+	PushCombo(TEXT("WALL SPRING"), FLinearColor(0.55f, 1.f, 0.35f));
 	UE_LOG(LogTemp, Log, TEXT("[Wall] Entered. Speed=%.0f"), GetHorizontalSpeed());
 }
 
@@ -399,15 +491,36 @@ void UPcQPlayerMovementComponent::EjectFromWall(bool bBeatBoost, bool bJumpEject
 	float EjectSpd = Wall_EjectSpeed;
 	if (bBeatBoost) EjectSpd += Wall_BeatEjectBoost;
 
+	// Guarantee eject dir has a meaningful away-from-wall component.
+	// If player input is pushing them INTO the wall, override with wall normal.
+	if (FVector::DotProduct(EjectDir, WallEntryNormal) < 0.1f)
+		EjectDir = (EjectDir + WallEntryNormal * 2.f).GetSafeNormal2D();
+	if (EjectDir.IsZero()) EjectDir = WallEntryNormal;
+
 	Velocity.X = EjectDir.X * EjectSpd;
 	Velocity.Y = EjectDir.Y * EjectSpd;
-	Velocity.Z = bJumpEject ? Wall_JumpEjectUpKick : 100.f;  // small kick on auto, strong on jump
+	Velocity.Z = bJumpEject ? Wall_JumpEjectUpKick : Wall_AutoEjectUpKick;
 
 	GravityScale = 1.f;
+	bDoubleJumpUsed    = false;  // wall eject resets double jump
+	DoubleJumpCooldown = 0.f;
+	WallEjectImmunityTimer = Wall_EjectImmunitySec;
 	SetMovementMode(MOVE_Falling);
 	OnWallSwimChanged.Broadcast(0.f);
 
-	if (bBeatBoost) TriggerOnBeatFlash();
+	if (bBeatBoost)
+	{
+		TriggerOnBeatFlash();
+		PushCombo(TEXT("BEAT EJECT +SPEED"), FLinearColor(0.55f, 1.f, 0.35f));
+	}
+	else if (bJumpEject)
+	{
+		PushCombo(TEXT("WALL JUMP"), FLinearColor(0.55f, 1.f, 0.35f));
+	}
+	else
+	{
+		PushCombo(TEXT("WALL EJECT"), FLinearColor(0.55f, 1.f, 0.35f));
+	}
 	UE_LOG(LogTemp, Log, TEXT("[Wall] Ejected. Beat=%d Jump=%d Speed=%.0f"), bBeatBoost?1:0, bJumpEject?1:0, EjectSpd);
 }
 
@@ -453,12 +566,46 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 	if (BhopState == EBhopState::GroundPounding)
 	{
-		// GP landing: go to Active, open combo window
-		BhopState             = EBhopState::Active;
-		bGPLandedRecently     = true;
-		bBoostActiveOnGPLand  = false;  // boost wasn't active (we came straight down)
-		GPComboTimer          = GPComboWindowSec;
 		ExitCurveJump();
+		// GP landing → immediately enter slide/boost.
+		// Direction: WASD input if held, otherwise keep zero (don't follow camera).
+		// Player steers freely from the boost state — no forced direction.
+		const FVector WishDir2D = Acceleration.GetSafeNormal2D();
+		const bool bHasInput    = !WishDir2D.IsZero();
+
+		BhopState     = EBhopState::PowerBoost;
+		BoostTimer    = GetBeatSnappedDuration(BoostBaseDurationSec);
+		BoostCooldown = 0.f;
+
+		const float BaseSpd  = MaxWalkSpeed * BoostSpeedMultiplier;
+		const float EntrySpd = IsOnBeat() ? BaseSpd + SlideEntryBoost : BaseSpd;
+		if (bHasInput)
+		{
+			Velocity.X = WishDir2D.X * EntrySpd;
+			Velocity.Y = WishDir2D.Y * EntrySpd;
+		}
+		else
+		{
+			// No input: bleed to zero so player steers from scratch
+			Velocity.X = 0.f;
+			Velocity.Y = 0.f;
+		}
+		Velocity.Z = 0.f;
+
+		// Open combo window so the jump after the slide gets the chain bonus
+		bGPLandedRecently    = true;
+		bBoostActiveOnGPLand = true;
+		GPComboTimer         = GPComboWindowSec;
+
+		if (IsOnBeat())
+		{
+			TriggerOnBeatFlash();
+			PushCombo(TEXT("GP SLAM +BOOST"), FLinearColor(1.f, 0.55f, 0.15f));
+		}
+		else
+		{
+			PushCombo(TEXT("GROUND POUND"), FLinearColor(1.f, 0.55f, 0.15f));
+		}
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
 		return;
 	}
@@ -481,7 +628,7 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	if (BhopState == EBhopState::Active && bJumpInputBuffered && JumpInputBufferTimer > 0.f)
 	{
 		bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
-		DoJump();
+		ExecutePlayerJump(false);
 		OnBhopLanded.Broadcast(GetHorizontalSpeed());
 		return;
 	}
@@ -598,7 +745,8 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	}
 
 	// ── Timer ticks ──────────────────────────────────────────────────────────
-	if (BoostCooldown      > 0.f) BoostCooldown      = FMath::Max(0.f, BoostCooldown      - DeltaTime);
+	if (BoostCooldown           > 0.f) BoostCooldown           = FMath::Max(0.f, BoostCooldown           - DeltaTime);
+	if (WallEjectImmunityTimer  > 0.f) WallEjectImmunityTimer  = FMath::Max(0.f, WallEjectImmunityTimer  - DeltaTime);
 	if (DoubleJumpCooldown > 0.f) DoubleJumpCooldown  = FMath::Max(0.f, DoubleJumpCooldown - DeltaTime);
 	if (OnBeatFlashTimer   > 0.f) OnBeatFlashTimer    = FMath::Max(0.f, OnBeatFlashTimer   - DeltaTime);
 	if (GPComboTimer       > 0.f) { GPComboTimer -= DeltaTime; if (GPComboTimer <= 0.f) { bGPLandedRecently = false; bBoostActiveOnGPLand = false; } }
@@ -660,7 +808,13 @@ void UPcQPlayerMovementComponent::PhysFalling(float deltaTime, int32 Iterations)
 
 	const FVector WishDir  = Acceleration.GetSafeNormal2D();
 	const FVector Vel2D(Velocity.X, Velocity.Y, 0.f);
-	const FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * TargetAirSpeed, deltaTime,
+	const float   CurAirH  = Vel2D.Size();
+
+	// Never decelerate through air control — only accelerate toward wish dir.
+	// Overspeed above cap is handled by the dedicated decay in Tick.
+	// This means boost jump horizontal carries through the entire arc.
+	const float EffAirTarget = WishDir.IsZero() ? 0.f : FMath::Max(CurAirH, TargetAirSpeed);
+	const FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * EffAirTarget, deltaTime,
 	                         WishDir.IsZero() ? CustomAirFriction : CustomAirAcceleration);
 	Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
 

@@ -77,7 +77,11 @@ void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpR
 void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
 void APcQPlayerCharacter::OnGameplayBeat(float) { if (MoveComp) MoveComp->TriggerBeatJump(); }
 
-void APcQPlayerCharacter::OnActiveBeatAction_Handler() { TryFire(); }
+void APcQPlayerCharacter::OnActiveBeatAction_Handler()
+{
+	// Universal on-beat reset: pistol CD cleared
+	PistolCooldown = 0.f;
+}
 
 void APcQPlayerCharacter::Tick(float DeltaTime)
 {
@@ -145,20 +149,22 @@ void APcQPlayerCharacter::TryFire()
 
 	if (bOnBeat)
 	{
-		// Free shot: reset CD so player can fire again immediately
+		// On-beat shot: reset CD to 0 (free shot — can fire again immediately)
+		// Also refreshes DJ and extends boost via NotifyGunFired.
 		PistolCooldown = 0.f;
-		UE_LOG(LogTemp, Log, TEXT("[Pistol] On-beat free shot — CD reset to 0."));
+		if (MoveComp) MoveComp->NotifyGunFired();
+		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
+		UE_LOG(LogTemp, Log, TEXT("[Pistol] On-beat — CD reset, DJ+boost refreshed."));
 	}
 	else
 	{
-		// Normal shot: start CD
+		// Normal shot: start CD. No DJ/boost refresh.
 		UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
 		PistolCooldown = (Sub && Sub->IsReadyForPlayback() && MoveComp)
 		               ? MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec)
 		               : PistolBaseCooldownSec;
+		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT FIRED"), FLinearColor(1.f, 0.25f, 0.25f));
 	}
-
-	if (MoveComp) MoveComp->NotifyGunFired();
 
 	if (IsOnBeat()) 
 	{

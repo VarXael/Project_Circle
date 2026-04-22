@@ -21,6 +21,16 @@ struct FPcHudThreatEvent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Threat") FLinearColor Color       = FLinearColor(1.f, 0.12f, 0.22f, 1.f);
 };
 
+// One entry in the combo action feed.
+USTRUCT()
+struct FPcComboFeedEntry
+{
+	GENERATED_BODY()
+	FString      Label;
+	FLinearColor Color  = FLinearColor::White;
+	float        BornAt = 0.f;  // GetWorld()->GetTimeSeconds() at creation
+};
+
 UCLASS()
 class PROJECT_CIRCLE_API APcQDebugHUD : public AHUD
 {
@@ -28,6 +38,14 @@ class PROJECT_CIRCLE_API APcQDebugHUD : public AHUD
 
 public:
 	virtual void DrawHUD() override;
+
+	// ── Combo feed ───────────────────────────────────────────────────────────
+	UFUNCTION() void OnComboEvent(const FString& Label, FLinearColor Color);
+
+	// How long each feed entry stays on screen before fully fading.
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") float ComboFeed_FadeDuration = 2.4f;
+	// Maximum entries shown simultaneously.
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") int32 ComboFeed_MaxEntries   = 6;
 
 	// ── Threat API ──────────────────────────────────────────────────────────
 	UFUNCTION(BlueprintCallable, Category = "Rhythm UI|Threats")
@@ -90,6 +108,9 @@ private:
 	                     int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
 	                     float FlashHard);
 	void DrawBhopDebug(UPcQPlayerMovementComponent* MC);
+	void DrawComboFeed();
+
+	TArray<FPcComboFeedEntry> ComboFeed;
 	void DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC);
 	FLinearColor GetStateColor(EBhopState State) const;
 

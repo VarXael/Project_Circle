@@ -1,5 +1,4 @@
 #include "PcQDebugHUD.h"
-
 #include "PcQPlayerCharacter.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Character.h"
@@ -95,6 +94,9 @@ void APcQDebugHUD::DrawHUD()
 		{
 			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
 			{
+				// Subscribe to combo events once
+				if (!MC->OnComboEvent.IsAlreadyBound(this, &APcQDebugHUD::OnComboEvent))
+					MC->OnComboEvent.AddDynamic(this, &APcQDebugHUD::OnComboEvent);
 				DrawBhopDebug(MC);
 
 				// ── Beat action ring flash ─────────────────────────────────
@@ -109,6 +111,7 @@ void APcQDebugHUD::DrawHUD()
 
 				// ── Ability cooldown bars ───────────────────────────────────
 				if (Canvas) DrawAbilityBars(MC, PC);
+				if (Canvas) DrawComboFeed();
 			}
 		}
 	}
@@ -531,6 +534,64 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
 }
 
+
+// =============================================================================
+//  COMBO FEED
+// =============================================================================
+
+void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color)
+{
+	if (!GetWorld()) return;
+	FPcComboFeedEntry E;
+	E.Label  = Label;
+	E.Color  = Color;
+	E.BornAt = GetWorld()->GetTimeSeconds();
+	ComboFeed.Add(E);
+	// Trim to max
+	while (ComboFeed.Num() > ComboFeed_MaxEntries)
+		ComboFeed.RemoveAt(0);
+}
+
+void APcQDebugHUD::DrawComboFeed()
+{
+	if (!Canvas || !GEngine || !GetWorld()) return;
+
+	const float Now    = GetWorld()->GetTimeSeconds();
+	const float FX     = 22.f;
+	const float FBY    = Canvas->SizeY * 0.82f;  // bottom of the feed column
+	const float LineH  = 24.f;
+	const float HalfDur = ComboFeed_FadeDuration * 0.55f;  // full opacity until here
+
+	// Remove fully expired entries
+	ComboFeed.RemoveAll([&](const FPcComboFeedEntry& E)
+	{
+		return (Now - E.BornAt) >= ComboFeed_FadeDuration;
+	});
+
+	// Draw most recent at bottom, older above
+	for (int32 i = 0; i < ComboFeed.Num(); ++i)
+	{
+		const FPcComboFeedEntry& E = ComboFeed[ComboFeed.Num() - 1 - i];
+		const float Age   = Now - E.BornAt;
+		const float Alpha = Age < HalfDur
+			? 1.f
+			: FMath::Clamp(1.f - (Age - HalfDur) / (ComboFeed_FadeDuration - HalfDur), 0.f, 1.f);
+		if (Alpha < 0.02f) continue;
+
+		const float Y = FBY - i * LineH;
+
+		// Accent bar (3px)
+		DrawRect(E.Color * FLinearColor(1,1,1,Alpha * 0.88f), FX, Y - 14.f, 3.f, 18.f);
+
+		// Text shadow
+		DrawText(E.Label, FLinearColor(0,0,0, Alpha * 0.65f),
+		         FX + 9.f, Y, GEngine->GetSmallFont(), 1.f);
+		// Text
+		DrawText(E.Label, E.Color * FLinearColor(1,1,1,Alpha),
+		         FX + 8.f, Y - 1.f, GEngine->GetSmallFont(), 1.f);
+	}
+}
+
 FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 {
 	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
@@ -581,7 +642,9 @@ void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerContr
 		B.Label  = TEXT("BOOST");
 		const float CoolAlpha = MC ? MC->GetBoostCooldownAlpha() : 0.f;
 		B.bActive   = MC && MC->IsPowerBoosting();
-		B.FillAlpha = B.bActive ? 1.f : (1.f - CoolAlpha);
+		// During active boost: show remaining fuel drain. During CD: show recovery.
+		const float ActiveAlpha = MC ? MC->GetBoostActiveAlpha() : 0.f;
+		B.FillAlpha = B.bActive ? ActiveAlpha : (1.f - CoolAlpha);
 		B.Status    = B.bActive ? TEXT("ACTIVE") : (CoolAlpha <= 0.f ? TEXT("READY") : TEXT("--"));
 		B.Color     = FLinearColor(1.f, 0.55f, 0.f);
 		Bars.Add(B);
