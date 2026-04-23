@@ -49,16 +49,27 @@ float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (Doub
 
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
-	OnBeatFlashTimer = OnBeatFlashDuration;
+	OnBeatFlashTimer   = OnBeatFlashDuration;
 	BoostCooldown      = 0.f;
 	DoubleJumpCooldown = 0.f;
 	bDoubleJumpUsed    = false;
-	
-	if (BhopState == EBhopState::PowerBoost) {
-		BoostTimer = GetBeatSnappedDuration(BoostBaseDurationSec);
+
+	if (BhopState == EBhopState::PowerBoost)
+	{
+		// Refill slide timer to full
+		BoostTimer = BoostBaseDurationSec;
+		// Pump speed back to boost speed if friction has bled it down
+		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
+		const FVector Dir2D  = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+		if (!Dir2D.IsZero() && GetHorizontalSpeed() < BoostSpd)
+		{
+			Velocity.X = Dir2D.X * BoostSpd;
+			Velocity.Y = Dir2D.Y * BoostSpd;
+			PushCombo(TEXT("SLIDE PUMP"), FLinearColor(1.f, 0.7f, 0.2f));
+		}
 	}
 
-	OnActiveBeatAction.Broadcast();
+	OnActiveBeatAction.Broadcast();  // character resets pistol CD
 }
 
 void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color)
@@ -402,12 +413,16 @@ void UPcQPlayerMovementComponent::EnterWallSpring(const FHitResult& Hit)
 
 	BhopState            = EBhopState::WallSwim;
 	WallEntryNormal      = Hit.ImpactNormal;
+	WallEntrySpeed       = GetHorizontalSpeed();
 	WallCompressionTimer = 0.f;
 	bWallBeatPending     = false;
 
+	// Use selective ignore instead of NoCollision — disabling all collision
+	// causes Super::TickComponent to crash (CMC expects capsule in physics world).
+	// We only need to ignore WorldStatic so we can press into the wall surface.
 	if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr) {
 		WallPrevCollisionProfile = Cap->GetCollisionProfileName();
-		Cap->SetCollisionProfileName(TEXT("NoCollision"));
+		Cap->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Ignore);
 	}
 	SetMovementMode(MOVE_Flying);
 	OnWallSwimChanged.Broadcast(1.f);
@@ -418,6 +433,7 @@ void UPcQPlayerMovementComponent::EjectFromWall(bool bBeatBoost, bool bJumpEject
 {
 	if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
 		Cap->SetCollisionProfileName(WallPrevCollisionProfile.IsNone() ? FName(TEXT("Pawn")) : WallPrevCollisionProfile);
+	// ECR_Block for WorldStatic is restored implicitly when we reset the collision profile above.
 
 	BhopState = EBhopState::Active;
 
@@ -429,7 +445,8 @@ void UPcQPlayerMovementComponent::EjectFromWall(bool bBeatBoost, bool bJumpEject
 		if (EjectDir.IsZero()) EjectDir = WallEntryNormal;
 	}
 
-	float EjectSpd = Wall_EjectSpeed;
+	// Eject at least as fast as you entered — wall redirects, never slows you down
+	float EjectSpd = FMath::Max(WallEntrySpeed, Wall_EjectSpeed);
 	if (bBeatBoost) EjectSpd += Wall_BeatEjectBoost;
 
 	if (FVector::DotProduct(EjectDir, WallEntryNormal) < 0.1f)
@@ -478,6 +495,7 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
 			Cap->SetCollisionProfileName(WallPrevCollisionProfile.IsNone() ? FName(TEXT("Pawn")) : WallPrevCollisionProfile);
 		BhopState = EBhopState::Active; OnWallSwimChanged.Broadcast(0.f);
+		// Collision profile reset above restores WorldStatic blocking.
 		Super::ProcessLanded(Hit, remainingTime, Iterations); return;
 	}
 

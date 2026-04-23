@@ -190,6 +190,7 @@ private:
 
 	FName   WallPrevCollisionProfile = NAME_None;
 	FVector WallEntryNormal          = FVector::ZeroVector;
+	float   WallEntrySpeed           = 0.f;  // cached at entry; eject preserves it
 	float   WallCompressionTimer     = 0.f;
 	bool    bWallBeatPending         = false;  
 	float   WallEjectImmunityTimer   = 0.f;    

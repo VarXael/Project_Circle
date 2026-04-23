@@ -151,8 +151,8 @@ void APcQPlayerCharacter::TryFire()
 	if (bOnBeat)
 	{
 		PistolCooldown = 0.f;
+		// NotifyGunFired triggers the universal reset: slide pump, DJ, boost, HUD flash
 		if (MoveComp) MoveComp->NotifyGunFired();
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
 	}
 	else
 	{

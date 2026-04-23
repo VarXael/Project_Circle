@@ -54,8 +54,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boost|Camera") float BoostFOVGain     =  8.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boost|Camera") float BoostCameraSpeed =  8.f;
 	
-	// NEW: Camera Heartbeat Pulse (Makes the rhythm clearly readable in the world)
+	// Rhythm beat punch
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feedback") float CameraBeatPunch = 3.f;
+	// Auto-jump: subtle FOV widen so you feel the sync state physically
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feedback") float AutoJumpFOVBoost  = 5.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feedback") float AutoJumpCamSpeed  = 5.f;
 
 private:
 	void Input_Move(const FInputActionValue& Value);
@@ -74,8 +77,9 @@ private:
 	
 	float DefaultCameraZ     = 60.f;
 	float DefaultFOV         = 90.f;
-	float CurrentBoostAlpha  = 0.f;
-	float PistolCooldown     = 0.f;
+	float CurrentBoostAlpha    = 0.f;
+	float CurrentAutoJumpAlpha = 0.f;
+	float PistolCooldown       = 0.f;
 	
 	float BeatFOVOffset      = 0.f; // Controls the camera pulse
 };
