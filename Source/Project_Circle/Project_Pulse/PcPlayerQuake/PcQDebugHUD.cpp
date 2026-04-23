@@ -89,26 +89,25 @@ void APcQDebugHUD::DrawHUD()
 				const float H          = Canvas->SizeY;
 				const bool  bAutoJumping = MC->IsAutoJumping();
 
-				// ── CLEAN AUTO-JUMP SYNC VISUALS ────────────────────────────────────
+				// ── AMBIENT RHYTHM PULSE ────────────────────────────────────
+				// Always beats softly so you can keep time visually
+				const float AmbAlpha = 0.04f + 0.15f * FlashSoft;
+				const float BandT = 16.f + 10.f * FlashSoft;
+				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, 0.f, W, BandT); 
+				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, H - BandT, W, BandT);
+				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, 0.f, BandT, H);
+				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), W - BandT, 0.f, BandT, H);
+
 				if (bAutoJumping)
 				{
-					// 1. Soft screen glow (subtle, non-intrusive)
-					const float GlowAlpha = 0.05f + 0.12f * FlashSoft;
-					DrawRect(FLinearColor(0.2f, 1.f, 0.4f, GlowAlpha), 0.f, 0.f, W, 20.f); 
-					DrawRect(FLinearColor(0.2f, 1.f, 0.4f, GlowAlpha), 0.f, H - 20.f, W, 20.f);
-
-					// 2. Hexagonal Sync Reticle around the crosshair
-					// It breathes with the beat, making the rhythm visible right where you aim.
 					const float R = 28.f + 6.f * FlashSoft;
 					const float T = 1.5f + 1.f * FlashSoft;
 					const FLinearColor SyncCol(0.25f, 1.f, 0.45f, 0.4f + 0.6f * FlashSoft);
 					
-					// Draw 6-sided brackets
 					for (int i = 0; i < 6; ++i)
 					{
 						float A1 = (i * 60.f) * (PI / 180.f);
 						float A2 = ((i + 1) * 60.f) * (PI / 180.f);
-						// Draw only the corners of the hex, leaving gaps
 						float MidA = (A1 + A2) * 0.5f;
 						DrawLine(CX + R * FMath::Cos(A1), CY + R * FMath::Sin(A1), 
 						         CX + R * FMath::Cos(FMath::Lerp(A1, MidA, 0.5f)), CY + R * FMath::Sin(FMath::Lerp(A1, MidA, 0.5f)), SyncCol, T);
@@ -116,7 +115,6 @@ void APcQDebugHUD::DrawHUD()
 						         CX + R * FMath::Cos(FMath::Lerp(A2, MidA, 0.5f)), CY + R * FMath::Sin(FMath::Lerp(A2, MidA, 0.5f)), SyncCol, T);
 					}
 
-					// 3. Text Indicator
 					const float AX = CX - 40.f;
 					const float AY = CY + 45.f; 
 					if (GEngine) DrawText(TEXT("SYNCED"), SyncCol, AX + 18.f, AY, GEngine->GetSmallFont(), 1.f);

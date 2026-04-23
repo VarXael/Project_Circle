@@ -49,16 +49,26 @@ float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (Doub
 
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
+	// UNIVERSAL RESET: Any on-beat action completely restores everything!
 	OnBeatFlashTimer = OnBeatFlashDuration;
 	BoostCooldown      = 0.f;
 	DoubleJumpCooldown = 0.f;
 	bDoubleJumpUsed    = false;
 	
+	// If currently sliding, refill the slide timer AND give a speed pump!
 	if (BhopState == EBhopState::PowerBoost) {
 		BoostTimer = GetBeatSnappedDuration(BoostBaseDurationSec);
+		
+		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
+		const FVector Dir2D  = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+		if (!Dir2D.IsZero() && GetHorizontalSpeed() < BoostSpd)
+		{
+			Velocity.X = Dir2D.X * BoostSpd;
+			Velocity.Y = Dir2D.Y * BoostSpd;
+		}
 	}
 
-	OnActiveBeatAction.Broadcast();
+	OnActiveBeatAction.Broadcast(); // This tells the character to reset Pistol CD
 }
 
 void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color)
@@ -83,6 +93,32 @@ void UPcQPlayerMovementComponent::ActivateBoost()
 	PushCombo(TEXT("BOOST"), FLinearColor(1.f, 0.55f, 0.15f));
 }
 
+void UPcQPlayerMovementComponent::ActivateSlide()
+{
+	if (BhopState == EBhopState::PowerBoost) return;
+
+	const bool bOnBeat = IsOnBeat();
+
+	BhopState     = EBhopState::PowerBoost;
+	BoostTimer    = BoostBaseDurationSec;
+	BoostCooldown = 0.f;
+	bAutoJumpActive = false;
+
+	// Snap velocity to boost speed on entry — hold→slide should feel immediate
+	FVector Dir = Acceleration.GetSafeNormal2D();
+	if (Dir.IsZero()) Dir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (!Dir.IsZero())
+	{
+		const float EntrySpd = FMath::Max(GetHorizontalSpeed(), MaxWalkSpeed * BoostSpeedMultiplier)
+		                      + (bOnBeat ? SlideEntryBoost : 0.f);
+		Velocity.X = Dir.X * EntrySpd;
+		Velocity.Y = Dir.Y * EntrySpd;
+	}
+
+	if (bOnBeat) TriggerOnBeatFlash();
+	PushCombo(bOnBeat ? TEXT("PERFECT SLIDE") : TEXT("SLIDE"), FLinearColor(1.f, 0.55f, 0.15f));
+}
+
 void UPcQPlayerMovementComponent::ExitBoost()
 {
 	BhopState     = EBhopState::Active;
@@ -93,22 +129,9 @@ void UPcQPlayerMovementComponent::ExitBoost()
 
 void UPcQPlayerMovementComponent::NotifyGunFired()
 {
-	if (BhopState == EBhopState::PowerBoost) {
-		BoostTimer = BoostBaseDurationSec;  
-		BoostGraceTimer = 0.f;
-		PushCombo(TEXT("BOOST RESET"), FLinearColor(1.f, 0.55f, 0.15f));
-	} else if (BoostGraceTimer > 0.f) {
-		BoostGraceTimer = 0.f;
-		BhopState     = EBhopState::PowerBoost;
-		BoostTimer    = BoostBaseDurationSec;
-		BoostCooldown = 0.f;
-		PushCombo(TEXT("BOOST REVIVE"), FLinearColor(1.f, 0.75f, 0.15f));
-	}
-	if (bDoubleJumpUsed) {
-		bDoubleJumpUsed    = false;
-		DoubleJumpCooldown = 0.f;
-		PushCombo(TEXT("DJ RESET"), FLinearColor(0.27f, 0.67f, 1.f));
-	}
+	// On-beat gun fire = universal reset: slide pump, DJ reset, boost CD reset, pistol CD reset.
+	// This is the single source of truth — the character does NOT need to call TriggerOnBeatFlash separately.
+	TriggerOnBeatFlash();
 }
 
 void UPcQPlayerMovementComponent::ExecutePlayerJump(bool bFromBoost)
@@ -178,29 +201,17 @@ void UPcQPlayerMovementComponent::TriggerBeatJump()
 	}
 
 	if (IsMovingOnGround()) {
-		if (BhopState == EBhopState::PowerBoost)
-		{
-			// The Dash Pump! Hitting the beat while sliding restores speed if lost.
-			const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-			const FVector Dir2D  = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-			if (!Dir2D.IsZero() && GetHorizontalSpeed() < BoostSpd)
-			{
-				Velocity.X = Dir2D.X * BoostSpd;
-				Velocity.Y = Dir2D.Y * BoostSpd;
-				PushCombo(TEXT("SLIDE PUMP"), FLinearColor(1.f, 0.7f, 0.15f));
-			}
-			TriggerOnBeatFlash();
-		}
-		else if (BhopState == EBhopState::Active)
+		if (BhopState == EBhopState::Active)
 		{
 			if (bAutoJumpEnabled || bAutoJumpActive)
 			{
 				TriggerOnBeatFlash();
-				// Auto-Jumps are ALWAYS boosted jumps!
 				ExecutePlayerJump(true);  
 				OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			}
 		}
+		// Notice we removed the automatic slide pump from here!
+		// To get a slide pump, the player must actively do something on beat.
 	}
 	else if (!IsFalling() || Velocity.Z <= 0.f) {
 		bJumpQueuedForBeat = true;
@@ -266,8 +277,10 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 
 	if (IsMovingOnGround())
 	{
+		// DASH PULSE + JUMP -> BOOST JUMP
 		if (BhopState == EBhopState::PowerBoost || bSlideImpulseActive) {
 			if (BhopState == EBhopState::PowerBoost) ExitBoost();
+			bSlideImpulseActive = false; // consume it
 			ExecutePlayerJump(true); 
 			OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			return;
@@ -284,7 +297,6 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 		} 
 		else 
 		{
-			// Jumping off-beat manually EXITS auto-jump
 			if (bAutoJumpActive) {
 				bAutoJumpActive = false;
 				PushCombo(TEXT("AUTO JUMP OFF"), FLinearColor(0.5f, 0.5f, 0.5f));
@@ -335,52 +347,44 @@ void UPcQPlayerMovementComponent::OnSlidePressed()
 		PushCombo(TEXT("AUTO JUMP OFF"), FLinearColor(0.5f, 0.5f, 0.5f));
 	}
 
-	// DASH IS INSTANT ON GROUND!
+	const bool bOnBeat = IsOnBeat();
+	if (bOnBeat) TriggerOnBeatFlash(); // Universal reset + active pump if sliding
+
 	if (IsMovingOnGround() && BhopState != EBhopState::PowerBoost) {
-		DoBriefDash();
+		FVector DashDir = Acceleration.GetSafeNormal2D();
+		if (DashDir.IsZero()) DashDir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+		if (DashDir.IsZero() && CharacterOwner) DashDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+
+		if (!DashDir.IsZero()) {
+			float TargetSpeed = FMath::Max(GetHorizontalSpeed(), DashImpulseSpeed);
+			if (bOnBeat) TargetSpeed += SlideEntryBoost; // Reward on-beat dash
+			Velocity.X = DashDir.X * TargetSpeed;
+			Velocity.Y = DashDir.Y * TargetSpeed;
+			PushCombo(bOnBeat ? TEXT("PERFECT DASH") : TEXT("DASH PULSE"), FLinearColor(1.f, 0.65f, 0.2f));
+		}
 	}
 }
 
 void UPcQPlayerMovementComponent::OnSlideReleased() {}
 
-void UPcQPlayerMovementComponent::DoBriefDash()
-{
-	if (BhopState == EBhopState::PowerBoost) return; 
-
-	FVector DashDir = Acceleration.GetSafeNormal2D();
-	if (DashDir.IsZero()) DashDir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-	if (DashDir.IsZero() && CharacterOwner) DashDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
-
-	if (!DashDir.IsZero())
-	{
-		// Give them a flat burst of speed (or maintain if already going faster)
-		float TargetSpeed = FMath::Max(GetHorizontalSpeed(), DashImpulseSpeed);
-		Velocity.X = DashDir.X * TargetSpeed;
-		Velocity.Y = DashDir.Y * TargetSpeed;
-		PushCombo(TEXT("DASH"), FLinearColor(1.f, 0.65f, 0.2f));
-	}
-}
-
-void UPcQPlayerMovementComponent::ActivateSlide()
-{
-	if (BhopState == EBhopState::PowerBoost) return;
-	
-	BhopState     = EBhopState::PowerBoost;
-	BoostTimer    = BoostBaseDurationSec;
-	BoostCooldown = 0.f;
-	bAutoJumpActive = false;
-
-	PushCombo(TEXT("SLIDE"), FLinearColor(1.f, 0.55f, 0.15f));
-}
+void UPcQPlayerMovementComponent::DoBriefDash() {} // Not used directly anymore, integrated into OnSlidePressed
 
 void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
 	if (BhopState == EBhopState::WallSwim) return;
-
 	bAutoJumpActive = false; 
+
+	const bool bOnBeat = IsOnBeat();
+	if (bOnBeat) TriggerOnBeatFlash();
 
 	if (IsFalling() && BhopState != EBhopState::GroundPounding)
 	{
+		if (CanBufferLanding()) {
+			bGPInputBuffered   = true;
+			GPInputBufferTimer = JumpInputBufferWindow; 
+			return;
+		}
+
 		ExitCurveJump();
 		BhopState     = EBhopState::GroundPounding;
 		GPCancelTimer = 0.f;
@@ -539,9 +543,22 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	if (BhopState == EBhopState::GroundPounding)
 	{
 		ExitCurveJump();
+		const FVector WishDir2D = Acceleration.GetSafeNormal2D();
+		const bool bHasInput    = !WishDir2D.IsZero();
+
 		BhopState     = EBhopState::PowerBoost;
 		BoostTimer    = GetBeatSnappedDuration(BoostBaseDurationSec);
 		BoostCooldown = 0.f;
+
+		const float BaseSpd  = MaxWalkSpeed * BoostSpeedMultiplier;
+		const float EntrySpd = IsOnBeat() ? BaseSpd + SlideEntryBoost : BaseSpd;
+		if (bHasInput) {
+			Velocity.X = WishDir2D.X * EntrySpd;
+			Velocity.Y = WishDir2D.Y * EntrySpd;
+		} else {
+			Velocity.X = 0.f; Velocity.Y = 0.f;
+		}
+		Velocity.Z = 0.f;
 
 		bGPLandedRecently    = true;
 		bBoostActiveOnGPLand = true;
@@ -555,6 +572,14 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		}
 		
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
+
+		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f)
+		{
+			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
+			ExitBoost();
+			ExecutePlayerJump(true); 
+			OnBhopLanded.Broadcast(GetHorizontalSpeed());
+		}
 		return;
 	}
 
@@ -568,6 +593,14 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 	if (BhopState == EBhopState::Active)
 	{
+		if (bGPInputBuffered && GPInputBufferTimer > 0.f) {
+			bGPInputBuffered = false; GPInputBufferTimer = 0.f;
+			ExecutePlayerJump(true); 
+			PushCombo(TEXT("BOOST JUMP"), FLinearColor(1.f, 0.55f, 0.15f));
+			OnBhopLanded.Broadcast(GetHorizontalSpeed());
+			return;
+		}
+
 		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f) {
 			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
 			const bool bWasFromGP = bGPLandedRecently && GPComboTimer > 0.f;
@@ -679,6 +712,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	
 	if (BhopState == EBhopState::GroundPounding) GPCancelTimer += DeltaTime;
 	if (bJumpInputBuffered) { JumpInputBufferTimer -= DeltaTime; if (JumpInputBufferTimer <= 0.f) bJumpInputBuffered = false; }
+	if (bGPInputBuffered)   { GPInputBufferTimer   -= DeltaTime; if (GPInputBufferTimer   <= 0.f) bGPInputBuffered   = false; }
 	if (bJumpQueuedForBeat) { BeatQueueTimer       -= DeltaTime; if (BeatQueueTimer       <= 0.f) bJumpQueuedForBeat = false; }
 }
 

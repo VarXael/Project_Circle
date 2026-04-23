@@ -6,6 +6,7 @@
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
 #include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
 
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
@@ -55,10 +56,8 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EIC->BindAction(IA_Jump, ETriggerEvent::Started,   this, &APcQPlayerCharacter::Input_JumpPressed);
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
-		// Ground pound: simple press, no tap/hold detection
 		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started,    this, &APcQPlayerCharacter::Input_GroundPound);
 
-		// Slide: separate button with press/release for dash-vs-slide detection
 		if (IA_Slide)
 		{
 			EIC->BindAction(IA_Slide, ETriggerEvent::Started,   this, &APcQPlayerCharacter::Input_SlidePressed);
@@ -67,8 +66,6 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		if (IA_Fire)        EIC->BindAction(IA_Fire,        ETriggerEvent::Started,    this, &APcQPlayerCharacter::Input_Fire);
 	}
 }
-
-// ── Input handlers ────────────────────────────────────────────────────────────
 
 void APcQPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
@@ -90,36 +87,22 @@ void APcQPlayerCharacter::Input_JumpPressed()  { if (MoveComp) MoveComp->OnJumpP
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
 void APcQPlayerCharacter::Input_GroundPound()  { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
 
-// ── Slide: press starts impulse + hold tracking; release decides dash vs slide ─
-
 void APcQPlayerCharacter::Input_SlidePressed()
 {
 	if (!MoveComp) return;
 	bSlideHeld      = true;
 	SlideHeldTime   = 0.f;
 	bSlideActivated = false;
-	MoveComp->OnSlidePressed();  // starts impulse window (boosts next jump)
+	MoveComp->OnSlidePressed();  
 }
 
 void APcQPlayerCharacter::Input_SlideReleased()
 {
 	if (!MoveComp) return;
 	bSlideHeld = false;
-
-	if (!bSlideActivated)
-	{
-		// Button released before the slide threshold — brief dash
-		if (MoveComp->IsMovingOnGround())
-			MoveComp->DoBriefDash();
-	}
-	// If bSlideActivated, the slide is already running — release does nothing to it,
-	// slide exits naturally when BoostTimer runs out or speed drops below minimum.
-
 	bSlideActivated = false;
 	MoveComp->OnSlideReleased();
 }
-
-// ── Beat / action callbacks ───────────────────────────────────────────────────
 
 void APcQPlayerCharacter::OnGameplayBeat(float)
 {
@@ -132,27 +115,22 @@ void APcQPlayerCharacter::OnActiveBeatAction_Handler()
 	PistolCooldown = 0.f;
 }
 
-// ── Tick ─────────────────────────────────────────────────────────────────────
-
 void APcQPlayerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	UpdateCameraEffects(DeltaTime);
 	if (PistolCooldown > 0.f) PistolCooldown = FMath::Max(0.f, PistolCooldown - DeltaTime);
 
-	// Slide hold-to-activate detection
 	if (bSlideHeld && !bSlideActivated && MoveComp && MoveComp->IsMovingOnGround())
 	{
 		SlideHeldTime += DeltaTime;
 		if (SlideHeldTime >= SlideActivateThreshold)
 		{
 			bSlideActivated = true;
-			MoveComp->ActivateSlide();
+			MoveComp->ActivateSlide(); 
 		}
 	}
 }
-
-// ── Camera ────────────────────────────────────────────────────────────────────
 
 void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
 {
@@ -166,13 +144,11 @@ void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
 		FMath::Lerp(DefaultCameraZ, DefaultCameraZ - BoostCameraDropZ, CurrentBoostAlpha)));
 
 	float FOV = DefaultFOV;
-	FOV += BoostFOVGain    * CurrentBoostAlpha;    // slide widens FOV
-	FOV += AutoJumpFOVBoost * CurrentAutoJumpAlpha; // auto-jump also widens FOV (different feel)
-	FOV -= BeatFOVOffset;                           // beat punch dips it slightly
+	FOV += BoostFOVGain    * CurrentBoostAlpha;    
+	FOV += AutoJumpFOVBoost * CurrentAutoJumpAlpha; 
+	FOV -= BeatFOVOffset;                           
 	CameraComp->SetFieldOfView(FOV);
 }
-
-// ── Combat ────────────────────────────────────────────────────────────────────
 
 float APcQPlayerCharacter::GetPistolCooldownAlpha() const
 {
@@ -206,8 +182,8 @@ void APcQPlayerCharacter::TryFire()
 	if (bOnBeat)
 	{
 		PistolCooldown = 0.f;
+		// NotifyGunFired calls TriggerOnBeatFlash → universal reset (DJ, boost, slide pump, pistol via delegate)
 		if (MoveComp) MoveComp->NotifyGunFired();
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
 	}
 	else
 	{
@@ -220,21 +196,28 @@ void APcQPlayerCharacter::TryFire()
 
 	if (bOnBeat)
 	{
-		TArray<FHitResult> OutHits;
-		FCollisionShape    Sphere = FCollisionShape::MakeSphere(5000.f);
+		TArray<FOverlapResult> Overlaps;
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(5000.f);
 		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-		GetWorld()->SweepMultiByChannel(OutHits, CamLoc, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QP);
+		
+		// FIXED: Uses Overlap instead of Sweep to avoid physical engine bugs with zero-length rays
+		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QP);
 
 		APcQEnemyBase* Best = nullptr; float BestDot = 0.90f;
-		for (auto& H : OutHits)
+		for (auto& O : Overlaps)
 		{
-			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(H.GetActor()))
+			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(O.GetActor()))
 			{
 				float D = FVector::DotProduct(CamForward, (E->GetActorLocation() - CamLoc).GetSafeNormal());
 				if (D > BestDot) { BestDot = D; Best = E; }
 			}
 		}
-		if (Best) { UGameplayStatics::ApplyDamage(Best, BaseDamage, GetController(), this, nullptr); return; }
+		if (Best) { 
+			UGameplayStatics::ApplyDamage(Best, BaseDamage, GetController(), this, nullptr); 
+			// THICK BLUE LASER OF DEATH
+			DrawDebugLine(GetWorld(), CamLoc, Best->GetActorLocation(), FColor::Cyan, false, 0.8f, 0, 12.0f);
+			return; 
+		}
 	}
 
 	FHitResult Hit; FCollisionQueryParams QP2; QP2.AddIgnoredActor(this);
