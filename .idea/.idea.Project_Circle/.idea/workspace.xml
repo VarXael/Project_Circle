@@ -13,8 +13,9 @@
   <component name="ChangeListManager">
     <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/CatSong/DA_CatLoving.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/CatSong/DA_CatLoving.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/Phantasy/DT_Phantasy.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/Phantasy/DT_Phantasy.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerMovementComponent.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerMovementComponent.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/Inputs/IMC_PcQPlayer.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/Inputs/IMC_PcQPlayer.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" afterDir="false" />
@@ -46,8 +47,10 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="cidr-memory-view://0" root0="FORCE_HIGHLIGHTING" />
+    <setting file="cidr-memory-view://6" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/AutomationTool/SteamDeck/SteamDeckSupport.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Classes/GameFramework/Actor.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Classes/GameFramework/Character.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Private/Components/CharacterMovementComponent.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcDebugHUD.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcDebugHUD.h" root0="FORCE_HIGHLIGHTING" />
@@ -68,20 +71,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;C/C++ Project.Games\\Project_Circle.executor&quot;: &quot;Debug&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;VisceraFest-Inspired&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "C/C++ Project.Games\\Project_Circle.executor": "Debug",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "git-widget-placeholder": "Test",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="Games\Project_Circle" type="CppProject" factoryName="C++ Project" temporary="true">
       <configuration_1 setup="1">
@@ -129,6 +132,7 @@
       <workItem from="1776877379328" duration="2572000" />
       <workItem from="1776879996203" duration="7345000" />
       <workItem from="1776893618003" duration="1206000" />
+      <workItem from="1776974863856" duration="7383000" />
     </task>
     <servers />
   </component>

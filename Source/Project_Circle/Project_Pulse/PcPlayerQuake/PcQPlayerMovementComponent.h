@@ -9,6 +9,16 @@
 UENUM(BlueprintType)
 enum class EBhopState : uint8 { Active, PowerBoost, GroundPounding, WallSwim };
 
+UENUM(BlueprintType)
+enum class ESnapAction : uint8
+{
+	None,
+	Jump,         // grounded: powered boost jump
+	LandingJump,  // near-ground: buffered boost jump on landing (own visual window)
+	DoubleJump,   // airborne: boosted DJ
+	Slide,        // sliding: surge + refill
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBhopChargeUpdated, float, ChargeAlpha);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBhopActivated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBhopCancelled);
@@ -16,6 +26,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBhopLanded, float, HorizontalSpee
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWallSwimChanged, float, SwimAlpha);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnActiveBeatAction);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnComboEvent, const FString&, Label, FLinearColor, Color);
+// Fires when snap activates/changes/cancels. Bind in BP to play the "finger snap" SFX.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSnapStateChanged, ESnapAction, NewAction);
+// Fires on every beat that the snap auto-executes an action. Bind in BP for the "pulse" SFX.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSnapPulse, ESnapAction, SnapAction);
 
 UCLASS(Blueprintable, BlueprintType)
 class PROJECT_CIRCLE_API UPcQPlayerMovementComponent : public UCharacterMovementComponent
@@ -30,6 +44,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundReleased();
 	UFUNCTION(BlueprintCallable, Category = "Beat Sync") void TriggerBeatJump();
+	UFUNCTION(BlueprintCallable, Category = "Snap")      void OnSnapPressed();  // right click on beat
 	UFUNCTION(BlueprintCallable, Category = "Movement") void NotifyGunFired();
 
 	UFUNCTION(BlueprintPure) EBhopState GetBhopState()       const { return BhopState; }
@@ -39,12 +54,16 @@ public:
 	UFUNCTION(BlueprintPure) bool        HasQueuedJump()      const { return bJumpQueuedForBeat; }
 	UFUNCTION(BlueprintPure) bool        IsWallSwimming()     const { return BhopState == EBhopState::WallSwim; }
 	UFUNCTION(BlueprintPure) bool        IsPowerBoosting()    const { return BhopState == EBhopState::PowerBoost; }
-	UFUNCTION(BlueprintPure) bool        IsAutoJumping()      const { return bAutoJumpActive; }
+	UFUNCTION(BlueprintPure) bool        IsAutoJumping()      const { return bAutoJumpEnabled; }
+	UFUNCTION(BlueprintPure) bool        IsSnapping()         const { return false; }  // snap is now stateless — use OnSnapPulse/OnSnapStateChanged delegates
+	UFUNCTION(BlueprintPure) ESnapAction  GetActiveSnap()      const;  // computed from current state — for HUD color
+	UFUNCTION(BlueprintPure) float        GetSnapPulseFlash()  const { return SnapPulseTimer > 0.f ? FMath::Clamp(SnapPulseTimer / 0.15f, 0.f, 1.f) : 0.f; }
 
 	UFUNCTION(BlueprintPure) float GetBoostCooldownAlpha()      const;
 	UFUNCTION(BlueprintPure) float GetBoostActiveAlpha()        const;
 	UFUNCTION(BlueprintPure) float GetDoubleJumpCooldownAlpha() const;
 	UFUNCTION(BlueprintPure) float GetBeatSnappedDuration(float BaseSec) const;
+	UFUNCTION(BlueprintPure) float GetScaledSpeed(float BaseSpeed) const;
 
 	UFUNCTION(BlueprintPure) float GetOnBeatFlash() const
 	{
@@ -62,6 +81,10 @@ public:
 	UPROPERTY(BlueprintAssignable) FOnWallSwimChanged   OnWallSwimChanged;
 	UPROPERTY(BlueprintAssignable) FOnActiveBeatAction  OnActiveBeatAction;
 	UPROPERTY(BlueprintAssignable) FOnComboEvent        OnComboEvent;
+	// Bind to play the finger-snap SFX. Fires on activation and cancellation.
+	UPROPERTY(BlueprintAssignable) FOnSnapStateChanged  OnSnapStateChanged;
+	// Bind to play the beat-pulse SFX. Fires on every auto-executed beat action.
+	UPROPERTY(BlueprintAssignable) FOnSnapPulse         OnSnapPulse;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Curve")
 	TObjectPtr<UCurveFloat> JumpCurve = nullptr;
@@ -92,7 +115,6 @@ public:
 	// ── On-beat bonus hop ─────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop") float BonusHopSpeedBoost = 300.f;
 	
-	// WIDENED THE RHYTHM WINDOW (Was 120, now 160 for forgiveness)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop") int32 OnBeatWindowMS     = 160;
 
 	// ── Power Boost ───────────────────────────────────────────────────────────
@@ -103,6 +125,11 @@ public:
 
 	// ── Double Jump ───────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Double Jump") float DoubleJumpBaseCooldownSec = 2.0f;
+
+	// ── Jump Arc ──────────────────────────────────────────────────────────────
+	// This dictates the horizontal scaling. 0.55s is our baseline beat. 
+	// At faster tempos, horizontal speeds scale UP dynamically to maintain jump distance!
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Arc") float ReferenceBeatInterval = 0.55f;
 
 	// ── Ground Pound ──────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundSlamSpeed = -2800.f;
@@ -148,7 +175,7 @@ private:
 	float GPInputBufferTimer   = 0.f;
 	
 	bool  bBonusHopRequested   = false;
-	bool  bAutoJumpActive      = false;  
+	float SnapPulseTimer       = 0.f;                
 
 	float GPCancelTimer = 0.f;   
 
@@ -164,13 +191,13 @@ private:
 
 	float OnBeatFlashTimer = 0.f;
 	void  TriggerOnBeatFlash();
-	void  PushCombo(const FString& Label, FLinearColor Color);  
+	void  PushCombo(const FString& Label, FLinearColor Color);
+	void  OnSnapPressed_Internal();  
 
 	bool  IsOnBeat()   const;
 	bool  BoostReady() const { return BoostCooldown <= 0.f && BhopState != EBhopState::PowerBoost; }
 	bool  DJumpReady() const { return DoubleJumpCooldown <= 0.f && !bDoubleJumpUsed; }
 	
-	// Helper to dynamically check if we are close enough to the floor to buffer a jump (prevents eating DJ)
 	bool  CanBufferLanding() const;
 
 	void  ActivateBoost();
@@ -190,7 +217,7 @@ private:
 
 	FName   WallPrevCollisionProfile = NAME_None;
 	FVector WallEntryNormal          = FVector::ZeroVector;
-	float   WallEntrySpeed           = 0.f;  // cached at entry; eject preserves it
+	float   WallEntrySpeed           = 0.f;  
 	float   WallCompressionTimer     = 0.f;
 	bool    bWallBeatPending         = false;  
 	float   WallEjectImmunityTimer   = 0.f;    

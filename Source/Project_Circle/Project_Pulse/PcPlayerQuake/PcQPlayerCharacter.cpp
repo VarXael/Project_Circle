@@ -6,6 +6,7 @@
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
 #include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
 
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
@@ -52,6 +53,7 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
 		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
+		if (IA_Snap) EIC->BindAction(IA_Snap, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Snap);
 		if (IA_Fire) EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
 	}
 }
@@ -73,6 +75,7 @@ void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value) {
 void APcQPlayerCharacter::Input_JumpPressed() { if (MoveComp) MoveComp->OnJumpPressed(); }
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
 void APcQPlayerCharacter::Input_GroundPound() { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
+void APcQPlayerCharacter::Input_Snap()        { if (MoveComp) MoveComp->OnSnapPressed(); }
 
 void APcQPlayerCharacter::OnGameplayBeat(float) 
 { 
@@ -163,38 +166,36 @@ void APcQPlayerCharacter::TryFire()
 		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT FIRED"), FLinearColor(1.f, 0.25f, 0.25f));
 	}
 
-	if (IsOnBeat()) 
+	if (bOnBeat)
 	{
-		TArray<FHitResult> OutHits;
-		FCollisionShape Sphere = FCollisionShape::MakeSphere(5000.f); 
+		// On-beat: wide auto-aim sphere, always draw the cyan beam regardless of hit
+		TArray<FOverlapResult> Overlaps;
+		FCollisionShape Sphere = FCollisionShape::MakeSphere(5000.f);
 		FCollisionQueryParams QueryParams;
 		QueryParams.AddIgnoredActor(this);
-		
-		GetWorld()->SweepMultiByChannel(OutHits, CamLoc, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QueryParams);
+		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QueryParams);
 
 		APcQEnemyBase* BestEnemy = nullptr;
-		float BestDot = 0.90f; 
-
-		for (const FHitResult& Hit : OutHits)
+		float BestDot = 0.90f;
+		for (const FOverlapResult& O : Overlaps)
 		{
-			if (APcQEnemyBase* EnemyActor = Cast<APcQEnemyBase>(Hit.GetActor()))
+			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(O.GetActor()))
 			{
-				FVector DirToEnemy = (EnemyActor->GetActorLocation() - CamLoc).GetSafeNormal();
-				float Dot = FVector::DotProduct(CamForward, DirToEnemy);
-
-				if (Dot > BestDot) {
-					BestDot = Dot;
-					BestEnemy = EnemyActor;
-				}
+				float D = FVector::DotProduct(CamForward, (E->GetActorLocation() - CamLoc).GetSafeNormal());
+				if (D > BestDot) { BestDot = D; BestEnemy = E; }
 			}
 		}
 
-		if (BestEnemy) {
+		FVector BeamEnd = CamLoc + CamForward * 5000.f;
+		if (BestEnemy)
+		{
 			UGameplayStatics::ApplyDamage(BestEnemy, BaseDamage, GetController(), this, nullptr);
-			DrawDebugLine(GetWorld(), CamLoc, BestEnemy->GetActorLocation(), FColor::Cyan, false, 0.5f, 0, 5.0f);
-			UE_LOG(LogTemp, Warning, TEXT("PERFECT BEAT HIT!"));
-			return; 
+			BeamEnd = BestEnemy->GetActorLocation();
 		}
+		// Always draw cyan beam — shows the shot was powered even on a miss
+		DrawDebugLine(GetWorld(), CamLoc, BeamEnd, FColor::Cyan, false, 0.5f, 0, 5.0f);
+		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
+		return;
 	}
 	
 	FHitResult HitResult;
