@@ -112,6 +112,20 @@ private:
 
 	TArray<FPcComboFeedEntry> ComboFeed;
 	void DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC);
+
+	// ── SYNC SYSTEM ──────────────────────────────────────────────────────────
+	void DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC);
+	void UpdateSyncWaves(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC);
+
+	// Ring buffers — 200 samples at ~20Hz = 10 seconds of history
+	static constexpr int32 WaveHistorySize = 200;
+	float SongWave[200]   = {};  // decaying note impulse envelope
+	float PlayerWave[200] = {};  // player action pulse history
+	int32 WaveWriteIdx    = 0;   // current write position in ring buffer
+	float WaveSampleTimer = 0.f; // accumulates until next sample tick (every 0.05s)
+	float SongPulse       = 0.f; // current song pulse (decays between notes)
+	float SyncLevel       = 0.f; // -1 to 1, smoothed correlation of the two waves
+	int32 LastNoteIdx     = 0;   // tracks which notes we've already processed
 	FLinearColor GetStateColor(EBhopState State) const;
 
 	// Primitives

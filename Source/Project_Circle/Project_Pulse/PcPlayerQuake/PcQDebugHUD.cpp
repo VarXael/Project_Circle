@@ -98,6 +98,10 @@ void APcQDebugHUD::DrawHUD()
 					MC->OnComboEvent.AddDynamic(this, &APcQDebugHUD::OnComboEvent);
 				DrawBhopDebug(MC);
 
+				// ── Frequency sync debug ──────────────────────────────────
+				if (UPcMusicAnalysisSubsystem* SyncSub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+					DrawSyncDebug(SyncSub, MC);
+
 				const float BeatFlash  = MC->GetOnBeatFlash();
 				const float CX         = Canvas->SizeX * 0.5f;
 				const float CY         = Canvas->SizeY * 0.5f;
@@ -622,6 +626,132 @@ void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerContr
 
 		if (!NumStr.IsEmpty()) DrawText(NumStr, TextCol, IX + 8.f, IconY + IconSz * 0.5f - 4.f, GEngine->GetSmallFont(), 1.f);
 	}
+}
+
+// =============================================================================
+//  SYNC SYSTEM — Frequency visualization
+//
+//  Two waves: the song's note envelope and the player's action pulse.
+//  SyncLevel measures how much they correlate over a rolling window.
+//  No gameplay effect — pure debug visualization.
+// =============================================================================
+
+void APcQDebugHUD::UpdateSyncWaves(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC)
+{
+	if (!GetWorld() || !MusicSub || !MusicSub->IsReadyForPlayback()) return;
+
+	const float DeltaTime = GetWorld()->GetDeltaSeconds();
+
+	// ── Song pulse: spike when notes fire ─────────────────────────────────────
+	const int32 NowMS = MusicSub->GetCurrentPlaybackTimeMS();
+	const TArray<FPcRuntimeEvent> UpcomingNotes = MusicSub->GetUpcomingNotes(0.08f);
+	for (const FPcRuntimeEvent& Ev : UpcomingNotes)
+	{
+		// Fire on notes within 1 frame of the playhead (~16ms at 60fps)
+		const int32 DistMS = FMath::Abs(Ev.TimestampMS - NowMS);
+		if (Ev.EventType == EPcRuntimeEventType::NoteHit && DistMS < 25)
+		{
+			// Check we haven't already spiked for this note this frame
+			if (Ev.TimestampMS != LastNoteIdx)
+			{
+				SongPulse = FMath::Min(SongPulse + 0.90f, 1.5f);
+				LastNoteIdx = Ev.TimestampMS;  // reuse as "last fired timestamp"
+			}
+		}
+	}
+
+	// Decay song pulse (same rate as player pulse for fair comparison)
+	SongPulse = FMath::Max(0.f, SongPulse - DeltaTime * 3.5f);
+
+	// ── Sample both waves into ring buffer at ~20Hz ────────────────────────────
+	WaveSampleTimer += DeltaTime;
+	if (WaveSampleTimer >= 0.05f)
+	{
+		WaveSampleTimer = 0.f;
+		SongWave  [WaveWriteIdx] = SongPulse;
+		PlayerWave[WaveWriteIdx] = MC->GetPlayerPulse();
+		WaveWriteIdx = (WaveWriteIdx + 1) % WaveHistorySize;
+	}
+
+	// ── Compute sync level: normalized dot product over full history ───────────
+	// High when both waves peak together, near zero when uncorrelated.
+	float Dot = 0.f, MagSong = 0.f, MagPlayer = 0.f;
+	for (int32 i = 0; i < WaveHistorySize; ++i)
+	{
+		Dot       += SongWave[i] * PlayerWave[i];
+		MagSong   += SongWave[i]   * SongWave[i];
+		MagPlayer += PlayerWave[i] * PlayerWave[i];
+	}
+	const float Denom = FMath::Sqrt(MagSong * MagPlayer);
+	const float RawSync = (Denom > 0.001f) ? Dot / Denom : 0.f;
+
+	// Smooth sync level so it doesn't jump instantly
+	SyncLevel = FMath::FInterpTo(SyncLevel, RawSync, DeltaTime, 2.5f);
+}
+
+void APcQDebugHUD::DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC)
+{
+	if (!Canvas || !GEngine || !MusicSub) return;
+
+	UpdateSyncWaves(MusicSub, MC);
+
+	// ── Layout: bottom-right, two stacked waveforms + sync bar ───────────────
+	const float PanelW  = 280.f;
+	const float WaveH   = 50.f;   // height of each waveform strip
+	const float Gap     = 8.f;
+	const float PanelX  = Canvas->SizeX - PanelW - 16.f;
+	const float PanelY  = Canvas->SizeY - (WaveH * 2.f + Gap + 22.f + 16.f);
+
+	// Background
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.72f), PanelX - 4.f, PanelY - 18.f,
+	         PanelW + 8.f, WaveH * 2.f + Gap + 22.f + 8.f);
+
+	// Title + sync number
+	const FLinearColor SyncCol = FLinearColor::LerpUsingHSV(
+		FLinearColor(0.8f, 0.2f, 0.2f),   // red = desynced
+		FLinearColor(0.2f, 1.f,  0.4f),   // green = synced
+		FMath::Clamp(SyncLevel, 0.f, 1.f));
+	const FString SyncStr = FString::Printf(TEXT("SYNC  %.2f"), SyncLevel);
+	DrawText(SyncStr, SyncCol, PanelX, PanelY - 16.f, GEngine->GetSmallFont(), 1.f);
+
+	// ── Wave drawing helper (reads ring buffer from oldest to newest) ─────────
+	auto DrawWave = [&](float WaveData[], float BaseY, FLinearColor Col)
+	{
+		// Background strip
+		DrawRect(FLinearColor(0.05f, 0.05f, 0.08f, 1.f), PanelX, BaseY, PanelW, WaveH);
+		// Zero line
+		DrawRect(FLinearColor(0.2f, 0.2f, 0.25f, 0.6f), PanelX, BaseY + WaveH * 0.5f, PanelW, 1.f);
+
+		// Draw waveform as connected line segments
+		for (int32 i = 0; i < WaveHistorySize - 1; ++i)
+		{
+			// Read from ring buffer oldest-first
+			const int32 IdxA = (WaveWriteIdx + i)     % WaveHistorySize;
+			const int32 IdxB = (WaveWriteIdx + i + 1) % WaveHistorySize;
+			const float ValA = FMath::Clamp(WaveData[IdxA] / 1.5f, 0.f, 1.f);
+			const float ValB = FMath::Clamp(WaveData[IdxB] / 1.5f, 0.f, 1.f);
+			const float X1   = PanelX + (i     / (float)(WaveHistorySize - 1)) * PanelW;
+			const float X2   = PanelX + ((i+1) / (float)(WaveHistorySize - 1)) * PanelW;
+			// Draw from bottom up (0 = bottom, 1 = top)
+			const float Y1 = BaseY + WaveH - ValA * WaveH;
+			const float Y2 = BaseY + WaveH - ValB * WaveH;
+			DrawLine(X1, Y1, X2, Y2, Col * FLinearColor(1,1,1, 0.85f), 1.5f);
+		}
+
+		// Current value marker (rightmost point)
+		const int32 LatestIdx = (WaveWriteIdx + WaveHistorySize - 1) % WaveHistorySize;
+		const float LatestVal = FMath::Clamp(WaveData[LatestIdx] / 1.5f, 0.f, 1.f);
+		const float MarkerY   = BaseY + WaveH - LatestVal * WaveH;
+		DrawRect(Col, PanelX + PanelW - 3.f, MarkerY - 2.f, 4.f, 4.f);
+	};
+
+	// Song wave (teal)
+	DrawWave(SongWave,   PanelY,            FLinearColor(0.1f, 0.9f, 0.85f));
+	DrawText(TEXT("SONG"),   FLinearColor(0.1f, 0.9f, 0.85f, 0.7f), PanelX + 3.f, PanelY + 2.f, GEngine->GetSmallFont(), 1.f);
+
+	// Player wave (gold)
+	DrawWave(PlayerWave, PanelY + WaveH + Gap, FLinearColor(1.f, 0.75f, 0.15f));
+	DrawText(TEXT("PLAYER"), FLinearColor(1.f, 0.75f, 0.15f, 0.7f), PanelX + 3.f, PanelY + WaveH + Gap + 2.f, GEngine->GetSmallFont(), 1.f);
 }
 
 void APcQDebugHUD::DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color, float Thickness, int32 Segments, float AngleOffset)

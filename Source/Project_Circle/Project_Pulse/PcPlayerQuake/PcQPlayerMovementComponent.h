@@ -58,6 +58,7 @@ public:
 	UFUNCTION(BlueprintPure) bool        IsSnapping()         const { return false; }  // snap is now stateless — use OnSnapPulse/OnSnapStateChanged delegates
 	UFUNCTION(BlueprintPure) ESnapAction  GetActiveSnap()      const;  // computed from current state — for HUD color
 	UFUNCTION(BlueprintPure) float        GetSnapPulseFlash()  const { return SnapPulseTimer > 0.f ? FMath::Clamp(SnapPulseTimer / 0.15f, 0.f, 1.f) : 0.f; }
+	UFUNCTION(BlueprintPure) float        GetPlayerPulse()     const { return PlayerPulse; }  // 0-1, spikes on any player action
 
 	UFUNCTION(BlueprintPure) float GetBoostCooldownAlpha()      const;
 	UFUNCTION(BlueprintPure) float GetBoostActiveAlpha()        const;
@@ -175,7 +176,8 @@ private:
 	float GPInputBufferTimer   = 0.f;
 	
 	bool  bBonusHopRequested   = false;
-	float SnapPulseTimer       = 0.f;                
+	float SnapPulseTimer       = 0.f;
+	float PlayerPulse          = 0.f;   // action wave: spikes on any input, decays each tick
 
 	float GPCancelTimer = 0.f;   
 

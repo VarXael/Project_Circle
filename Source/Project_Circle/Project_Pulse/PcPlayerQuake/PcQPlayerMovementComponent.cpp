@@ -88,6 +88,9 @@ void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color)
 {
 	OnComboEvent.Broadcast(Label, Color);
+	// Every action the player takes spikes the player wave equally.
+	// We don't weight actions — intent expressed through timing is what matters.
+	PlayerPulse = FMath::Min(PlayerPulse + 0.85f, 1.5f);  // spike, allow slight overshoot
 }
 
 ESnapAction UPcQPlayerMovementComponent::GetActiveSnap() const
@@ -762,6 +765,8 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	if (DoubleJumpCooldown      > 0.f) DoubleJumpCooldown      = FMath::Max(0.f, DoubleJumpCooldown      - DeltaTime);
 	if (OnBeatFlashTimer        > 0.f) OnBeatFlashTimer        = FMath::Max(0.f, OnBeatFlashTimer        - DeltaTime);
 	if (SnapPulseTimer          > 0.f) SnapPulseTimer          = FMath::Max(0.f, SnapPulseTimer          - DeltaTime);
+	// Player wave decays toward 0 — same decay rate as we want for song wave
+	PlayerPulse = FMath::Max(0.f, PlayerPulse - DeltaTime * 3.5f);
 	
 	if (GPComboTimer > 0.f) { 
 		GPComboTimer -= DeltaTime; 
