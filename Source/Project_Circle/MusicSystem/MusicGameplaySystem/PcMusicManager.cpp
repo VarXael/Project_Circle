@@ -3,6 +3,7 @@
 #include "Components/AudioComponent.h"
 #include "MetasoundOutputSubsystem.h"
 #include "MetasoundSource.h"
+#include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicConfigurationData.h"
 
 APcMusicManager::APcMusicManager()
 {
@@ -20,7 +21,7 @@ void APcMusicManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void APcMusicManager::StartMusicPlayback()
 {
-	if (!MainMusicMetaSound || !SongWaveAsset || !SongConfiguration) return;
+	if (!MainMusicMetaSound || !SongConfiguration || !SongConfiguration->SongWaveAsset) return;
 
 	if (UPcMusicAnalysisSubsystem* Subsystem = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		Subsystem->InitializePlayback(SongConfiguration);
@@ -29,7 +30,7 @@ void APcMusicManager::StartMusicPlayback()
 	if (OnMetasoundOutputValueChanged.IsBound()) OnMetasoundOutputValueChanged.Unbind();
 
 	MusicAudioComponent->SetSound(MainMusicMetaSound); 
-	MusicAudioComponent->SetWaveParameter(FName("Song"), SongWaveAsset);
+	MusicAudioComponent->SetWaveParameter(FName("Song"), SongConfiguration->SongWaveAsset);
 
 	OnMetasoundOutputValueChanged.BindUFunction(this, FName("OnMetaSoundTimeChanged"));
 

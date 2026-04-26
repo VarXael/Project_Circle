@@ -55,6 +55,7 @@ public:
 	UFUNCTION(BlueprintPure) bool        IsWallSwimming()     const { return BhopState == EBhopState::WallSwim; }
 	UFUNCTION(BlueprintPure) bool        IsPowerBoosting()    const { return BhopState == EBhopState::PowerBoost; }
 	UFUNCTION(BlueprintPure) bool        IsAutoJumping()      const { return bAutoJumpEnabled; }
+	UFUNCTION(BlueprintPure) float        GetPlayerBPM()       const { return PlayerBPM; }
 	UFUNCTION(BlueprintPure) bool        IsSnapping()         const { return false; }  // snap is now stateless — use OnSnapPulse/OnSnapStateChanged delegates
 	UFUNCTION(BlueprintPure) ESnapAction  GetActiveSnap()      const;  // computed from current state — for HUD color
 	UFUNCTION(BlueprintPure) float        GetSnapPulseFlash()  const { return SnapPulseTimer > 0.f ? FMath::Clamp(SnapPulseTimer / 0.15f, 0.f, 1.f) : 0.f; }
@@ -179,6 +180,13 @@ private:
 	float SnapPulseTimer       = 0.f;
 	float PlayerPulse          = 0.f;   // action wave: spikes on any input, decays each tick
 
+	// Player BPM tracking
+	float PlayerBPM            = 0.f;
+	static constexpr int32 HitHistorySize = 8;
+	float HitTimestamps[8]     = {};
+	int32 HitWriteIdx          = 0;
+	int32 HitCount             = 0;
+
 	float GPCancelTimer = 0.f;   
 
 	bool  bGPLandedRecently     = false;
@@ -193,6 +201,7 @@ private:
 
 	float OnBeatFlashTimer = 0.f;
 	void  TriggerOnBeatFlash();
+	void  RecordHit();
 	void  PushCombo(const FString& Label, FLinearColor Color);
 	void  OnSnapPressed_Internal();  
 

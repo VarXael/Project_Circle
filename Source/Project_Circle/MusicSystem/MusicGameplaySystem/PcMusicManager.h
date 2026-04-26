@@ -7,7 +7,6 @@
 #include "PcMusicManager.generated.h"
 
 class UMetaSoundSource;
-class USoundWave;
 class UAudioComponent;
 class UPcMusicConfigurationData;
 
@@ -20,7 +19,6 @@ public:
 	APcMusicManager();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music") TObjectPtr<UMetaSoundSource> MainMusicMetaSound;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music") TObjectPtr<USoundWave> SongWaveAsset;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Music") TObjectPtr<UPcMusicConfigurationData> SongConfiguration;
 
 	UFUNCTION(BlueprintCallable, Category = "Music") void StartMusicPlayback();

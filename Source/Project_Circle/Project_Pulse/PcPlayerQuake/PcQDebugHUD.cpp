@@ -524,6 +524,14 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 
 	Row(TEXT("V SPEED:"),  FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z), MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
 	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"), MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
+
+	if (bShowPlayerBPM)
+	{
+		const float PBPM = MC->GetPlayerBPM();
+		const FString BPMStr = PBPM > 1.f ? FString::Printf(TEXT("%.0f BPM"), PBPM) : TEXT("--");
+		const FLinearColor BPMCol = PBPM > 1.f ? FLinearColor(0.4f, 1.f, 0.6f) : FLinearColor(0.5f, 0.5f, 0.5f);
+		Row(TEXT("PLYR BPM:"), BPMStr, BPMCol);
+	}
 }
 
 void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color)

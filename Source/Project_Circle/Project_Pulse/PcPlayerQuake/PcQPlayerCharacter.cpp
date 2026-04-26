@@ -142,73 +142,49 @@ void APcQPlayerCharacter::TryFire()
 
 	const bool bOnBeat = IsOnBeat();
 
-	if (PistolCooldown > 0.f && !bOnBeat)
-	{
-		UE_LOG(LogTemp, Log, TEXT("[Pistol] Blocked — cooldown %.2fs remaining."), PistolCooldown);
-		return;
-	}
+	if (PistolCooldown > 0.f && !bOnBeat) return;
 
-	FVector CamLoc = CameraComp->GetComponentLocation();
+	FVector CamLoc     = CameraComp->GetComponentLocation();
 	FVector CamForward = CameraComp->GetForwardVector();
 
 	if (bOnBeat)
 	{
 		PistolCooldown = 0.f;
-		// NotifyGunFired triggers the universal reset: slide pump, DJ, boost, HUD flash
 		if (MoveComp) MoveComp->NotifyGunFired();
-	}
-	else
-	{
-		UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
-		PistolCooldown = (Sub && Sub->IsReadyForPlayback() && MoveComp)
-		               ? MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec)
-		               : PistolBaseCooldownSec;
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT FIRED"), FLinearColor(1.f, 0.25f, 0.25f));
-	}
 
-	if (bOnBeat)
-	{
-		// On-beat: wide auto-aim sphere, always draw the cyan beam regardless of hit
 		TArray<FOverlapResult> Overlaps;
 		FCollisionShape Sphere = FCollisionShape::MakeSphere(5000.f);
-		FCollisionQueryParams QueryParams;
-		QueryParams.AddIgnoredActor(this);
-		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QueryParams);
+		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
+		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn, Sphere, QP);
 
-		APcQEnemyBase* BestEnemy = nullptr;
-		float BestDot = 0.90f;
+		APcQEnemyBase* Best = nullptr; float BestDot = 0.90f;
 		for (const FOverlapResult& O : Overlaps)
 		{
 			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(O.GetActor()))
 			{
 				float D = FVector::DotProduct(CamForward, (E->GetActorLocation() - CamLoc).GetSafeNormal());
-				if (D > BestDot) { BestDot = D; BestEnemy = E; }
+				if (D > BestDot) { BestDot = D; Best = E; }
 			}
 		}
-
 		FVector BeamEnd = CamLoc + CamForward * 5000.f;
-		if (BestEnemy)
-		{
-			UGameplayStatics::ApplyDamage(BestEnemy, BaseDamage, GetController(), this, nullptr);
-			BeamEnd = BestEnemy->GetActorLocation();
-		}
-		// Always draw cyan beam — shows the shot was powered even on a miss
+		if (Best) { UGameplayStatics::ApplyDamage(Best, BaseDamage, GetController(), this, nullptr); BeamEnd = Best->GetActorLocation(); }
 		DrawDebugLine(GetWorld(), CamLoc, BeamEnd, FColor::Cyan, false, 0.5f, 0, 5.0f);
 		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
 		return;
 	}
-	
-	FHitResult HitResult;
-	FVector EndLoc = CamLoc + (CamForward * 5000.f);
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(this);
 
-	bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, CamLoc, EndLoc, ECC_Visibility, QueryParams);
-	
-	if (bHit) {
-		UGameplayStatics::ApplyDamage(HitResult.GetActor(), BaseDamage, GetController(), this, nullptr);
-		DrawDebugLine(GetWorld(), CamLoc, HitResult.ImpactPoint, FColor::Red, false, 0.2f, 0, 1.0f);
-	} else {
-		DrawDebugLine(GetWorld(), CamLoc, EndLoc, FColor::Red, false, 0.2f, 0, 1.0f);
+	UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
+	PistolCooldown = (Sub && Sub->IsReadyForPlayback() && MoveComp)
+	               ? MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec)
+	               : PistolBaseCooldownSec;
+	if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT FIRED"), FLinearColor(1.f, 0.25f, 0.25f));
+
+	FHitResult Hit; FCollisionQueryParams QP2; QP2.AddIgnoredActor(this);
+	FVector End = CamLoc + CamForward * 5000.f;
+	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, QP2))
+	{
+		UGameplayStatics::ApplyDamage(Hit.GetActor(), BaseDamage, GetController(), this, nullptr);
+		DrawDebugLine(GetWorld(), CamLoc, Hit.ImpactPoint, FColor::Red, false, 0.2f, 0, 1.f);
 	}
+	else DrawDebugLine(GetWorld(), CamLoc, End, FColor::Red, false, 0.2f, 0, 1.f);
 }

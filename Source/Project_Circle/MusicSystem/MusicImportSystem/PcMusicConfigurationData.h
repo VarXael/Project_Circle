@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Sound/SoundWave.h"
 #include "PcMusicAnalysisTypes.h"
 #include "PcMusicConfigurationData.generated.h"
 
@@ -13,6 +14,9 @@ class PROJECT_CIRCLE_API UPcMusicConfigurationData : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	TObjectPtr<USoundWave> SongWaveAsset;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
 	TObjectPtr<UDataTable> GameplayMap;
 

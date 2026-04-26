@@ -64,6 +64,7 @@ float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (Doub
 
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
+	RecordHit();
 	OnBeatFlashTimer   = OnBeatFlashDuration;
 	BoostCooldown      = 0.f;
 	DoubleJumpCooldown = 0.f;
@@ -91,6 +92,27 @@ void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor C
 	// Every action the player takes spikes the player wave equally.
 	// We don't weight actions — intent expressed through timing is what matters.
 	PlayerPulse = FMath::Min(PlayerPulse + 0.85f, 1.5f);  // spike, allow slight overshoot
+}
+
+void UPcQPlayerMovementComponent::RecordHit()
+{
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
+	HitTimestamps[HitWriteIdx % HitHistorySize] = Now;
+	HitWriteIdx++;
+	HitCount = FMath::Min(HitCount + 1, HitHistorySize);
+
+	if (HitCount >= 2)
+	{
+		float Total = 0.f; int32 Pairs = 0;
+		for (int32 i = 1; i < HitCount; ++i)
+		{
+			const int32 A = (HitWriteIdx - i - 1 + HitHistorySize) % HitHistorySize;
+			const int32 B = (HitWriteIdx - i     + HitHistorySize) % HitHistorySize;
+			const float Dt = HitTimestamps[B] - HitTimestamps[A];
+			if (Dt > 0.05f && Dt < 3.f) { Total += Dt; Pairs++; }
+		}
+		if (Pairs > 0) PlayerBPM = 60.f / (Total / Pairs);
+	}
 }
 
 ESnapAction UPcQPlayerMovementComponent::GetActiveSnap() const

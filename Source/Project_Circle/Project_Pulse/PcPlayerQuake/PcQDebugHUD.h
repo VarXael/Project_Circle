@@ -47,6 +47,9 @@ public:
 	// Maximum entries shown simultaneously.
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") int32 ComboFeed_MaxEntries   = 6;
 
+	// Toggle BPM debug row in the bhop panel
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Debug") bool bShowPlayerBPM = true;
+
 	// ── Threat API ──────────────────────────────────────────────────────────
 	UFUNCTION(BlueprintCallable, Category = "Rhythm UI|Threats")
 	void RegisterThreat(int32 TimestampMS, const FString& Label, FLinearColor Color);
