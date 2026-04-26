@@ -62,6 +62,7 @@ float UPcQPlayerMovementComponent::GetBoostCooldownAlpha() const { return BoostC
 float UPcQPlayerMovementComponent::GetBoostActiveAlpha() const { if (BhopState != EBhopState::PowerBoost || BoostTimer <= 0.f) return 0.f; return FMath::Clamp(BoostTimer / FMath::Max(BoostBaseDurationSec, 0.01f), 0.f, 1.f); }
 float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (DoubleJumpCooldown <= 0.f) return bDoubleJumpUsed ? 1.f : 0.f; return FMath::Clamp(DoubleJumpCooldown / FMath::Max(DoubleJumpBaseCooldownSec, 0.01f), 0.f, 1.f); }
 
+// CHANGE 1: Removed SLIDE PUMP block — ground GP is now GP Pulse, not a boost state
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
 	RecordHit();
@@ -69,20 +70,7 @@ void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 	BoostCooldown      = 0.f;
 	DoubleJumpCooldown = 0.f;
 	bDoubleJumpUsed    = false;
-
-	if (BhopState == EBhopState::PowerBoost)
-	{
-		BoostTimer = BoostBaseDurationSec;
-		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-		const FVector Dir2D  = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-		if (!Dir2D.IsZero() && GetHorizontalSpeed() < BoostSpd)
-		{
-			Velocity.X = Dir2D.X * BoostSpd;
-			Velocity.Y = Dir2D.Y * BoostSpd;
-			PushCombo(TEXT("SLIDE PUMP"), FLinearColor(1.f, 0.7f, 0.2f));
-		}
-	}
-
+	FrenzyGauge        = FMath::Min(1.f, FrenzyGauge + FrenzyFillOnBeat);
 	OnActiveBeatAction.Broadcast(); 
 }
 
@@ -115,10 +103,11 @@ void UPcQPlayerMovementComponent::RecordHit()
 	}
 }
 
+// CHANGE 2: GPPulse replaces Slide in snap state — PowerBoost stays as Jump fallthrough
 ESnapAction UPcQPlayerMovementComponent::GetActiveSnap() const
 {
 	if (IsFalling()) return CanBufferLanding() ? ESnapAction::LandingJump : ESnapAction::DoubleJump;
-	if (BhopState == EBhopState::PowerBoost) return ESnapAction::Slide;
+	if (bGPPulseActive) return ESnapAction::GPPulse;
 	return ESnapAction::Jump;
 }
 
@@ -158,21 +147,19 @@ void UPcQPlayerMovementComponent::NotifyGunFired()
 	OnSnapPressed_Internal();
 }
 
+// CHANGE 3: ESnapAction::Slide case replaced with ESnapAction::GPPulse
 void UPcQPlayerMovementComponent::OnSnapPressed_Internal()
 {
 	SnapPulseTimer = 0.15f;
 
 	switch (GetActiveSnap())
 	{
-		case ESnapAction::Slide:
+		case ESnapAction::GPPulse:
 		{
-			const float PoweredSpd = MaxWalkSpeed * BoostSpeedMultiplier * 1.3f;
-			const FVector Dir2D    = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-			if (!Dir2D.IsZero()) { Velocity.X = Dir2D.X * PoweredSpd; Velocity.Y = Dir2D.Y * PoweredSpd; }
-			BoostTimer = BoostBaseDurationSec;
-			OnSnapPulse.Broadcast(ESnapAction::Slide);
-			OnSnapStateChanged.Broadcast(ESnapAction::Slide);
-			PushCombo(TEXT("SNAP BOOST"), FLinearColor(1.f, 0.65f, 0.1f));
+			// Re-trigger the burst at full on-beat power to refresh the window
+			ActivateGPPulse(true);
+			OnSnapPulse.Broadcast(ESnapAction::GPPulse);
+			OnSnapStateChanged.Broadcast(ESnapAction::GPPulse);
 			break;
 		}
 		case ESnapAction::Jump:
@@ -199,7 +186,6 @@ void UPcQPlayerMovementComponent::OnSnapPressed_Internal()
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
 			const FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
 			
-			// Scale the horizontal boost perfectly
 			float ScaledHopSpeed = GetScaledSpeed(BonusHopSpeedBoost);
 			if (!Dir2D.IsZero()) { Velocity.X += Dir2D.X * ScaledHopSpeed; Velocity.Y += Dir2D.Y * ScaledHopSpeed; }
 			ExecutePlayerJump(false);
@@ -273,8 +259,12 @@ void UPcQPlayerMovementComponent::ExecutePlayerJump(bool bFromBoost)
 		Velocity.X = FinalDir.X * HardCap;
 		Velocity.Y = FinalDir.Y * HardCap;
 	}
+
+	// Track which synced action is in flight
+	ActiveSyncedAction = EPcSyncedAction::Jump;
 }
 
+// CHANGE 4: Auto-jump branch removed — coyote window path unchanged
 void UPcQPlayerMovementComponent::TriggerBeatJump()
 {
 	if (BhopState == EBhopState::WallSwim) {
@@ -282,16 +272,7 @@ void UPcQPlayerMovementComponent::TriggerBeatJump()
 		return;
 	}
 
-	if (IsMovingOnGround())
-	{
-		if (BhopState == EBhopState::Active && bAutoJumpEnabled)
-		{
-			TriggerOnBeatFlash();
-			ExecutePlayerJump(false);
-			OnBhopLanded.Broadcast(GetHorizontalSpeed());
-		}
-	}
-	else if (IsFalling())
+	if (IsFalling())
 	{
 		if (Velocity.Z <= 0.f)
 		{
@@ -385,6 +366,7 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 			const bool bFreeJump = bOnBeat;
 			bDoubleJumpUsed    = true;
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
+			ActiveSyncedAction = EPcSyncedAction::DoubleJump;
 			ExecutePlayerJump(false);
 			PushCombo(TEXT("DOUBLE JUMP"), FLinearColor(0.27f, 0.67f, 1.f));
 			if (bFreeJump) {
@@ -401,43 +383,22 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 
 void UPcQPlayerMovementComponent::OnJumpReleased() {}
 
+// CHANGE 5: Ground path replaced with ActivateGPPulse. Air path unchanged.
 void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
 	if (BhopState == EBhopState::WallSwim) return;
 
 	const bool bOnBeat = IsOnBeat();
-	if (bOnBeat) TriggerOnBeatFlash();
 
 	if (IsMovingOnGround())
 	{
-		if (BhopState == EBhopState::PowerBoost)
-		{
-			OnSnapPressed_Internal();
-			return;
-		}
-		if (!BoostReady() && !bOnBeat) return;
-
-		BhopState          = EBhopState::PowerBoost;
-		BoostTimer         = GetBeatSnappedDuration(BoostBaseDurationSec);
-		BoostCooldown      = 0.f;
-
-		FVector Dir2D = Acceleration.GetSafeNormal2D();
-		if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-
-		const float EntrySpd = GetHorizontalSpeed() + (bOnBeat ? GetScaledSpeed(SlideEntryBoost) : 0.f);
-		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-		const float StartSpd = FMath::Max(EntrySpd, BoostSpd);
-
-		if (!Dir2D.IsZero()) {
-			Velocity.X = Dir2D.X * StartSpd;
-			Velocity.Y = Dir2D.Y * StartSpd;
-		}
-		Velocity.Z = 0.f;
-
-		PushCombo(bOnBeat ? TEXT("PERFECT SLIDE") : TEXT("SLIDE"), FLinearColor(1.f, 0.55f, 0.15f));
+		ActivateGPPulse(bOnBeat);
+		return;
 	}
 	else if (IsFalling() && BhopState != EBhopState::GroundPounding)
 	{
+		if (bOnBeat) TriggerOnBeatFlash();
+
 		if (CanBufferLanding()) {
 			bGPInputBuffered   = true;
 			GPInputBufferTimer = JumpInputBufferWindow; 
@@ -472,6 +433,41 @@ void UPcQPlayerMovementComponent::OnSnapPressed()
 	}
 
 	OnSnapPressed_Internal();
+}
+
+float UPcQPlayerMovementComponent::GetFrenzySpeedMult() const
+{
+	if (FrenzyGauge >= FrenzyThresh_S) return FrenzyMult_S;
+	if (FrenzyGauge >= FrenzyThresh_A) return FrenzyMult_A;
+	if (FrenzyGauge >= FrenzyThresh_B) return FrenzyMult_B;
+	if (FrenzyGauge >= FrenzyThresh_C) return FrenzyMult_C;
+	return FrenzyMult_D;
+}
+
+// CHANGE 6: New ActivateGPPulse — velocity burst in WASD dir, opens pulse window
+void UPcQPlayerMovementComponent::ActivateGPPulse(bool bOnBeat)
+{
+	FVector Dir2D = Acceleration.GetSafeNormal2D();
+	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (Dir2D.IsZero() && CharacterOwner) Dir2D = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+	GPPulseDirection = Dir2D;
+
+	float BurstSpeed = MaxWalkSpeed + GetScaledSpeed(GPPulseSpeedBoost);
+	if (bOnBeat) BurstSpeed += GetScaledSpeed(GPPulseSpeedBoost * GPPulseOnBeatBonus);
+
+	if (!Dir2D.IsZero())
+	{
+		Velocity.X = Dir2D.X * BurstSpeed;
+		Velocity.Y = Dir2D.Y * BurstSpeed;
+	}
+	Velocity.Z = 0.f;
+
+	GPPulseMaxTimer = GPPulseDurationSec;
+	GPPulseTimer    = GPPulseMaxTimer;
+	bGPPulseActive  = true;
+
+	if (bOnBeat) TriggerOnBeatFlash();
+	PushCombo(bOnBeat ? TEXT("GP PULSE ★") : TEXT("GP PULSE"), FLinearColor(1.f, 0.55f, 0.15f));
 }
 
 void UPcQPlayerMovementComponent::ApplyJumpVelocity()
@@ -615,8 +611,13 @@ void UPcQPlayerMovementComponent::HandleImpact(const FHitResult& Hit, float Time
 	Super::HandleImpact(Hit, TimeSlice, MoveDelta);
 }
 
+// CHANGE 7: Clear GP Pulse and ActiveSyncedAction on any landing
 void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float remainingTime, int32 Iterations)
 {
+	bGPPulseActive     = false;
+	GPPulseTimer       = 0.f;
+	ActiveSyncedAction = EPcSyncedAction::None;
+
 	if (BhopState == EBhopState::WallSwim) {
 		if (UCapsuleComponent* Cap = CharacterOwner ? CharacterOwner->GetCapsuleComponent() : nullptr)
 			Cap->SetCollisionProfileName(WallPrevCollisionProfile.IsNone() ? FName(TEXT("Pawn")) : WallPrevCollisionProfile);
@@ -635,7 +636,8 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		BoostCooldown      = 0.f;
 
 		const float BaseSpd  = MaxWalkSpeed * BoostSpeedMultiplier;
-		const float EntrySpd = IsOnBeat() ? BaseSpd + GetScaledSpeed(SlideEntryBoost) : BaseSpd;
+		// GPPulseSpeedBoost reused as the on-beat landing bonus (same concept, same tunable)
+		const float EntrySpd = IsOnBeat() ? BaseSpd + GetScaledSpeed(GPPulseSpeedBoost) : BaseSpd;
 		if (bHasInput) {
 			Velocity.X = WishDir2D.X * EntrySpd;
 			Velocity.Y = WishDir2D.Y * EntrySpd;
@@ -650,9 +652,9 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 		if (IsOnBeat()) {
 			TriggerOnBeatFlash();
-			PushCombo(TEXT("GP SLAM +BOOST"), FLinearColor(1.f, 0.55f, 0.15f));
+			PushCombo(TEXT("GP SLAM ★"), FLinearColor(1.f, 0.55f, 0.15f));
 		} else {
-			PushCombo(TEXT("GROUND POUND"), FLinearColor(1.f, 0.55f, 0.15f));
+			PushCombo(TEXT("GP SLAM"), FLinearColor(1.f, 0.55f, 0.15f));
 		}
 		
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
@@ -731,6 +733,10 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		}
 	}
 
+	// Frenzy: drain gauge, apply speed multiplier on top of song preset speed
+	FrenzyGauge  = FMath::Max(0.f, FrenzyGauge - FrenzyDrainPerSec * DeltaTime);
+	MaxWalkSpeed *= GetFrenzySpeedMult();
+
 	if (BhopState == EBhopState::PowerBoost && IsMovingOnGround()) {
 		const float BoostSpd  = FMath::Max(MaxWalkSpeed, 100.f) * BoostSpeedMultiplier;
 		const FVector WishDir = Acceleration.GetSafeNormal2D();
@@ -780,6 +786,13 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 				(JumpCurve->GetFloatValue(1.f) - JumpCurve->GetFloatValue(1.f-BS)) * JumpCurvePeakHeight / (BS * JumpCurveTotalTime),
 				-80.f);
 		}
+	}
+
+	// CHANGE 8: GP Pulse window timer
+	if (bGPPulseActive && GPPulseTimer > 0.f)
+	{
+		GPPulseTimer -= DeltaTime;
+		if (GPPulseTimer <= 0.f) { bGPPulseActive = false; GPPulseTimer = 0.f; }
 	}
 
 	if (BoostCooldown           > 0.f) BoostCooldown           = FMath::Max(0.f, BoostCooldown           - DeltaTime);

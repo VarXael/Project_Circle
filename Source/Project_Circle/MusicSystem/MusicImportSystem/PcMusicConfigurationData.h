@@ -20,31 +20,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay")
 	TObjectPtr<UDataTable> GameplayMap;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|BPM", meta = (ClampMin = "1.0", ClampMax = "300.0"))
-	float DefaultGameplayBPM = 110.f;
+	// ── BPM Anchoring ─────────────────────────────────────────────────────────
+	// The system auto-selects a subdivision of each section's raw BPM (÷1, ÷2,
+	// ÷4) that lands closest to this value. Result is the gameplay beat interval.
+	// Sections tagged Enhanced keep the same subdivision but use the Enhanced preset.
+	// Per-section override: set GameplayBPM > 0 in the data table to bypass auto.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|BPM",
+	          meta = (ClampMin = "20.0", ClampMax = "200.0",
+	                  ToolTip = "Target gameplay BPM. Auto-subdivision snaps each section as close to this as possible."))
+	float TargetGameplayBPM = 55.f;
 
-	// --- NEW: Pulse Physics Presets (The song dictates the bounce!) ---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
-	FPcMovementPreset PulseSlow = { 0.5f, 200.f, 800.f, 800.f, 0.7f };
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
-	FPcMovementPreset PulseNormal = { 1.0f, 200.f, 900.f, 900.f, 0.6f };
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
-	FPcMovementPreset PulseFast = { 2.0f, 175.f, 1100.f, 1100.f, 0.5f };
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Pulse Settings")
-	FPcMovementPreset PulseVeryFast = { 4.0f, 150.f, 1400.f, 1400.f, 0.4f };
+	// ── Movement Presets ──────────────────────────────────────────────────────
+	// Normal  = regular song sections.
+	// Enhanced = the drop — stronger movement, same beat interval.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Presets")
+	FPcMovementPreset PulseNormal = { 200.f, 900.f, 900.f, 0.6f };
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Presets")
+	FPcMovementPreset PulseEnhanced = { 280.f, 1100.f, 1100.f, 0.5f };
+
+	// ── Analysis ──────────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis")
 	TArray<TObjectPtr<UDataTable>> AdditionalAnalysisMaps;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis",
+	          meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float DifficultyBias = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis", meta=(DisplayName="Structural Base Map (Optional Override)"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Analysis",
+	          meta = (DisplayName = "Structural Base Map (Optional Override)"))
 	TObjectPtr<UDataTable> StructuralAnalysisBaseMapOverride;
 
+	// ── Generated Assets ──────────────────────────────────────────────────────
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Generated Assets")
 	TObjectPtr<UDataTable> GeneratedRhythmProfile;
 
