@@ -187,12 +187,14 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 
 	bool bKiai = false;
 	int32 StructuralMaxEventTime = 0;
+	TArray<TPair<int32, bool>> KiaiChanges; // {timestampMS, bKiaiOn} — used to tag Enhanced sections
 	
 	for (const auto* Data : StructuralAllEvents) {
 		if (Data->EntryType == EPcGameplayEntryType::TimingPoint) {
 			if (((Data->Effects & 1) != 0) != bKiai) {
 				bKiai = !bKiai;
 				BoundarySet.Add(Data->TimestampMS);
+				KiaiChanges.Add({Data->TimestampMS, bKiai});
 			}
 			StructuralMaxEventTime = FMath::Max(StructuralMaxEventTime, Data->TimestampMS);
 		} else if (Data->EntryType == EPcGameplayEntryType::Break) {
@@ -308,7 +310,18 @@ void UPcMusicAnalyzer::AnalyzeRhythmSections(const FPcSongAnalysisParameters& Pa
 			if (HO->TimestampMS >= Profile.StartTime) { Anchor = HO->TimestampMS; break; }
 		}
 		Sec.AnchorTimestampMS = Anchor > 0 ? Anchor : Profile.StartTime;
-		Sec.MovementPreset = EPcMovementPresetOverride::Auto;
+
+		// Tag as Enhanced if this section falls within kiai time.
+		// KiaiChanges is sorted chronologically — walk it to find the state at section start.
+		bool bSectionIsKiai = false;
+		for (const auto& Change : KiaiChanges)
+		{
+			if (Change.Key <= Profile.StartTime) bSectionIsKiai = Change.Value;
+			else break;
+		}
+		Sec.MovementPreset = bSectionIsKiai
+			? EPcMovementPresetOverride::Enhanced
+			: EPcMovementPresetOverride::Auto;
 		TempSections.Add(Sec);
 	}
 

@@ -11,7 +11,21 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="" />
+    <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DA_ImmortalFlame.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DA_ImmortalFlame.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DT_DA_ImmortalFlame_RhythmProfile.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DT_DA_ImmortalFlame_RhythmProfile.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/MaledettiScarafaggi/DA_MaledettiScarafaggi.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/MaledettiScarafaggi/DA_MaledettiScarafaggi.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalyzer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalyzer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.h" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -36,7 +50,10 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="cidr-memory-view://11" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/AutomationTool/SteamDeck/SteamDeckSupport.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/Shared/EpicGames.Core/CityHash.cs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/Shared/EpicGames.Core/ManagedProcess.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Core/Public/Templates/SharedPointer.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Classes/GameFramework/Actor.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Runtime/Engine/Classes/GameFramework/Character.h" root0="FORCE_HIGHLIGHTING" />
@@ -49,6 +66,8 @@
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcProjectile.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" root0="FORCE_HIGHLIGHTING" />
   </component>
   <component name="MetaFilesCheckinStateConfiguration" checkMetaFiles="true" />
   <component name="ProjectColorInfo">{
@@ -60,20 +79,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "C/C++ Project.Games\\Project_Circle.executor": "Debug",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "git-widget-placeholder": "Test",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;C/C++ Project.Games\\Project_Circle.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;Test&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration name="Games\Project_Circle" type="CppProject" factoryName="C++ Project" temporary="true">
       <configuration_1 setup="1">
@@ -123,6 +142,7 @@
       <workItem from="1776893618003" duration="1206000" />
       <workItem from="1776974863856" duration="7383000" />
       <workItem from="1777148529517" duration="1162000" />
+      <workItem from="1777200579216" duration="16860000" />
     </task>
     <servers />
   </component>

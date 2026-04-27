@@ -45,17 +45,19 @@ APcQDebugHUD::FArcGeom APcQDebugHUD::BuildArcGeom() const
 FLinearColor APcQDebugHUD::GetFrenzyColor(float Gauge, UPcQPlayerMovementComponent* MC) const
 {
 	if (!MC) return FLinearColor(0.5f, 0.5f, 0.5f);
-	if (Gauge >= MC->FrenzyThresh_S) return FLinearColor(1.f,  0.15f, 0.20f);  // S — red
-	if (Gauge >= MC->FrenzyThresh_A) return FLinearColor(1.f,  0.55f, 0.05f);  // A — orange
-	if (Gauge >= MC->FrenzyThresh_B) return FLinearColor(0.1f, 0.90f, 0.30f);  // B — green
-	if (Gauge >= MC->FrenzyThresh_C) return FLinearColor(0.1f, 0.60f, 1.00f);  // C — blue
-	return FLinearColor(0.5f, 0.5f, 0.5f);                                      // D — grey
+	if (MC->IsSTierActive()) return MC->IsSTierLocked()
+		? FLinearColor(1.f, 0.85f, 0.0f)    // S locked   — Gold
+		: FLinearColor(1.f, 0.20f, 0.0f);   // S draining — Bright Orange/Red
+	if (Gauge >= MC->FrenzyThresh_A) return FLinearColor(1.f,  0.55f, 0.05f);  // A — Orange
+	if (Gauge >= MC->FrenzyThresh_B) return FLinearColor(0.1f, 0.90f, 0.30f);  // B — Green
+	if (Gauge >= MC->FrenzyThresh_C) return FLinearColor(0.1f, 0.60f, 1.00f);  // C — Blue
+	return FLinearColor(0.4f, 0.4f, 0.4f);                                      // D — Grey
 }
 
 FString APcQDebugHUD::GetFrenzyTierLabel(float Gauge, UPcQPlayerMovementComponent* MC) const
 {
 	if (!MC) return TEXT("D");
-	if (Gauge >= MC->FrenzyThresh_S) return TEXT("S");
+	if (MC->IsSTierActive()) return TEXT("S");
 	if (Gauge >= MC->FrenzyThresh_A) return TEXT("A");
 	if (Gauge >= MC->FrenzyThresh_B) return TEXT("B");
 	if (Gauge >= MC->FrenzyThresh_C) return TEXT("C");
@@ -101,232 +103,354 @@ void APcQDebugHUD::DrawHUD()
 		}
 	}
 
-	DrawDotCrosshair(BeatRemainingFraction);
+	// ── 1. Screen Edge Pulse ─────────────────────────────────────────────────
+	if (bEnableScreenEdgePulse && FlashSoft > 0.01f)
+	{
+		const float W = Canvas->SizeX;
+		const float H = Canvas->SizeY;
+		const float EdgeThick = 4.f + 12.f * FlashSoft; // Expands outward
+		const FLinearColor EdgeCol(0.1f, 0.85f, 1.0f, FlashSoft * 0.15f);
+
+		DrawRect(EdgeCol, 0, 0, W, EdgeThick); // Top
+		DrawRect(EdgeCol, 0, H - EdgeThick, W, EdgeThick); // Bottom
+		DrawRect(EdgeCol, 0, 0, EdgeThick, H); // Left
+		DrawRect(EdgeCol, W - EdgeThick, 0, EdgeThick, H); // Right
+		
+		// Micro full-screen tint
+		DrawRect(FLinearColor(0.05f, 0.4f, 1.0f, FlashSoft * 0.02f), 0, 0, W, H);
+	}
 
 	if (APlayerController* PC = GetOwningPlayerController())
 	{
-		if (ACharacter* Char = Cast<ACharacter>(PC->GetPawn()))
+		if (APcQPlayerCharacter* Char = Cast<APcQPlayerCharacter>(PC->GetPawn()))
 		{
-			if (UPcQPlayerMovementComponent* MC = Cast<UPcQPlayerMovementComponent>(Char->GetCharacterMovement()))
+			if (UPcQPlayerMovementComponent* MC = Char->MoveComp)
 			{
 				if (!MC->OnComboEvent.IsAlreadyBound(this, &APcQDebugHUD::OnComboEvent))
 					MC->OnComboEvent.AddDynamic(this, &APcQDebugHUD::OnComboEvent);
 
+				// ── 2. On-Beat Action Hit Marker ───────────────────────────────
+				float ActionFlash = MC->GetOnBeatFlash();
+				if (bEnableOnBeatHitMarker && ActionFlash > 0.01f)
+				{
+					const float CX = Canvas->SizeX * 0.5f;
+					const float CY = Canvas->SizeY * 0.5f;
+					
+					// Expanding Ring
+					const float HitR = 30.f + (1.f - ActionFlash) * 50.f; 
+					DrawCircleHUD(CX, CY, HitR, FLinearColor(1.f, 0.85f, 0.2f, ActionFlash * 0.4f), 2.5f, 32);
+
+					// Expanding X Hit Marker (FPS Style)
+					const float Exp = (1.f - ActionFlash); 
+					const float Dist = 20.f + Exp * 25.f;
+					const float Len = 8.f + ActionFlash * 8.f;
+					const FLinearColor HitCol(1.f, 0.9f, 0.1f, ActionFlash * 0.8f);
+
+					DrawLine(CX - Dist, CY - Dist, CX - Dist - Len, CY - Dist - Len, HitCol, 2.5f);
+					DrawLine(CX + Dist, CY - Dist, CX + Dist + Len, CY - Dist - Len, HitCol, 2.5f);
+					DrawLine(CX - Dist, CY + Dist, CX - Dist - Len, CY + Dist + Len, HitCol, 2.5f);
+					DrawLine(CX + Dist, CY + Dist, CX + Dist + Len, CY + Dist + Len, HitCol, 2.5f);
+				}
+
+				DrawDotCrosshair(BeatRemainingFraction, MC, FlashSoft);
+				DrawPlayerStatus(MC, Char, FlashSoft);
+				DrawStyleMeter(MC, FlashSoft);
 				DrawBhopDebug(MC);
 
 				if (UPcMusicAnalysisSubsystem* SyncSub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 					DrawSyncDebug(SyncSub, MC);
-
-				const float BeatFlash = MC->GetOnBeatFlash();
-				const float CX        = Canvas->SizeX * 0.5f;
-				const float CY        = Canvas->SizeY * 0.5f;
-				const float W         = Canvas->SizeX;
-				const float H         = Canvas->SizeY;
-
-				// ── Ambient rhythm pulse ─────────────────────────────────────
-				const float AmbAlpha = 0.04f + 0.15f * FlashSoft;
-				const float BandT    = 16.f  + 10.f  * FlashSoft;
-				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, 0.f, W, BandT);
-				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, H - BandT, W, BandT);
-				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), 0.f, 0.f, BandT, H);
-				DrawRect(FLinearColor(0.1f, 0.8f, 1.0f, AmbAlpha), W - BandT, 0.f, BandT, H);
-
-				// ── Snap ring ────────────────────────────────────────────────
-				{
-					const ESnapAction SnapAct  = MC->GetActiveSnap();
-					const float       SnapPulse = MC->GetSnapPulseFlash();
-
-					FLinearColor SnapCol(0.5f, 0.5f, 0.5f, 0.f);
-					FString      SnapLabel;
-					if      (SnapAct == ESnapAction::Jump)        { SnapCol = FLinearColor(0.7f, 1.f, 0.3f);   SnapLabel = TEXT("GROUND JUMP"); }
-					else if (SnapAct == ESnapAction::LandingJump) { SnapCol = FLinearColor(1.f, 0.88f, 0.2f);  SnapLabel = TEXT("BUFFERED JUMP"); }
-					else if (SnapAct == ESnapAction::DoubleJump)  { SnapCol = FLinearColor(0.27f, 0.65f, 1.f); SnapLabel = TEXT("DOUBLE JUMP"); }
-					else if (SnapAct == ESnapAction::GPPulse)     { SnapCol = FLinearColor(1.f, 0.55f, 0.1f);  SnapLabel = TEXT("GP PULSE"); }
-
-					const float AmbA     = 0.25f + 0.55f * FlashSoft;
-					const float PulseA   = AmbA + SnapPulse * 0.4f;
-					const float RingR    = 32.f + SnapPulse * 4.f;
-					const float GapDeg   = 8.f;
-					const int32 NSeg     = 6;
-					const float SegDeg   = (360.f / NSeg) - GapDeg;
-					const float SegThick = 2.5f + SnapPulse * 1.5f;
-					const int32 LitSeg   = FMath::FloorToInt(FlashSoft * NSeg);
-
-					for (int32 i = 0; i < NSeg; ++i)
-					{
-						const float StartA = FMath::DegreesToRadians(i * (360.f / NSeg) + GapDeg * 0.5f - 90.f);
-						const float EndA   = StartA + FMath::DegreesToRadians(SegDeg);
-						const float SegA   = (i <= LitSeg) ? PulseA : AmbA * 0.5f;
-						const FLinearColor SC = SnapCol * FLinearColor(1,1,1, SegA);
-						const int32 Steps = 8;
-						for (int32 s = 0; s < Steps; ++s)
-						{
-							const float A1 = FMath::Lerp(StartA, EndA, (float)s     / Steps);
-							const float A2 = FMath::Lerp(StartA, EndA, (float)(s+1) / Steps);
-							DrawLine(CX + RingR * FMath::Cos(A1), CY + RingR * FMath::Sin(A1),
-							         CX + RingR * FMath::Cos(A2), CY + RingR * FMath::Sin(A2),
-							         SC, SegThick);
-						}
-					}
-					if (GEngine)
-					{
-						const FLinearColor LC = SnapCol * FLinearColor(1,1,1, 0.5f + 0.5f * FlashSoft);
-						DrawText(SnapLabel, LC, CX - SnapLabel.Len() * 3.5f, CY + RingR + 8.f, GEngine->GetSmallFont(), 1.f);
-					}
-				}
-
-				// ── GP Pulse bar ─────────────────────────────────────────────
-				{
-					const float BW  = 240.f;
-					const float BH  =   8.f;
-					const float BX  = CX - BW * 0.5f;
-					const float BY  = Canvas->SizeY - 116.f;
-					const FLinearColor PulseCol(1.f, 0.55f, 0.05f);
-
-					if (MC->IsGPPulseActive())
-					{
-						const float FillRatio = MC->GetGPPulseAlpha();
-						DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.75f), BX - 2.f, BY - 2.f, BW + 4.f, BH + 4.f);
-						DrawRect(FLinearColor(0.05f, 0.04f, 0.02f, 1.f), BX, BY, BW, BH);
-						DrawRect(PulseCol * FLinearColor(1,1,1, 0.9f), BX, BY, BW * FillRatio, BH);
-						DrawRect(PulseCol * FLinearColor(1,1,1, 0.8f), BX, BY,       BW, 1.f);
-						DrawRect(PulseCol * FLinearColor(1,1,1, 0.8f), BX, BY+BH-1.f, BW, 1.f);
-						DrawRect(PulseCol * FLinearColor(1,1,1, 0.8f), BX, BY,       1.f, BH);
-						DrawRect(PulseCol * FLinearColor(1,1,1, 0.8f), BX+BW-1.f, BY, 1.f, BH);
-						if (GEngine) DrawText(TEXT("GP PULSE"), PulseCol * FLinearColor(1,1,1, 0.9f), BX + 4.f, BY - 13.f, GEngine->GetSmallFont(), 1.f);
-					}
-				}
-
-				// ── Boost bar ────────────────────────────────────────────────
-				{
-					const float BoostCool   = MC->GetBoostCooldownAlpha();
-					const float BoostActive = MC->GetBoostActiveAlpha();
-					const bool  bIsBoosting = MC->IsPowerBoosting();
-					const FLinearColor BoostCol(1.f, 0.55f, 0.05f);
-					const float BW  = 240.f; const float BH = 8.f;
-					const float BX  = CX - BW * 0.5f;
-					const float BY  = Canvas->SizeY - 100.f;
-
-					DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.75f), BX - 2.f, BY - 2.f, BW + 4.f, BH + 4.f);
-					DrawRect(FLinearColor(0.05f, 0.04f, 0.02f, 1.f), BX, BY, BW, BH);
-
-					float FillRatio = 0.f, FillAlpha = 0.f;
-					if (bIsBoosting) { FillRatio = BoostActive; FillAlpha = 0.85f + BeatFlash * 0.15f; }
-					else if (BoostCool > 0.f) { FillRatio = 1.f - BoostCool; FillAlpha = 0.25f; }
-					else { FillRatio = 1.f; FillAlpha = 0.6f + FlashSoft * 0.3f; }
-
-					if (FillRatio > 0.01f) DrawRect(BoostCol * FLinearColor(1,1,1,FillAlpha), BX, BY, BW * FillRatio, BH);
-
-					const float BA = bIsBoosting ? (0.7f + BeatFlash*0.3f) : (BoostCool <= 0.f ? 0.55f : 0.2f);
-					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY,         BW, 1.f);
-					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY+BH-1.f,  BW, 1.f);
-					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX, BY,         1.f, BH);
-					DrawRect(BoostCol * FLinearColor(1,1,1,BA), BX+BW-1.f, BY,  1.f, BH);
-
-					if (GEngine) {
-						const FString BLabel = bIsBoosting ? TEXT("BOOST") : (BoostCool > 0.f ? TEXT("BOOST CD") : TEXT("BOOST RDY"));
-						DrawText(BLabel, BoostCol * FLinearColor(1,1,1,FillAlpha + 0.2f), BX + 4.f, BY - 13.f, GEngine->GetSmallFont(), 1.f);
-					}
-				}
-
-				// ── Frenzy display (Ultrakill-style, right side) ─────────────
-				DrawFrenzy(MC, FlashSoft);
-
-				if (Canvas) DrawAbilityBars(MC, PC);
-				if (Canvas) DrawComboFeed();
 			}
 		}
 	}
 }
 
 // =============================================================================
-//  FRENZY DISPLAY — Ultrakill style
+//  ULTRAKILL-STYLE METER (Combos & Frenzy)
 // =============================================================================
 
-void APcQDebugHUD::DrawFrenzy(UPcQPlayerMovementComponent* MC, float FlashSoft)
+void APcQDebugHUD::DrawStyleMeter(UPcQPlayerMovementComponent* MC, float FlashSoft)
 {
 	if (!Canvas || !GEngine || !MC) return;
 
-	const float Gauge      = MC->GetFrenzyGauge();
-	const float DeltaTime  = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
-	FrenzyDisplayAlpha     = FMath::FInterpTo(FrenzyDisplayAlpha, Gauge, DeltaTime, 6.f);
+	const float Gauge = MC->GetFrenzyGauge();
+	const FLinearColor TierCol = GetFrenzyColor(Gauge, MC);
+	const FString TierLetter = GetFrenzyTierLabel(Gauge, MC);
 
-	const FLinearColor TierCol  = GetFrenzyColor(Gauge, MC);
-	const FString      TierLabel = GetFrenzyTierLabel(Gauge, MC);
+	FString TierWord;
+	float RankProgress = 0.f;
 
-	// Position: right side, vertically centered-ish
-	const float RX  = Canvas->SizeX - 90.f;
-	const float RY  = Canvas->SizeY * 0.42f;
+	if (MC->IsSTierActive()) {
+		TierWord = TEXT("SUPREME");
+		RankProgress = MC->IsSTierLocked() ? 1.f : FMath::Clamp((Gauge - MC->FrenzyThresh_A) / (MC->FrenzyThresh_S - MC->FrenzyThresh_A), 0.f, 1.f);
+	} else if (Gauge >= MC->FrenzyThresh_A) {
+		TierWord = TEXT("ANARCHIC");
+		RankProgress = (Gauge - MC->FrenzyThresh_A) / (MC->FrenzyThresh_S - MC->FrenzyThresh_A);
+	} else if (Gauge >= MC->FrenzyThresh_B) {
+		TierWord = TEXT("BRUTAL");
+		RankProgress = (Gauge - MC->FrenzyThresh_B) / (MC->FrenzyThresh_A - MC->FrenzyThresh_B);
+	} else if (Gauge >= MC->FrenzyThresh_C) {
+		TierWord = TEXT("CHAOTIC");
+		RankProgress = (Gauge - MC->FrenzyThresh_C) / (MC->FrenzyThresh_B - MC->FrenzyThresh_C);
+	} else {
+		TierWord = TEXT("DESTRUCTIVE");
+		RankProgress = Gauge / MC->FrenzyThresh_C;
+	}
 
-	// ── Big tier letter ───────────────────────────────────────────────────────
-	// Draw twice: dark shadow then colored letter
-	const float LetterScale = 4.0f;
-	const float LetterX     = RX + 8.f;
-	const float LetterY     = RY;
-	DrawText(TierLabel, FLinearColor(0.f, 0.f, 0.f, 0.6f),  LetterX + 2.f, LetterY + 2.f, GEngine->GetSmallFont(), LetterScale);
-	DrawText(TierLabel, TierCol,                              LetterX,       LetterY,       GEngine->GetSmallFont(), LetterScale);
+	StyleGaugeSmoothed = FMath::FInterpTo(StyleGaugeSmoothed, RankProgress, GetWorld()->GetDeltaSeconds(), 12.f);
 
-	// ── Gauge bar (vertical, fills upward) ───────────────────────────────────
-	const float BarW   = 8.f;
-	const float BarH   = 80.f;
-	const float BarX   = RX - 14.f;
-	const float BarY   = RY;
-	const float FillH  = BarH * FrenzyDisplayAlpha;
-	const float FillY  = BarY + BarH - FillH;
+	const float BoxW = 280.f;
+	const float BoxH = 80.f;
+	const float BoxX = Canvas->SizeX - BoxW - 40.f;
+	const float BoxY = Canvas->SizeY * 0.15f; // Moved up slightly to make room
 
-	// Background
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.75f), BarX - 2.f, BarY - 2.f, BarW + 4.f, BarH + 4.f);
-	DrawRect(FLinearColor(0.05f, 0.05f, 0.08f, 1.f), BarX, BarY, BarW, BarH);
+	// Background Block & Accents
+	DrawRect(FLinearColor(0.02f, 0.02f, 0.03f, 0.85f), BoxX, BoxY, BoxW, BoxH);
+	DrawRect(TierCol, BoxX, BoxY, 6.f, BoxH); // Bold left rim
+	
+	// Sharp Sci-Fi borders
+	const FLinearColor BorderCol = TierCol * FLinearColor(1,1,1, 0.3f);
+	DrawLine(BoxX, BoxY, BoxX + BoxW, BoxY, BorderCol, 1.5f);
+	DrawLine(BoxX + BoxW, BoxY, BoxX + BoxW, BoxY + BoxH, BorderCol, 1.5f);
+	DrawLine(BoxX, BoxY + BoxH, BoxX + BoxW, BoxY + BoxH, BorderCol, 1.5f);
 
-	// Fill
-	if (FillH > 0.5f)
-		DrawRect(TierCol * FLinearColor(1,1,1, 0.85f + FlashSoft * 0.15f), BarX, FillY, BarW, FillH);
+	UFont* LargeFont  = GEngine->GetLargeFont();
+	UFont* MediumFont = GEngine->GetMediumFont();
+	UFont* SmallFont  = GEngine->GetSmallFont();
 
-	// Tier threshold markers
-	auto DrawThreshMark = [&](float Thresh)
+	// Rank Letter (Pulse on beat)
+	const float LetterScale = 4.0f + (MC->IsSTierActive() ? FlashSoft * 0.3f : 0.f);
+	DrawTextWithShadow(TierLetter, TierCol, BoxX + 22.f, BoxY - 5.f, LargeFont, LetterScale);
+
+	// Tier Title Word
+	DrawTextWithShadow(TierWord, TierCol * FLinearColor(1,1,1, 0.95f), BoxX + 100.f, BoxY + 12.f, MediumFont, 1.25f);
+
+	// Multiplier Subtext
+	FString MultStr = FString::Printf(TEXT("SPEED MULTIPLIER x%.2f"), MC->GetFrenzySpeedMult());
+	DrawTextWithShadow(MultStr, FLinearColor(0.7f, 0.7f, 0.7f, 1.f), BoxX + 100.f, BoxY + 38.f, SmallFont, 1.0f);
+
+	// Progress Gauge Bar
+	const float BarW = 160.f;
+	const float BarH = 8.f;
+	const float BarX = BoxX + 100.f;
+	const float BarY = BoxY + 58.f;
+
+	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 1.f), BarX, BarY, BarW, BarH);
+	if (StyleGaugeSmoothed > 0.01f) {
+		DrawRect(TierCol * FLinearColor(1,1,1, 0.85f + 0.15f * FlashSoft), BarX, BarY, BarW * StyleGaugeSmoothed, BarH);
+	}
+
+	// ── Dynamic Combo Feed ───────────────────────────────────────────────────
+	const float Now = GetWorld()->GetTimeSeconds();
+	float ComboY = BoxY + BoxH + 12.f;
+
+	ComboFeed.RemoveAll([&](const FPcComboFeedEntry& E) { return (Now - E.BornAt) >= ComboFeed_FadeDuration; });
+
+	for (int32 i = ComboFeed.Num() - 1; i >= 0; --i)
 	{
-		const float MY = BarY + BarH - BarH * Thresh;
-		DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.25f), BarX - 3.f, MY - 1.f, BarW + 6.f, 1.f);
-	};
-	DrawThreshMark(MC->FrenzyThresh_C);
-	DrawThreshMark(MC->FrenzyThresh_B);
-	DrawThreshMark(MC->FrenzyThresh_A);
+		const FPcComboFeedEntry& E = ComboFeed[i];
+		const float Age = Now - E.BornAt;
+		const float HalfDur = ComboFeed_FadeDuration * 0.6f;
+		const float Alpha = Age < HalfDur ? 1.f : FMath::Clamp(1.f - (Age - HalfDur) / (ComboFeed_FadeDuration - HalfDur), 0.f, 1.f);
 
-	// Border
-	DrawRect(TierCol * FLinearColor(1,1,1, 0.6f), BarX,          BarY,          BarW, 1.f);
-	DrawRect(TierCol * FLinearColor(1,1,1, 0.6f), BarX,          BarY + BarH,   BarW, 1.f);
-	DrawRect(TierCol * FLinearColor(1,1,1, 0.6f), BarX,          BarY,          1.f,  BarH);
-	DrawRect(TierCol * FLinearColor(1,1,1, 0.6f), BarX + BarW,   BarY,          1.f,  BarH);
+		if (Alpha < 0.01f) continue;
 
-	// Label below bar
-	const float MultVal = MC->GetFrenzySpeedMult();
-	const FString MultStr = FString::Printf(TEXT("x%.2f"), MultVal);
-	DrawText(MultStr, TierCol * FLinearColor(1,1,1, 0.7f), BarX - 4.f, BarY + BarH + 6.f, GEngine->GetSmallFont(), 1.f);
+		// Clean Slide-in
+		const float SlideInX = Age < 0.15f ? (1.f - Age / 0.15f) * -30.f : 0.f;
+		const float TxtX = BoxX + 28.f + SlideInX;
+		const float TxtY = ComboY;
 
-	// Flash ring when S tier
-	if (Gauge >= MC->FrenzyThresh_S && FlashSoft > 0.05f)
-	{
-		const float CX = LetterX + 14.f;
-		const float CY = LetterY + 20.f;
-		DrawCircleHUD(CX, CY, 28.f + FlashSoft * 6.f, TierCol * FLinearColor(1,1,1, FlashSoft * 0.4f), 2.f, 24);
+		// Side Accent & Shadow Backing
+		DrawRect(FLinearColor(0.01f, 0.01f, 0.02f, Alpha * 0.6f), BoxX + 16.f + SlideInX, TxtY - 2.f, BoxW - 20.f, 20.f);
+		DrawRect(E.Color * FLinearColor(1,1,1, Alpha * 0.9f), BoxX + 16.f + SlideInX, TxtY - 2.f, 4.f, 20.f);
+		
+		DrawTextWithShadow(E.Label, E.Color * FLinearColor(1, 1, 1, Alpha), TxtX, TxtY, SmallFont, 1.15f);
+
+		ComboY += 26.f;
 	}
 }
 
 // =============================================================================
-//  ARC METRONOME  (unchanged from original)
+//  CLEAN PLAYER STATUS (Abilities & Movement Blocks)
 // =============================================================================
 
-void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G,
-                                     int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
-                                     float FlashHard, float FlashSoft)
+void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerCharacter* PC, float FlashSoft)
+{
+	if (!Canvas || !GEngine || !MC || !PC) return;
+
+	const float CX = Canvas->SizeX * 0.5f;
+	const float BY = Canvas->SizeY * 0.85f; // Lowered to keep central view clear
+	
+	const float BarW = 160.f;
+	const float BarH = 8.f;
+	const float Gap  = 24.f;
+
+	auto DrawStatusBlock = [&](float X, float Y, const FString& Label, float FillPct, FLinearColor Col, bool bIsActive)
+	{
+		DrawTextWithShadow(Label, Col * FLinearColor(1,1,1, 0.95f), X, Y - 20.f, GEngine->GetSmallFont(), 1.05f);
+		
+		// Frame & Backing
+		const FLinearColor FrameCol = FLinearColor(1,1,1, 0.15f);
+		DrawRect(FLinearColor(0.01f, 0.01f, 0.02f, 0.75f), X - 2.f, Y - 2.f, BarW + 4.f, BarH + 4.f);
+		
+		// Cyberpunk Corner brackets
+		DrawLine(X - 4.f, Y - 4.f, X + 10.f, Y - 4.f, FrameCol, 1.5f);
+		DrawLine(X - 4.f, Y - 4.f, X - 4.f, Y + 6.f, FrameCol, 1.5f);
+		DrawLine(X + BarW + 4.f, Y + BarH + 4.f, X + BarW - 10.f, Y + BarH + 4.f, FrameCol, 1.5f);
+		DrawLine(X + BarW + 4.f, Y + BarH + 4.f, X + BarW + 4.f, Y + BarH - 6.f, FrameCol, 1.5f);
+
+		DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 1.f), X, Y, BarW, BarH);
+		
+		if (FillPct > 0.01f) {
+			float Alpha = bIsActive ? (0.85f + 0.15f * FlashSoft) : 0.45f;
+			DrawRect(Col * FLinearColor(1,1,1, Alpha), X, Y, BarW * FillPct, BarH);
+		}
+	};
+
+	// ── LEFT: Movement Status ─────────────────────────
+	float MoveFill = 0.f;
+	FLinearColor MoveCol = FLinearColor(0.4f, 0.4f, 0.4f);
+	FString MoveLabel = TEXT("MOMENTUM READY");
+	bool bMoveActive = false;
+
+	if (MC->IsPowerBoosting()) {
+		MoveFill = MC->GetBoostActiveAlpha();
+		MoveCol = FLinearColor(1.f, 0.55f, 0.15f);
+		MoveLabel = TEXT("POWER BOOST");
+		bMoveActive = true;
+	} else if (MC->IsGPPulseActive()) {
+		MoveFill = MC->GetGPPulseAlpha();
+		MoveCol = FLinearColor(1.f, 0.35f, 0.05f);
+		MoveLabel = TEXT("GP PULSE");
+		bMoveActive = true;
+	} else if (MC->GetBoostCooldownAlpha() > 0.f) {
+		MoveFill = 1.f - MC->GetBoostCooldownAlpha();
+		MoveCol = FLinearColor(0.6f, 0.4f, 0.2f);
+		MoveLabel = TEXT("BOOST CD");
+	} else {
+		MoveFill = 1.f;
+		MoveCol = FLinearColor(1.f, 0.8f, 0.2f);
+	}
+	DrawStatusBlock(CX - BarW - Gap, BY, MoveLabel, MoveFill, MoveCol, bMoveActive);
+
+	// ── RIGHT: Combat Status ──────────────────────
+	float PistolCool = PC->GetPistolCooldownAlpha();
+	float DJCool     = MC->GetDoubleJumpCooldownAlpha();
+	
+	float CombatFill = 1.f;
+	FLinearColor CombatCol = FLinearColor(0.f, 0.8f, 1.f);
+	FString CombatLabel = TEXT("SYS READY");
+	bool bCombatActive = false;
+
+	if (PistolCool > 0.f) {
+		CombatFill = 1.f - PistolCool;
+		CombatCol = FLinearColor(1.f, 0.2f, 0.2f);
+		CombatLabel = TEXT("PISTOL RECHARGE");
+	} else if (DJCool > 0.f) {
+		CombatFill = 1.f - DJCool;
+		CombatCol = FLinearColor(0.2f, 0.6f, 1.f);
+		CombatLabel = TEXT("JUMP RECHARGE");
+	}
+	DrawStatusBlock(CX + Gap, BY, CombatLabel, CombatFill, CombatCol, bCombatActive);
+}
+
+// =============================================================================
+//  CROSSHAIR & METRONOME
+// =============================================================================
+
+void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovementComponent* MC, float FlashSoft)
+{
+	if (!Canvas || !MC) return;
+	const float CX = Canvas->SizeX * 0.5f;
+	const float CY = Canvas->SizeY * 0.5f;
+	const float FlashA = FMath::Clamp(1.f - BeatRemainingFraction / 0.15f, 0.f, 1.f);
+	
+	// Snap Ring Indicator
+	if (MC)
+	{
+		const ESnapAction SnapAct  = MC->GetActiveSnap();
+		const float       SnapPulse = MC->GetSnapPulseFlash();
+
+		FLinearColor SnapCol(0.5f, 0.5f, 0.5f, 0.f);
+		if      (SnapAct == ESnapAction::Jump)        SnapCol = FLinearColor(0.7f, 1.f, 0.3f); 
+		else if (SnapAct == ESnapAction::LandingJump) SnapCol = FLinearColor(1.f, 0.88f, 0.2f); 
+		else if (SnapAct == ESnapAction::DoubleJump)  SnapCol = FLinearColor(0.27f, 0.65f, 1.f);
+		else if (SnapAct == ESnapAction::GPPulse)     SnapCol = FLinearColor(1.f, 0.55f, 0.1f);
+
+		const float AmbA     = 0.15f + 0.2f * FlashSoft;
+		const float PulseA   = AmbA + SnapPulse * 0.6f;
+		const float RingR    = 24.f + SnapPulse * 6.f;
+		const float GapDeg   = 10.f;
+		const int32 NSeg     = 4;
+		const float SegDeg   = (360.f / NSeg) - GapDeg;
+		const float SegThick = 1.5f + SnapPulse * 2.f;
+
+		for (int32 i = 0; i < NSeg; ++i)
+		{
+			const float StartA = FMath::DegreesToRadians(i * (360.f / NSeg) + GapDeg * 0.5f - 90.f);
+			const float EndA   = StartA + FMath::DegreesToRadians(SegDeg);
+			const FLinearColor SC = SnapCol * FLinearColor(1,1,1, PulseA);
+			
+			// Draw curved segments using multiple lines
+			const int32 Steps = 8;
+			for (int32 s = 0; s < Steps; ++s) {
+				const float A1 = FMath::Lerp(StartA, EndA, (float)s     / Steps);
+				const float A2 = FMath::Lerp(StartA, EndA, (float)(s+1) / Steps);
+				DrawLine(CX + RingR * FMath::Cos(A1), CY + RingR * FMath::Sin(A1), CX + RingR * FMath::Cos(A2), CY + RingR * FMath::Sin(A2), SC, SegThick);
+			}
+		}
+	}
+
+	// Beat Chevrons
+	const float AW = CrosshairChevronWidth, AH = CrosshairChevronHeight;
+	const float EXTRA_H = 2.0f, THICK = 2.5f;
+
+	auto DrawChev = [&](float TipX, bool bLeft, float Alpha, FLinearColor Col) {
+		const float BackX = bLeft ? TipX + AW : TipX - AW;
+		const float H = AH + EXTRA_H;
+		const FLinearColor Sh(0.f, 0.f, 0.f, FMath::Min(0.5f, Alpha * 0.8f));
+		// Shadow
+		DrawLine(BackX + 1.f, CY - H + 1.f, TipX + 1.f, CY + 1.f, Sh, THICK + 1.5f); 
+		DrawLine(TipX + 1.f, CY + 1.f, BackX + 1.f, CY + H + 1.f, Sh, THICK + 1.5f);
+		// Core
+		FLinearColor FC = Col; FC.A *= Alpha;
+		DrawLine(BackX, CY - H, TipX, CY, FC, THICK); 
+		DrawLine(TipX, CY, BackX, CY + H, FC, THICK);
+	};
+
+	const float MaxBeats = FMath::Max(1.0f, (float)CrosshairBeatsToShow);
+	for (int32 i = CrosshairBeatsToShow - 1; i >= 0; --i) {
+		const float d = BeatRemainingFraction + (float)i;
+		const float DistNormalized = FMath::Clamp(d / MaxBeats, 0.0f, 1.0f);
+		const float Alpha = FMath::Pow(1.0f - DistNormalized, 2.0f);
+		if (Alpha < 0.01f) continue;
+		const float Dist = CrosshairGateDist + d * CrosshairBeatStep;
+		DrawChev(CX - Dist, true, Alpha, FLinearColor(0.8f,0.8f,0.8f,Alpha));
+		DrawChev(CX + Dist, false, Alpha, FLinearColor(0.8f,0.8f,0.8f,Alpha));
+	}
+	
+	const FLinearColor GateResting(0.1f, 0.1f, 0.1f, 0.5f), GateFlash(1.f,1.f,1.f,1.f);
+	const FLinearColor GateCol = GateResting + (GateFlash - GateResting) * FlashA;
+	DrawChev(CX - CrosshairGateDist, true,  1.f, GateCol);
+	DrawChev(CX + CrosshairGateDist, false, 1.f, GateCol);
+	
+	// Center Dot
+	const float DR = DotSize;
+	const FLinearColor DotResting(0.05f,0.75f,1.0f,0.8f), DotFlash(1.f,1.f,1.f,1.f);
+	const FLinearColor DotCol = DotResting + (DotFlash - DotResting) * FlashA;
+	DrawRect(FLinearColor(0.f,0.f,0.f,0.8f), CX-DR-1.f, CY-DR-1.f, (DR+1.f)*2.f, (DR+1.f)*2.f);
+	DrawRect(DotCol, CX-DR, CY-DR, DR*2.f, DR*2.f);
+}
+
+// Rest of the implementation details for Arc Metronome and Glance Board
+void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard, float FlashSoft)
 {
 	const float BufferTimeMS = IntervalMS * 0.5f;
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 10.f, G.SpawnAngle, G.BufferAngle, FLinearColor(0.f, 0.f, 0.f, 0.18f), 60);
-	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness, G.StrikeAngle, G.BufferAngle, FLinearColor(0.010f, 0.018f, 0.030f, 0.30f), 20);
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness + 8.f, G.SpawnAngle, G.BufferAngle, FLinearColor(0.f, 0.f, 0.f, 0.12f), 60);
+	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness, G.StrikeAngle, G.BufferAngle, FLinearColor(0.01f, 0.015f, 0.025f, 0.25f), 20);
 
-	const FLinearColor ActiveColor = FLinearColor::LerpUsingHSV(FLinearColor(0.020f, 0.055f, 0.100f, 0.34f), FLinearColor(0.016f, 0.090f, 0.160f, 0.42f), FlashSoft);
+	const FLinearColor ActiveColor = FLinearColor::LerpUsingHSV(FLinearColor(0.02f, 0.05f, 0.1f, 0.25f), FLinearColor(0.015f, 0.09f, 0.16f, 0.35f), FlashSoft);
 	DrawArcFilled(G.CX, G.CY, Arc_Radius, Arc_Thickness, G.SpawnAngle, G.StrikeAngle, ActiveColor, 60);
-	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.0f, G.SpawnAngle, G.StrikeAngle, FLinearColor(0.4f, 0.85f, 1.f, 0.025f + FlashSoft * 0.10f), 60);
+	DrawArcHUD(G.CX, G.CY, Arc_Radius - Arc_Thickness * 0.5f, 1.0f, G.SpawnAngle, G.StrikeAngle, FLinearColor(0.4f, 0.85f, 1.f, 0.025f + FlashSoft * 0.08f), 60);
 
 	struct FNoteEntry { float TimeDiffMS; bool bIsThreat; int32 ThreatIdx; };
 	TArray<FNoteEntry> AllNotes;
@@ -364,12 +488,12 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 		if (Entry.bIsThreat) DrawThreatNote(NoteX, NoteY, Alpha, bPassed, ActiveThreats[Entry.ThreatIdx], G);
 		else {
 			if (bPassed) {
-				DrawCircleHUD(NoteX, NoteY, 6.f, FLinearColor(0.20f, 0.24f, 0.34f, Alpha * 1.25f), 1.4f, 16);
+				DrawCircleHUD(NoteX, NoteY, 6.f, FLinearColor(0.20f, 0.24f, 0.34f, Alpha), 1.4f, 16);
 			} else {
-				DrawCircleHUD(NoteX, NoteY, 14.f, FLinearColor(0.f, 0.80f, 1.f, Alpha * 0.16f), 1.f, 16);
+				DrawCircleHUD(NoteX, NoteY, 12.f, FLinearColor(0.f, 0.80f, 1.f, Alpha * 0.16f), 1.f, 16);
 				const bool  bIsNext  = TimeDiff < IntervalMS && TimeDiff >= 0.f;
 				const float RingSize = bIsNext ? Arc_Thickness * 0.65f : Arc_Thickness * 0.42f;
-				DrawCircleHUD(NoteX, NoteY, RingSize, FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 1.f : 0.72f)), bIsNext ? 2.4f : 1.8f, bIsNext ? 24 : 16);
+				DrawCircleHUD(NoteX, NoteY, RingSize, FLinearColor(0.f, 0.82f, 1.f, Alpha * (bIsNext ? 1.f : 0.65f)), bIsNext ? 2.4f : 1.5f, 16);
 				DrawRect(FLinearColor(0.70f, 0.95f, 1.f, Alpha * (bIsNext ? 1.f : 0.7f)), NoteX - 2.f, NoteY - 2.f, 4.f, 4.f);
 			}
 		}
@@ -377,98 +501,78 @@ void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const F
 
 	const float StrikeX = G.CX + Arc_Radius * FMath::Cos(G.StrikeAngle);
 	const float StrikeY = G.CY + Arc_Radius * FMath::Sin(G.StrikeAngle);
-	if (FlashSoft > 0.01f) DrawCircleHUD(StrikeX, StrikeY, 38.f * FlashSoft, FLinearColor(0.1f, 0.9f, 0.85f, 0.06f * FlashSoft), 1.f, 32);
+	if (FlashSoft > 0.01f) DrawCircleHUD(StrikeX, StrikeY, 34.f * FlashSoft, FLinearColor(0.1f, 0.9f, 0.85f, 0.05f * FlashSoft), 1.f, 24);
 	if (FlashHard > 0.01f) {
-		DrawCircleHUD(StrikeX, StrikeY, 22.f, FLinearColor(0.15f, 1.f, 0.90f, 0.12f * FlashHard), 2.f, 32);
-		DrawCircleHUD(StrikeX, StrikeY, 13.f, FLinearColor(0.20f, 1.f, 0.95f, 0.22f * FlashHard), 2.f, 24);
+		DrawCircleHUD(StrikeX, StrikeY, 20.f, FLinearColor(0.15f, 1.f, 0.90f, 0.12f * FlashHard), 2.f, 24);
 	}
-	const float InnerR = Arc_Radius - Arc_Thickness - 6.f;
-	const float OuterR = Arc_Radius + Arc_Thickness + 6.f + 10.f * FlashHard;
+	const float InnerR = Arc_Radius - Arc_Thickness - 4.f;
+	const float OuterR = Arc_Radius + Arc_Thickness + 4.f + 8.f * FlashHard;
 	const FLinearColor TickColor = FLinearColor::LerpUsingHSV(FLinearColor(0.f, 0.55f, 0.65f, 0.55f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
-	DrawLine(G.CX + InnerR * FMath::Cos(G.StrikeAngle), G.CY + InnerR * FMath::Sin(G.StrikeAngle), G.CX + OuterR * FMath::Cos(G.StrikeAngle), G.CY + OuterR * FMath::Sin(G.StrikeAngle), TickColor, 3.5f + 3.f * FlashHard);
-	const float Dh = 5.f + 3.f * FlashHard;
-	const FLinearColor DC = FLinearColor::LerpUsingHSV(FLinearColor(0.f, 0.5f, 0.55f, 0.70f), FLinearColor(0.16f, 1.f, 1.f, 1.f), FlashHard);
-	DrawLine(StrikeX, StrikeY - Dh, StrikeX + Dh, StrikeY, DC, 2.f); DrawLine(StrikeX + Dh, StrikeY, StrikeX, StrikeY + Dh, DC, 2.f);
-	DrawLine(StrikeX, StrikeY + Dh, StrikeX - Dh, StrikeY, DC, 2.f); DrawLine(StrikeX - Dh, StrikeY, StrikeX, StrikeY - Dh, DC, 2.f);
+	DrawLine(G.CX + InnerR * FMath::Cos(G.StrikeAngle), G.CY + InnerR * FMath::Sin(G.StrikeAngle), G.CX + OuterR * FMath::Cos(G.StrikeAngle), G.CY + OuterR * FMath::Sin(G.StrikeAngle), TickColor, 3.f + 2.f * FlashHard);
 }
 
 void APcQDebugHUD::DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bPassed, const FPcHudThreatEvent& Threat, const FArcGeom& G)
 {
 	if (bPassed) {
-		const FLinearColor Ghost(0.18f, 0.16f, 0.24f, Alpha * 1.2f);
-		const float Hs = 7.f;
+		const FLinearColor Ghost(0.18f, 0.16f, 0.24f, Alpha * 0.8f);
+		const float Hs = 6.f;
 		DrawLine(NoteX, NoteY - Hs, NoteX + Hs, NoteY, Ghost, 1.5f); DrawLine(NoteX + Hs, NoteY, NoteX, NoteY + Hs, Ghost, 1.5f);
 		DrawLine(NoteX, NoteY + Hs, NoteX - Hs, NoteY, Ghost, 1.5f); DrawLine(NoteX - Hs, NoteY, NoteX, NoteY - Hs, Ghost, 1.5f);
 		return;
 	}
 	const FLinearColor OuterCol = Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha);
 	const FLinearColor CoreCol  = FLinearColor::LerpUsingHSV(Threat.Color, FLinearColor::White, 0.5f) * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.85f);
-	DrawCircleHUD(NoteX, NoteY, 17.f, Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.16f), 1.f, 16);
-	const float Os = 10.f;
+	DrawCircleHUD(NoteX, NoteY, 15.f, Threat.Color * FLinearColor(1.f, 1.f, 1.f, Alpha * 0.15f), 1.f, 16);
+	const float Os = 8.f;
 	DrawLine(NoteX, NoteY - Os, NoteX + Os, NoteY, OuterCol, 2.f); DrawLine(NoteX + Os, NoteY, NoteX, NoteY + Os, OuterCol, 2.f);
 	DrawLine(NoteX, NoteY + Os, NoteX - Os, NoteY, OuterCol, 2.f); DrawLine(NoteX - Os, NoteY, NoteX, NoteY - Os, OuterCol, 2.f);
-	const float Is = 5.f;
-	DrawLine(NoteX, NoteY - Is, NoteX + Is, NoteY, CoreCol, 5.f); DrawLine(NoteX + Is, NoteY, NoteX, NoteY + Is, CoreCol, 5.f);
-	DrawLine(NoteX, NoteY + Is, NoteX - Is, NoteY, CoreCol, 5.f); DrawLine(NoteX - Is, NoteY, NoteX, NoteY - Is, CoreCol, 5.f);
+	
 	if (Alpha > 0.45f && GEngine) {
 		const float DirX = NoteX - G.CX; const float DirY = NoteY - G.CY;
 		const float DirLen = FMath::Sqrt(DirX*DirX + DirY*DirY);
 		const float NormX = DirLen > 0.f ? DirX / DirLen : 0.f;
 		const float NormY = DirLen > 0.f ? DirY / DirLen : -1.f;
-		DrawText(Threat.Label, Threat.Color * FLinearColor(1.f,1.f,1.f, Alpha*0.80f), NoteX + NormX*20.f - 12.f, NoteY + NormY*20.f - 5.f, GEngine->GetSmallFont(), 1.f);
+		DrawTextWithShadow(Threat.Label, Threat.Color * FLinearColor(1.f,1.f,1.f, Alpha), NoteX + NormX*22.f - 12.f, NoteY + NormY*22.f - 5.f, GEngine->GetSmallFont(), 1.f);
 	}
 }
 
 // =============================================================================
-//  CROSSHAIR  (unchanged)
+//  DEBUG PANELS
 // =============================================================================
 
-void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction)
+void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 {
-	if (!Canvas) return;
-	const float CX = Canvas->SizeX * 0.5f;
-	const float CY = Canvas->SizeY * 0.5f;
-	const float FlashA = FMath::Clamp(1.f - BeatRemainingFraction / 0.15f, 0.f, 1.f);
-	const float AW = CrosshairChevronWidth, AH = CrosshairChevronHeight;
-	const float EXTRA_H = 2.0f, THICK = 3.0f;
-
-	auto DrawChev = [&](float TipX, bool bLeft, float Alpha, FLinearColor Col) {
-		const float BackX = bLeft ? TipX + AW : TipX - AW;
-		const float H = AH + EXTRA_H;
-		const FLinearColor Sh(0.f, 0.f, 0.f, FMath::Min(0.5f, Alpha * 0.8f));
-		DrawLine(BackX, CY - H, TipX, CY, Sh, THICK + 2.5f); DrawLine(TipX, CY, BackX, CY + H, Sh, THICK + 2.5f);
-		FLinearColor FC = Col; FC.A *= Alpha;
-		DrawLine(BackX, CY - H, TipX, CY, FC, THICK); DrawLine(TipX, CY, BackX, CY + H, FC, THICK);
+	if (!MC || !GEngine || !Canvas) return;
+	
+	// Pushed to Top-Left corner to avoid clash with Glance Board
+	const float PanelX = 20.f; float PanelY = 20.f; const float LineH = 22.f;
+	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White) {
+		DrawTextWithShadow(Label + TEXT("  ") + Value, Color, PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
+		PanelY += LineH;
 	};
 
-	const float MaxBeats = FMath::Max(1.0f, (float)CrosshairBeatsToShow);
-	for (int32 i = CrosshairBeatsToShow - 1; i >= 0; --i) {
-		const float d = BeatRemainingFraction + (float)i;
-		const float DistNormalized = FMath::Clamp(d / MaxBeats, 0.0f, 1.0f);
-		const float Alpha = FMath::Pow(1.0f - DistNormalized, 2.0f);
-		if (Alpha < 0.01f) continue;
-		const float Dist = CrosshairGateDist + d * CrosshairBeatStep;
-		DrawChev(CX - Dist, true, Alpha, FLinearColor(0.6f,0.6f,0.6f,Alpha));
-		DrawChev(CX + Dist, false, Alpha, FLinearColor(0.6f,0.6f,0.6f,Alpha));
-	}
-	const FLinearColor GateResting(0.05f,0.05f,0.05f,0.45f), GateFlash(1.f,1.f,1.f,1.f);
-	const FLinearColor GateCol = GateResting + (GateFlash - GateResting) * FlashA;
-	DrawChev(CX - CrosshairGateDist, true,  1.f, GateCol);
-	DrawChev(CX + CrosshairGateDist, false, 1.f, GateCol);
-	const float DR = DotSize;
-	const FLinearColor DotResting(0.05f,0.75f,1.0f,0.8f), DotFlash(1.f,1.f,1.f,1.f);
-	const FLinearColor DotCol = DotResting + (DotFlash - DotResting) * FlashA;
-	DrawRect(FLinearColor(0.f,0.f,0.f,0.8f), CX-DR-1.f, CY-DR-1.f, (DR+1.f)*2.f, (DR+1.f)*2.f);
-	DrawRect(DotCol, CX-DR, CY-DR, DR*2.f, DR*2.f);
-}
+	EBhopState State = MC->GetBhopState();
+	FString StateStr;
+	if      (State == EBhopState::PowerBoost)     StateStr = TEXT("BOOST");
+	else if (State == EBhopState::GroundPounding) StateStr = TEXT("GROUND POUND");
+	else if (State == EBhopState::WallSwim)       StateStr = TEXT("WALL SWIM");
+	else                                          StateStr = TEXT("ACTIVE");
+	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
-// =============================================================================
-//  GLANCE BOARD  (unchanged)
-// =============================================================================
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
+		Row(TEXT("PRESET:"), Sub->GetActivePresetName(), FLinearColor::Yellow);
+	}
+
+	const float HSpeed = MC->GetHorizontalSpeed();
+	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f,0.45f,0.f) : FLinearColor::White;
+	Row(TEXT("SPEED:"), FString::Printf(TEXT("%.0f u/s"), HSpeed), SpeedCol);
+	DrawRect(FLinearColor(0.05f,0.05f,0.05f,0.85f), PanelX, PanelY, 140.f, 4.f);
+	DrawRect(SpeedCol, PanelX, PanelY, 140.f * FMath::Clamp(HSpeed/(MC->MaxWalkSpeed*3.f),0.f,1.f), 4.f);
+}
 
 void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard)
 {
-	if (!Canvas) return;
+	if (!Canvas || !GEngine) return;
 	const float StrikeY = Canvas->SizeY * GlanceBoard_ScreenYPercent;
 	const float TopY    = StrikeY - GlanceBoard_Height;
 	const float PixPerBeat   = GlanceBoard_Height / (float)GlanceBoard_BeatsToShow;
@@ -476,16 +580,18 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 Cu
 	const float EnemyTrackX  = GlanceBoard_XOffset + GlanceBoard_TrackSpacing;
 	const float PanelPad = 14.f, PanelW = GlanceBoard_TrackSpacing + PanelPad * 2.f;
 
-	DrawRect(FLinearColor(0.01f,0.02f,0.05f,0.70f), PlayerTrackX-PanelPad, TopY-PanelPad, PanelW, GlanceBoard_Height+PanelPad*2.f);
-	DrawLine(PlayerTrackX-PanelPad, TopY-PanelPad, PlayerTrackX-PanelPad, StrikeY+PanelPad, FLinearColor(0.f,0.55f,0.75f,0.22f), 1.f);
-	if (GEngine) {
-		DrawText(TEXT("BEAT"), FLinearColor(0.f,0.70f,0.85f,0.50f), PlayerTrackX-6.f, TopY-14.f, GEngine->GetSmallFont(), 1.f);
-		DrawText(TEXT("THRT"), FLinearColor(1.f,0.20f,0.32f,0.50f), EnemyTrackX-6.f,  TopY-14.f, GEngine->GetSmallFont(), 1.f);
-	}
+	DrawRect(FLinearColor(0.01f,0.02f,0.03f,0.75f), PlayerTrackX-PanelPad, TopY-PanelPad, PanelW, GlanceBoard_Height+PanelPad*2.f);
+	DrawLine(PlayerTrackX-PanelPad, TopY-PanelPad, PlayerTrackX-PanelPad, StrikeY+PanelPad, FLinearColor(0.f,0.55f,0.75f,0.3f), 1.5f); // Border
+	
+	DrawTextWithShadow(TEXT("BEAT"), FLinearColor(0.f,0.70f,0.85f,0.70f), PlayerTrackX-8.f, TopY-18.f, GEngine->GetSmallFont(), 1.f);
+	DrawTextWithShadow(TEXT("THRT"), FLinearColor(1.f,0.20f,0.32f,0.70f), EnemyTrackX-8.f,  TopY-18.f, GEngine->GetSmallFont(), 1.f);
+	
 	DrawLine(PlayerTrackX, TopY, PlayerTrackX, StrikeY, FLinearColor(0.f,0.55f,0.75f,0.15f), 1.f);
 	DrawLine(EnemyTrackX,  TopY, EnemyTrackX,  StrikeY, FLinearColor(0.8f,0.15f,0.25f,0.15f), 1.f);
+	
 	const FLinearColor StrikeLine = FLinearColor::LerpUsingHSV(FLinearColor(0.f,0.45f,0.55f,0.35f), FLinearColor(0.16f,1.f,1.f,0.92f), FlashHard);
 	DrawLine(PlayerTrackX-PanelPad, StrikeY, PlayerTrackX-PanelPad+PanelW, StrikeY, StrikeLine, 2.f+1.5f*FlashHard);
+	
 	const float SqH = 5.f + 2.f * FlashHard;
 	DrawRect(StrikeLine, PlayerTrackX-SqH*0.5f, StrikeY-SqH*0.5f, SqH, SqH);
 	DrawRect(FLinearColor(1.f,0.25f,0.20f,0.45f+FlashHard*0.55f), EnemyTrackX-SqH*0.5f, StrikeY-SqH*0.5f, SqH, SqH);
@@ -502,6 +608,7 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 Cu
 		const float DashW = bIsNext ? 18.f : 14.f, DashH = bIsNext ? 3.f : 2.f;
 		DrawRect(FLinearColor(0.f,0.82f,1.f,Alpha*(bIsNext?0.92f:0.65f)), PlayerTrackX-DashW*0.5f, NoteY-DashH*0.5f, DashW, DashH);
 	}
+	
 	const float LookaheadSec = (IntervalMS*(float)GlanceBoard_BeatsToShow)/1000.f;
 	for (const FPcRuntimeEvent& Note : MusicSub->GetUpcomingNotes(LookaheadSec)) {
 		const float TimeDiffMS = (float)(Note.TimestampMS - CurrentTimeMS);
@@ -513,6 +620,7 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 Cu
 		DrawLine(EnemyTrackX,NoteY-Dr,EnemyTrackX+Dr,NoteY,EC,1.5f); DrawLine(EnemyTrackX+Dr,NoteY,EnemyTrackX,NoteY+Dr,EC,1.5f);
 		DrawLine(EnemyTrackX,NoteY+Dr,EnemyTrackX-Dr,NoteY,EC,1.5f); DrawLine(EnemyTrackX-Dr,NoteY,EnemyTrackX,NoteY-Dr,EC,1.5f);
 	}
+	
 	for (const FPcHudThreatEvent& Threat : ActiveThreats) {
 		const float TimeDiffMS = (float)(Threat.TimestampMS - CurrentTimeMS);
 		if (TimeDiffMS < -120.f) continue;
@@ -526,161 +634,7 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 Cu
 }
 
 // =============================================================================
-//  BHOP DEBUG PANEL (top-left) — adds Frenzy row
-// =============================================================================
-
-void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
-{
-	const float PanelX = 30.f; float PanelY = 30.f; const float LineH = 22.f;
-	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White) {
-		DrawText(Label + TEXT("  ") + Value, Color, PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
-		PanelY += LineH;
-	};
-
-	EBhopState State = MC->GetBhopState();
-	FString StateStr;
-	if      (State == EBhopState::PowerBoost)    StateStr = TEXT("BOOST");
-	else if (State == EBhopState::GroundPounding) StateStr = TEXT("GROUND POUND");
-	else if (State == EBhopState::WallSwim)       StateStr = TEXT("WALL SWIM");
-	else                                           StateStr = TEXT("ACTIVE");
-	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
-
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
-		Row(TEXT("PRESET:"),   Sub->GetActivePresetName(), FLinearColor::Yellow);
-		Row(TEXT("GAME BPM:"), FString::Printf(TEXT("%.1f"), Sub->GetCurrentGameplayBPM()));
-	}
-
-	Row(TEXT("COYOTE:"), MC->HasQueuedJump() ? TEXT("ACTIVE") : TEXT("--"),
-	    MC->HasQueuedJump() ? FLinearColor::Yellow : FLinearColor(0.5f,0.5f,0.5f));
-
-	const float HSpeed = MC->GetHorizontalSpeed();
-	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f,0.45f,0.f) : FLinearColor::White;
-	Row(TEXT("SPEED:"), FString::Printf(TEXT("%.0f u/s"), HSpeed), SpeedCol);
-	DrawRect(FLinearColor(0.05f,0.05f,0.05f,0.85f), PanelX, PanelY, 160.f, 6.f);
-	DrawRect(SpeedCol, PanelX, PanelY, 160.f * FMath::Clamp(HSpeed/(MC->MaxWalkSpeed*3.f),0.f,1.f), 6.f);
-	PanelY += 14.f;
-
-	Row(TEXT("V SPEED:"),  FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z), MC->Velocity.Z < -10.f ? FLinearColor(0.6f,0.6f,1.f) : FLinearColor::White);
-	Row(TEXT("GROUNDED:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"), MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f,0.6f,1.f));
-
-	// Frenzy row
-	{
-		const float Gauge = MC->GetFrenzyGauge();
-		const FString TierLabel = GetFrenzyTierLabel(Gauge, MC);
-		const FLinearColor TierCol = GetFrenzyColor(Gauge, MC);
-		const FString FStr = FString::Printf(TEXT("[%s] %.0f%%  x%.2f"), *TierLabel, Gauge*100.f, MC->GetFrenzySpeedMult());
-		Row(TEXT("FRENZY:"), FStr, TierCol);
-	}
-
-	if (bShowPlayerBPM) {
-		const float PBPM = MC->GetPlayerBPM();
-		Row(TEXT("PLYR BPM:"), PBPM > 1.f ? FString::Printf(TEXT("%.0f BPM"), PBPM) : TEXT("--"),
-		    PBPM > 1.f ? FLinearColor(0.4f,1.f,0.6f) : FLinearColor(0.5f,0.5f,0.5f));
-	}
-
-	// GP Pulse row when active
-	if (MC->IsGPPulseActive()) {
-		Row(TEXT("GP PULSE:"), FString::Printf(TEXT("%.0f%%"), MC->GetGPPulseAlpha()*100.f), FLinearColor(1.f,0.55f,0.15f));
-	}
-}
-
-// =============================================================================
-//  COMBO FEED  (unchanged)
-// =============================================================================
-
-void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color)
-{
-	if (!GetWorld()) return;
-	FPcComboFeedEntry E; E.Label = Label; E.Color = Color; E.BornAt = GetWorld()->GetTimeSeconds();
-	ComboFeed.Add(E);
-	while (ComboFeed.Num() > ComboFeed_MaxEntries) ComboFeed.RemoveAt(0);
-}
-
-void APcQDebugHUD::DrawComboFeed()
-{
-	if (!Canvas || !GEngine || !GetWorld()) return;
-	const float Now = GetWorld()->GetTimeSeconds();
-	const float FX = 22.f, FBY = Canvas->SizeY * 0.82f, LineH = 24.f;
-	const float HalfDur = ComboFeed_FadeDuration * 0.55f;
-	ComboFeed.RemoveAll([&](const FPcComboFeedEntry& E) { return (Now - E.BornAt) >= ComboFeed_FadeDuration; });
-	for (int32 i = 0; i < ComboFeed.Num(); ++i) {
-		const FPcComboFeedEntry& E = ComboFeed[ComboFeed.Num()-1-i];
-		const float Age   = Now - E.BornAt;
-		const float Alpha = Age < HalfDur ? 1.f : FMath::Clamp(1.f-(Age-HalfDur)/(ComboFeed_FadeDuration-HalfDur),0.f,1.f);
-		if (Alpha < 0.02f) continue;
-		const float Y = FBY - i * LineH;
-		DrawRect(E.Color * FLinearColor(1,1,1,Alpha*0.88f), FX, Y-14.f, 3.f, 18.f);
-		DrawText(E.Label, FLinearColor(0,0,0,Alpha*0.65f), FX+9.f, Y, GEngine->GetSmallFont(), 1.f);
-		DrawText(E.Label, E.Color * FLinearColor(1,1,1,Alpha), FX+8.f, Y-1.f, GEngine->GetSmallFont(), 1.f);
-	}
-}
-
-FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
-{
-	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
-	if (State == EBhopState::WallSwim)       return FLinearColor(0.f,0.82f,1.f);
-	if (State == EBhopState::PowerBoost)     return FLinearColor(1.f,0.55f,0.f);
-	return FLinearColor::Green;
-}
-
-// =============================================================================
-//  ABILITY BARS  (unchanged, removed auto-jump icon)
-// =============================================================================
-
-void APcQDebugHUD::DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC)
-{
-	if (!Canvas || !GEngine) return;
-	const float IconSz = 52.f, IconGap = 10.f;
-	const float TotalW = IconSz*2.f + IconGap;
-	const float StartX = (Canvas->SizeX - TotalW)*0.5f;
-	const float IconY  = Canvas->SizeY - IconSz - 20.f;
-	const float BeatFlash = MC ? MC->GetOnBeatFlash() : 0.f;
-
-	float PistolCoolAlpha = 0.f, PistolBaseSec = 0.5f;
-	if (APcQPlayerCharacter* Ch = Cast<APcQPlayerCharacter>(PC->GetPawn())) {
-		PistolCoolAlpha = Ch->GetPistolCooldownAlpha();
-		PistolBaseSec   = Ch->PistolBaseCooldownSec;
-	}
-	const float DJCoolAlpha = MC ? MC->GetDoubleJumpCooldownAlpha() : 0.f;
-
-	struct FIcon { FString Label; FLinearColor Col; float Fill; bool bActive; float CoolSec; };
-	FIcon Icons[2];
-	Icons[0] = { TEXT("DJUMP"), FLinearColor(0.18f,0.65f,1.f),  1.f-DJCoolAlpha,     false, DJCoolAlpha*(MC ? MC->DoubleJumpBaseCooldownSec : 2.f) };
-	Icons[1] = { TEXT("FIRE"),  FLinearColor(0.9f,0.18f,0.28f), 1.f-PistolCoolAlpha, false, PistolCoolAlpha*PistolBaseSec };
-
-	for (int32 i = 0; i < 2; ++i) {
-		const FIcon& Ic = Icons[i];
-		const float IX = StartX + i*(IconSz+IconGap);
-		const bool bRdy  = Ic.Fill >= 1.f && !Ic.bActive;
-		const bool bOnCD = Ic.Fill < 1.f  && !Ic.bActive;
-		DrawRect(FLinearColor(0,0,0,0.82f), IX-3.f, IconY-3.f, IconSz+6.f, IconSz+6.f);
-		DrawRect(FLinearColor(0.03f,0.04f,0.08f,1.f), IX, IconY, IconSz, IconSz);
-		const float FillH = IconSz*Ic.Fill, FillY = IconY+IconSz-FillH;
-		const float FillAlpha = bRdy ? (0.75f+BeatFlash*0.20f) : Ic.bActive ? 0.88f : 0.28f;
-		if (FillH > 0.5f) DrawRect(Ic.Col*FLinearColor(1,1,1,FillAlpha), IX, FillY, IconSz, FillH);
-		if (Ic.bActive && BeatFlash > 0.01f) DrawRect(FLinearColor(1,1,1,BeatFlash*0.22f), IX, FillY, IconSz, FillH);
-		const float BorderA = bRdy ? (0.85f+BeatFlash*0.15f) : (Ic.bActive ? 0.70f : 0.22f);
-		DrawRect(Ic.Col*FLinearColor(1,1,1,BorderA), IX, IconY, IconSz, 2.f);
-		DrawRect(Ic.Col*FLinearColor(1,1,1,BorderA), IX, IconY+IconSz-2.f, IconSz, 2.f);
-		DrawRect(Ic.Col*FLinearColor(1,1,1,BorderA), IX, IconY, 2.f, IconSz);
-		DrawRect(Ic.Col*FLinearColor(1,1,1,BorderA), IX+IconSz-2.f, IconY, 2.f, IconSz);
-		if (bRdy && BeatFlash > 0.05f) {
-			DrawRect(Ic.Col*FLinearColor(1,1,1,BeatFlash*0.90f), IX, IconY, IconSz, 2.f);
-			DrawRect(Ic.Col*FLinearColor(1,1,1,BeatFlash*0.90f), IX, IconY+IconSz-2.f, IconSz, 2.f);
-			DrawRect(Ic.Col*FLinearColor(1,1,1,BeatFlash*0.90f), IX, IconY, 2.f, IconSz);
-			DrawRect(Ic.Col*FLinearColor(1,1,1,BeatFlash*0.90f), IX+IconSz-2.f, IconY, 2.f, IconSz);
-		}
-		const FLinearColor TextCol = bRdy ? Ic.Col : (Ic.bActive ? Ic.Col : FLinearColor(0.40f,0.45f,0.55f,0.90f));
-		DrawText(Ic.Label, TextCol, IX+4.f, IconY+4.f, GEngine->GetSmallFont(), 1.f);
-		FString NumStr;
-		if (Ic.bActive) NumStr = FString::Printf(TEXT("%.1f"), Ic.Fill);
-		else if (bOnCD) NumStr = FString::Printf(TEXT("%.1f"), Ic.CoolSec);
-		if (!NumStr.IsEmpty()) DrawText(NumStr, TextCol, IX+8.f, IconY+IconSz*0.5f-4.f, GEngine->GetSmallFont(), 1.f);
-	}
-}
-
-// =============================================================================
-//  SYNC SYSTEM  (unchanged)
+//  SYNC WAVES
 // =============================================================================
 
 void APcQDebugHUD::UpdateSyncWaves(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC)
@@ -715,16 +669,16 @@ void APcQDebugHUD::DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayer
 {
 	if (!Canvas || !GEngine || !MusicSub) return;
 	UpdateSyncWaves(MusicSub, MC);
-	const float PanelW = 280.f, WaveH = 50.f, Gap = 8.f;
-	const float PanelX = Canvas->SizeX - PanelW - 16.f;
-	const float PanelY = Canvas->SizeY - (WaveH*2.f + Gap + 22.f + 16.f);
-	DrawRect(FLinearColor(0.f,0.f,0.f,0.72f), PanelX-4.f, PanelY-18.f, PanelW+8.f, WaveH*2.f+Gap+22.f+8.f);
+	const float PanelW = 280.f, WaveH = 40.f, Gap = 6.f;
+	const float PanelX = Canvas->SizeX - PanelW - 40.f;
+	const float PanelY = Canvas->SizeY - (WaveH*2.f + Gap + 30.f); // Anchored bottom right
+	
 	const FLinearColor SyncCol = FLinearColor::LerpUsingHSV(FLinearColor(0.8f,0.2f,0.2f), FLinearColor(0.2f,1.f,0.4f), FMath::Clamp(SyncLevel,0.f,1.f));
-	DrawText(FString::Printf(TEXT("SYNC  %.2f"), SyncLevel), SyncCol, PanelX, PanelY-16.f, GEngine->GetSmallFont(), 1.f);
+	DrawTextWithShadow(FString::Printf(TEXT("SYNC  %.2f"), SyncLevel), SyncCol, PanelX, PanelY-18.f, GEngine->GetSmallFont(), 1.0f);
 
 	auto DrawWave = [&](float WaveData[], float BaseY, FLinearColor Col) {
-		DrawRect(FLinearColor(0.05f,0.05f,0.08f,1.f), PanelX, BaseY, PanelW, WaveH);
-		DrawRect(FLinearColor(0.2f,0.2f,0.25f,0.6f), PanelX, BaseY+WaveH*0.5f, PanelW, 1.f);
+		DrawRect(FLinearColor(0.01f, 0.01f, 0.02f, 0.75f), PanelX, BaseY, PanelW, WaveH);
+		DrawRect(FLinearColor(0.2f,0.2f,0.25f,0.4f), PanelX, BaseY+WaveH*0.5f, PanelW, 1.f);
 		for (int32 i = 0; i < WaveHistorySize-1; ++i) {
 			const int32 IdxA = (WaveWriteIdx+i)     % WaveHistorySize;
 			const int32 IdxB = (WaveWriteIdx+i+1)   % WaveHistorySize;
@@ -736,17 +690,42 @@ void APcQDebugHUD::DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayer
 		}
 		const int32 LatestIdx = (WaveWriteIdx+WaveHistorySize-1)%WaveHistorySize;
 		const float LatestVal = FMath::Clamp(WaveData[LatestIdx]/1.5f,0.f,1.f);
-		DrawRect(Col, PanelX+PanelW-3.f, BaseY+WaveH-LatestVal*WaveH-2.f, 4.f, 4.f);
+		DrawRect(Col, PanelX+PanelW-4.f, BaseY+WaveH-LatestVal*WaveH-2.f, 4.f, 4.f);
 	};
 	DrawWave(SongWave,   PanelY,          FLinearColor(0.1f,0.9f,0.85f));
-	DrawText(TEXT("SONG"),   FLinearColor(0.1f,0.9f,0.85f,0.7f), PanelX+3.f, PanelY+2.f, GEngine->GetSmallFont(), 1.f);
 	DrawWave(PlayerWave, PanelY+WaveH+Gap, FLinearColor(1.f,0.75f,0.15f));
-	DrawText(TEXT("PLAYER"), FLinearColor(1.f,0.75f,0.15f,0.7f), PanelX+3.f, PanelY+WaveH+Gap+2.f, GEngine->GetSmallFont(), 1.f);
 }
 
 // =============================================================================
-//  PRIMITIVES  (unchanged)
+//  COMBO FEED LISTENER
 // =============================================================================
+
+void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color)
+{
+	if (!GetWorld()) return;
+	FPcComboFeedEntry E; E.Label = Label; E.Color = Color; E.BornAt = GetWorld()->GetTimeSeconds();
+	ComboFeed.Add(E);
+	while (ComboFeed.Num() > ComboFeed_MaxEntries) ComboFeed.RemoveAt(0);
+}
+
+FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
+{
+	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
+	if (State == EBhopState::WallSwim)       return FLinearColor(0.f,0.82f,1.f);
+	if (State == EBhopState::PowerBoost)     return FLinearColor(1.f,0.55f,0.f);
+	return FLinearColor::Green;
+}
+
+// =============================================================================
+//  PRIMITIVES
+// =============================================================================
+
+void APcQDebugHUD::DrawTextWithShadow(const FString& Text, FLinearColor Color, float X, float Y, UFont* Font, float Scale)
+{
+	if (!Font) return;
+	DrawText(Text, FLinearColor(0.f, 0.f, 0.f, Color.A * 0.9f), X + 1.5f * Scale, Y + 1.5f * Scale, Font, Scale);
+	DrawText(Text, Color, X, Y, Font, Scale);
+}
 
 void APcQDebugHUD::DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color, float Thickness, int32 Segments, float AngleOffset)
 {

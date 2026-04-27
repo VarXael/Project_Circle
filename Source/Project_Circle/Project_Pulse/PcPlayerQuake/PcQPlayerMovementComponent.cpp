@@ -29,7 +29,10 @@ bool UPcQPlayerMovementComponent::IsOnBeat() const
 	const int32 Now      = Sub->GetCurrentPlaybackTimeMS();
 	const int32 Next     = Sub->GetNextGameplayBeatTimeMS();
 	const int32 Interval = FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS());
-	return FMath::Min(FMath::Abs(Next - Now), FMath::Abs(Now - (Next - Interval))) <= OnBeatWindowMS;
+	// Window scales with the beat interval — stays proportional at any BPM.
+	// At 75 BPM (800ms) 0.20 = 160ms. At 150 BPM (400ms) 0.20 = 80ms.
+	const int32 Window   = FMath::RoundToInt(Interval * OnBeatWindowFraction);
+	return FMath::Min(FMath::Abs(Next - Now), FMath::Abs(Now - (Next - Interval))) <= Window;
 }
 
 float UPcQPlayerMovementComponent::GetBeatSnappedDuration(float BaseSec) const
@@ -58,6 +61,17 @@ float UPcQPlayerMovementComponent::GetScaledSpeed(float BaseSpeed) const
 	return BaseSpeed;
 }
 
+int32 UPcQPlayerMovementComponent::GetOnBeatWindowMs() const
+{
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()
+		? GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>() : nullptr)
+	{
+		if (Sub->IsReadyForPlayback())
+			return FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS() * OnBeatWindowFraction);
+	}
+	return FMath::RoundToInt(800.f * OnBeatWindowFraction); // 75 BPM fallback
+}
+
 float UPcQPlayerMovementComponent::GetBoostCooldownAlpha() const { return BoostCooldown <= 0.f ? 0.f : FMath::Clamp(BoostCooldown / FMath::Max(BoostBaseCooldownSec, 0.01f), 0.f, 1.f); }
 float UPcQPlayerMovementComponent::GetBoostActiveAlpha() const { if (BhopState != EBhopState::PowerBoost || BoostTimer <= 0.f) return 0.f; return FMath::Clamp(BoostTimer / FMath::Max(BoostBaseDurationSec, 0.01f), 0.f, 1.f); }
 float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (DoubleJumpCooldown <= 0.f) return bDoubleJumpUsed ? 1.f : 0.f; return FMath::Clamp(DoubleJumpCooldown / FMath::Max(DoubleJumpBaseCooldownSec, 0.01f), 0.f, 1.f); }
@@ -66,12 +80,55 @@ float UPcQPlayerMovementComponent::GetDoubleJumpCooldownAlpha() const { if (Doub
 void UPcQPlayerMovementComponent::TriggerOnBeatFlash()
 {
 	RecordHit();
-	OnBeatFlashTimer   = OnBeatFlashDuration;
-	BoostCooldown      = 0.f;
-	DoubleJumpCooldown = 0.f;
-	bDoubleJumpUsed    = false;
-	FrenzyGauge        = FMath::Min(1.f, FrenzyGauge + FrenzyFillOnBeat);
-	OnActiveBeatAction.Broadcast(); 
+	OnBeatFlashTimer = OnBeatFlashDuration;
+
+	// CD resets are gated to once per beat cycle so the same action can't be
+	// spammed within the beat window. The first on-beat action gets the full
+	// reward; any subsequent ones in the same window still register but don't
+	// loop-reset cooldowns.
+	bool bGrantReset = false;
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+	{
+		if (Sub->IsReadyForPlayback())
+		{
+			const int32 NextBeat = Sub->GetNextGameplayBeatTimeMS();
+			if (NextBeat != LastBeatResetTimestampMS)
+			{
+				LastBeatResetTimestampMS = NextBeat;
+				bGrantReset = true;
+			}
+		}
+	}
+	else { bGrantReset = true; } // no subsystem — always grant (editor / standalone)
+
+	if (bGrantReset)
+	{
+		BoostCooldown      = 0.f;
+		DoubleJumpCooldown = 0.f;
+		bDoubleJumpUsed    = false;
+		bFreeChargeUsedThisBeat = false; // new beat — free charge available
+
+		FrenzyGauge = FMath::Min(1.f, FrenzyGauge + FrenzyFillOnBeat);
+
+		if (bSTierActive && bSTierLocked)
+			STierLockTimer = STierLockSec;
+
+		if (!bSTierActive && FrenzyGauge >= FrenzyThresh_S)
+		{
+			if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+			{
+				if (Sub->IsEnhanced())
+				{
+					bSTierActive   = true;
+					bSTierLocked   = true;
+					STierLockTimer = STierLockSec;
+					PushCombo(TEXT("FRENZY S ★"), FLinearColor(1.f, 0.15f, 0.2f));
+				}
+			}
+		}
+	}
+
+	OnActiveBeatAction.Broadcast();
 }
 
 void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color)
@@ -137,14 +194,15 @@ void UPcQPlayerMovementComponent::ExitBoost()
 
 void UPcQPlayerMovementComponent::NotifyGunFired()
 {
+	// Gun and snap are equivalent: both reset CDs and trigger the movement echo.
+	// Echo: jump on ground, GP Pulse if pulse active, DJ in air.
 	TriggerOnBeatFlash();
+	OnSnapPressed_Internal();
 
 	if (BhopState == EBhopState::PowerBoost)
 		PushCombo(TEXT("BOOST RESET"), FLinearColor(1.f, 0.55f, 0.15f));
 	if (bDoubleJumpUsed)
 		PushCombo(TEXT("DJ RESET"), FLinearColor(0.27f, 0.67f, 1.f));
-
-	OnSnapPressed_Internal();
 }
 
 // CHANGE 3: ESnapAction::Slide case replaced with ESnapAction::GPPulse
@@ -156,7 +214,7 @@ void UPcQPlayerMovementComponent::OnSnapPressed_Internal()
 	{
 		case ESnapAction::GPPulse:
 		{
-			// Re-trigger the burst at full on-beat power to refresh the window
+			// Re-trigger at full on-beat power. ActivateGPPulse calls TriggerOnBeatFlash internally.
 			ActivateGPPulse(true);
 			OnSnapPulse.Broadcast(ESnapAction::GPPulse);
 			OnSnapStateChanged.Broadcast(ESnapAction::GPPulse);
@@ -177,7 +235,7 @@ void UPcQPlayerMovementComponent::OnSnapPressed_Internal()
 			JumpInputBufferTimer = JumpInputBufferWindow;
 			OnSnapPulse.Broadcast(ESnapAction::LandingJump);
 			OnSnapStateChanged.Broadcast(ESnapAction::LandingJump);
-			PushCombo(TEXT("SYNC"), FLinearColor(1.f, 0.9f, 0.3f));  
+			PushCombo(TEXT("SYNC"), FLinearColor(1.f, 0.9f, 0.3f));
 			break;
 		}
 		case ESnapAction::DoubleJump:
@@ -185,12 +243,15 @@ void UPcQPlayerMovementComponent::OnSnapPressed_Internal()
 			bDoubleJumpUsed    = true;
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
 			const FVector Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-			
 			float ScaledHopSpeed = GetScaledSpeed(BonusHopSpeedBoost);
 			if (!Dir2D.IsZero()) { Velocity.X += Dir2D.X * ScaledHopSpeed; Velocity.Y += Dir2D.Y * ScaledHopSpeed; }
 			ExecutePlayerJump(false);
-			bDoubleJumpUsed    = false;
-			DoubleJumpCooldown = 0.f;
+			// Free charge: grant one more DJ only if not already used this beat
+			if (!bFreeChargeUsedThisBeat) {
+				bFreeChargeUsedThisBeat = true;
+				bDoubleJumpUsed    = false;
+				DoubleJumpCooldown = 0.f;
+			}
 			OnSnapPulse.Broadcast(ESnapAction::DoubleJump);
 			OnSnapStateChanged.Broadcast(ESnapAction::DoubleJump);
 			PushCombo(TEXT("SNAP DJ"), FLinearColor(0.4f, 0.75f, 1.f));
@@ -218,7 +279,7 @@ void UPcQPlayerMovementComponent::ExecutePlayerJump(bool bFromBoost)
 		if (WD.IsZero() && CharacterOwner) WD = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 		
 		if (!WD.IsZero()) {
-			const float LaunchSpd = FMath::Max(PreJumpH, MaxWalkSpeed * BoostSpeedMultiplier) + GetScaledSpeed(600.f);
+			const float LaunchSpd = FMath::Max(PreJumpH, MaxWalkSpeed * BoostSpeedMultiplier) + GetScaledSpeed(BoostJumpExtraSpeed);
 			Velocity.X = WD.X * LaunchSpd;
 			Velocity.Y = WD.Y * LaunchSpd;
 		}
@@ -309,7 +370,7 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 	}
 
 	const bool bOnBeat = IsOnBeat();
-	if (bOnBeat) TriggerOnBeatFlash();
+	if (bOnBeat) TriggerOnBeatFlash(); // universal reset at the top, gated per-beat
 
 	if (BhopState == EBhopState::GroundPounding)
 	{
@@ -321,7 +382,7 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 
 		if (DJumpReady() || bOnBeat) {
 			BhopState  = EBhopState::Active;
-			Velocity.Z = FMath::Max(Velocity.Z, -600.f);
+			Velocity.Z = FMath::Max(Velocity.Z, -GPCancelMinUpVelocity);
 			bDoubleJumpUsed    = true;
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
 			ExecutePlayerJump(false);
@@ -340,9 +401,17 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 
 	if (IsMovingOnGround())
 	{
+		// ── Super Jump: GP Pulse active or GP just landed ─────────────────────
+		if (bGPPulseActive || (bGPLandedRecently && GPComboTimer > 0.f))
+		{
+			if (BhopState == EBhopState::PowerBoost) ExitBoost();
+			ActivateSuperJump(bOnBeat);
+			return;
+		}
+
 		if (BhopState == EBhopState::PowerBoost) {
 			ExitBoost();
-				ExecutePlayerJump(true);
+			ExecutePlayerJump(true);
 			OnBhopLanded.Broadcast(GetHorizontalSpeed());
 			return;
 		}
@@ -362,14 +431,18 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 			return;
 		}
 
-		if (DJumpReady() || bOnBeat) {
-			const bool bFreeJump = bOnBeat;
+		// On-beat bypass only allowed if the free charge hasn't been used yet this beat.
+		// This prevents infinite DJ spam within a single beat window.
+		const bool bBeatBypass = bOnBeat && !bFreeChargeUsedThisBeat;
+		if (DJumpReady() || bBeatBypass) {
+			const bool bFreeJump = bBeatBypass;
 			bDoubleJumpUsed    = true;
 			DoubleJumpCooldown = GetBeatSnappedDuration(DoubleJumpBaseCooldownSec);
 			ActiveSyncedAction = EPcSyncedAction::DoubleJump;
 			ExecutePlayerJump(false);
 			PushCombo(TEXT("DOUBLE JUMP"), FLinearColor(0.27f, 0.67f, 1.f));
 			if (bFreeJump) {
+				bFreeChargeUsedThisBeat = true; // consume the free charge
 				bDoubleJumpUsed    = false;
 				DoubleJumpCooldown = 0.f;
 				PushCombo(TEXT("DJ RESET"), FLinearColor(0.27f, 0.67f, 1.f));
@@ -408,6 +481,7 @@ void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 		ExitCurveJump();
 		BhopState     = EBhopState::GroundPounding;
 		GPCancelTimer = 0.f;
+		GPInitiatedZ  = CharacterOwner ? CharacterOwner->GetActorLocation().Z : 0.f;
 		Velocity.Z = GroundPoundSlamSpeed;
 	}
 }
@@ -417,27 +491,15 @@ void UPcQPlayerMovementComponent::OnGroundPoundReleased() {}
 void UPcQPlayerMovementComponent::OnSnapPressed()
 {
 	if (!IsOnBeat()) return;
-
 	SnapPulseTimer = 0.15f;
-
-	OnBeatFlashTimer   = OnBeatFlashDuration;
-	BoostCooldown      = 0.f;
-	DoubleJumpCooldown = 0.f;
-	bDoubleJumpUsed    = false;
-	if (BhopState == EBhopState::PowerBoost)
-	{
-		const float BoostSpd = MaxWalkSpeed * BoostSpeedMultiplier;
-		const FVector D2 = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-		if (!D2.IsZero() && GetHorizontalSpeed() < BoostSpd)
-			{ Velocity.X = D2.X * BoostSpd; Velocity.Y = D2.Y * BoostSpd; }
-	}
-
+	TriggerOnBeatFlash(); // universal reset, gated per-beat
 	OnSnapPressed_Internal();
 }
 
 float UPcQPlayerMovementComponent::GetFrenzySpeedMult() const
 {
-	if (FrenzyGauge >= FrenzyThresh_S) return FrenzyMult_S;
+	if (bSTierActive) return FrenzyMult_S;
+	// Outside S: gauge drives D→A. Cannot reach S without Enhanced section.
 	if (FrenzyGauge >= FrenzyThresh_A) return FrenzyMult_A;
 	if (FrenzyGauge >= FrenzyThresh_B) return FrenzyMult_B;
 	if (FrenzyGauge >= FrenzyThresh_C) return FrenzyMult_C;
@@ -447,6 +509,7 @@ float UPcQPlayerMovementComponent::GetFrenzySpeedMult() const
 // CHANGE 6: New ActivateGPPulse — velocity burst in WASD dir, opens pulse window
 void UPcQPlayerMovementComponent::ActivateGPPulse(bool bOnBeat)
 {
+	SuperJumpSourceHeight = 0.f; // ground GP has no fall height — min cap applies for super jump
 	FVector Dir2D = Acceleration.GetSafeNormal2D();
 	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
 	if (Dir2D.IsZero() && CharacterOwner) Dir2D = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
@@ -462,12 +525,96 @@ void UPcQPlayerMovementComponent::ActivateGPPulse(bool bOnBeat)
 	}
 	Velocity.Z = 0.f;
 
-	GPPulseMaxTimer = GPPulseDurationSec;
+	// Duration = N beats + one beat window of tolerance so the pulse never expires
+	// right as the player is attempting to chain on the beat edge.
+	float Interval = 0.8f; // 75 BPM fallback
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+		if (Sub->IsReadyForPlayback()) Interval = Sub->GetGameplayBeatIntervalMS() / 1000.f;
+	const float WindowTolerance = Interval * OnBeatWindowFraction;
+	GPPulseMaxTimer = GPPulseDurationBeats * Interval + WindowTolerance;
 	GPPulseTimer    = GPPulseMaxTimer;
 	bGPPulseActive  = true;
 
 	if (bOnBeat) TriggerOnBeatFlash();
 	PushCombo(bOnBeat ? TEXT("GP PULSE ★") : TEXT("GP PULSE"), FLinearColor(1.f, 0.55f, 0.15f));
+}
+
+// =============================================================================
+//  SUPER JUMP
+//  Triggered by: GP Pulse + jump (ground), or air GP landing + jump.
+//  On beat: arc synced to land exactly 1 beat later.
+//  Height = clamp(fallHeight * Mult, Min, Max) — minimum cap ensures even
+//  a ground-level trigger launches you meaningfully into the air.
+// =============================================================================
+
+void UPcQPlayerMovementComponent::ActivateSuperJump(bool bOnBeat)
+{
+	const float ClampedHeight = FMath::Clamp(
+		SuperJumpSourceHeight * SuperJumpHeightMult,
+		SuperJumpMinHeightCM,
+		SuperJumpMaxHeightCM);
+
+	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+
+	// Use natural gravity so the arc feels organic.
+	// Forced arc timing (ApplyArcWithAirTime) was computing enormous GravityScale
+	// to hit a specific height in one beat → felt like a fast plunge on descent.
+	// On-beat bonus: extra height multiplier, not forced timing.
+	GravityScale = 1.f;
+	const float G       = FMath::Abs(GetWorld()->GetDefaultGravityZ());
+	const float Height  = bOnBeat ? ClampedHeight : ClampedHeight * 0.75f;
+	Velocity.Z = FMath::Sqrt(2.f * G * Height);
+	SetMovementMode(MOVE_Falling);
+
+	ActiveSyncedAction = EPcSyncedAction::SuperJump;
+
+	if (bOnBeat)
+	{
+		TriggerOnBeatFlash();
+		PushCombo(TEXT("SUPER JUMP ★"), FLinearColor(1.f, 0.9f, 0.2f));
+	}
+	else
+	{
+		PushCombo(TEXT("SUPER JUMP"), FLinearColor(1.f, 0.7f, 0.1f));
+	}
+
+	bGPPulseActive        = false;
+	GPPulseTimer          = 0.f;
+	bGPLandedRecently     = false;
+	GPComboTimer          = 0.f;
+	SuperJumpSourceHeight = 0.f;
+}
+
+// =============================================================================
+//  FRENZY DASH BOOST  (S tier — fires on every gameplay beat while grounded)
+// =============================================================================
+
+void UPcQPlayerMovementComponent::TriggerFrenzyDashBoost()
+{
+	if (!IsMovingOnGround() || !bSTierActive) return;
+
+	// Direction: WASD input → current velocity dir → camera forward
+	FVector BoostDir = Acceleration.GetSafeNormal2D();
+	if (BoostDir.IsZero()) BoostDir = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (BoostDir.IsZero() && CharacterOwner)
+		BoostDir = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+	if (BoostDir.IsZero()) return;
+
+	const float BoostSpd = MaxWalkSpeed + GetScaledSpeed(FrenzyDashBoostSpeed);
+	Velocity.X = BoostDir.X * BoostSpd;
+	Velocity.Y = BoostDir.Y * BoostSpd;
+	Velocity.Z = 0.f;
+
+	// Decay timer: half a beat so the excess is gone before the next beat lands.
+	// FrenzyDashDecayRate handles the actual speed bleed-off in Tick.
+	float Interval = 0.8f;
+	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+		if (Sub->IsReadyForPlayback()) Interval = Sub->GetGameplayBeatIntervalMS() / 1000.f;
+	bFrenzyDashActive = true;
+	FrenzyDashTimer   = Interval * 0.5f;
+
+	TriggerOnBeatFlash();
+	PushCombo(TEXT("DASH BOOST ★"), FLinearColor(1.f, 0.15f, 0.2f));
 }
 
 void UPcQPlayerMovementComponent::ApplyJumpVelocity()
@@ -628,6 +775,10 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	if (BhopState == EBhopState::GroundPounding)
 	{
 		ExitCurveJump();
+
+		// Save fall height for super jump calculation
+		const float LandingZ = CharacterOwner ? CharacterOwner->GetActorLocation().Z : 0.f;
+		SuperJumpSourceHeight = FMath::Max(GPInitiatedZ - LandingZ, 0.f);
 		const FVector WishDir2D = Acceleration.GetSafeNormal2D();
 		const bool bHasInput    = !WishDir2D.IsZero();
 
@@ -641,9 +792,8 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 		if (bHasInput) {
 			Velocity.X = WishDir2D.X * EntrySpd;
 			Velocity.Y = WishDir2D.Y * EntrySpd;
-		} else {
-			Velocity.X = 0.f; Velocity.Y = 0.f;
 		}
+		// No input: keep existing horizontal velocity — GP was purely vertical
 		Velocity.Z = 0.f;
 
 		bGPLandedRecently    = true;
@@ -671,6 +821,7 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 	if (BhopState == EBhopState::PowerBoost) ExitBoost();
 	ExitCurveJump();
+	GravityScale = 1.f; // reset after any arc — ExitCurveJump only handles the JumpCurve path
 	
 	bDoubleJumpUsed    = false;
 	DoubleJumpCooldown = 0.f;
@@ -724,18 +875,37 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		}
 	}
 
-	// This safely scales MaxWalkSpeed via ReferenceBeatInterval
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
-		if (Sub->IsReadyForPlayback()) {
-			float BaseSpd = Sub->GetCurrentPulsePreset().MaxGroundSpeed;
-			float ScaledSpd = GetScaledSpeed(BaseSpd);
-			if (ScaledSpd > 10.f) MaxWalkSpeed = ScaledSpd;
+	// ── Speed: driven by player tier only, song has no effect ─────────────────
+	// S tier logic: entry, lock timer, slow drain, exit
+	{
+		UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
+		if (bSTierActive)
+		{
+			// S exits immediately if the Enhanced section ends
+			if (!Sub || !Sub->IsEnhanced())
+			{
+				bSTierActive = false; bSTierLocked = false; STierLockTimer = 0.f;
+			}
+			else if (bSTierLocked)
+			{
+				// Gauge doesn't drain while locked — beat actions reset the timer
+				STierLockTimer -= DeltaTime;
+				if (STierLockTimer <= 0.f) bSTierLocked = false;
+			}
+			else
+			{
+				// Lock expired: slow drain until exit threshold
+				FrenzyGauge = FMath::Max(0.f, FrenzyGauge - FrenzyDrainPerSec * STierDrainMult * DeltaTime);
+				if (FrenzyGauge < STierExitThreshold) { bSTierActive = false; }
+			}
+		}
+		else
+		{
+			// Normal drain
+			FrenzyGauge = FMath::Max(0.f, FrenzyGauge - FrenzyDrainPerSec * DeltaTime);
 		}
 	}
-
-	// Frenzy: drain gauge, apply speed multiplier on top of song preset speed
-	FrenzyGauge  = FMath::Max(0.f, FrenzyGauge - FrenzyDrainPerSec * DeltaTime);
-	MaxWalkSpeed *= GetFrenzySpeedMult();
+	MaxWalkSpeed = BaseMaxSpeed * GetFrenzySpeedMult();
 
 	if (BhopState == EBhopState::PowerBoost && IsMovingOnGround()) {
 		const float BoostSpd  = FMath::Max(MaxWalkSpeed, 100.f) * BoostSpeedMultiplier;
@@ -763,15 +933,32 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		const float HardCap = SafeMaxWalkSpeed * HardSpeedCapMult;
 
 		if (CurH > SafeMaxWalkSpeed) {
-			const float Excess    = CurH - SafeMaxWalkSpeed;
-			const float DecayThis = OverspeedDecayRate * DeltaTime * (Excess / SafeMaxWalkSpeed);
-			const float NewH      = FMath::Max(CurH - DecayThis, SafeMaxWalkSpeed);
+			float NewH;
+			if (bFrenzyDashActive)
+			{
+				// Dedicated fast decay for dash boost — bleeds off by next beat
+				NewH = FMath::Clamp(CurH - FrenzyDashDecayRate * DeltaTime, SafeMaxWalkSpeed, HardCap);
+			}
+			else
+			{
+				// Proportional decay for regular overspeed momentum
+				const float Excess    = CurH - SafeMaxWalkSpeed;
+				const float DecayThis = OverspeedDecayRate * DeltaTime * (Excess / SafeMaxWalkSpeed);
+				NewH = FMath::Clamp(CurH - DecayThis, SafeMaxWalkSpeed, HardCap);
+			}
 			const FVector Dir2D   = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
 			if (!Dir2D.IsZero()) {
-				Velocity.X = Dir2D.X * FMath::Min(NewH, HardCap);
-				Velocity.Y = Dir2D.Y * FMath::Min(NewH, HardCap);
+				Velocity.X = Dir2D.X * NewH;
+				Velocity.Y = Dir2D.Y * NewH;
 			}
 		}
+	}
+
+	// Frenzy dash timer
+	if (bFrenzyDashActive)
+	{
+		FrenzyDashTimer -= DeltaTime;
+		if (FrenzyDashTimer <= 0.f) bFrenzyDashActive = false;
 	}
 
 	if (bUsingJumpCurve && JumpCurve && JumpCurveTotalTime > 0.f) {

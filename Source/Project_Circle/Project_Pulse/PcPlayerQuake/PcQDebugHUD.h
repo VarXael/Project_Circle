@@ -34,10 +34,14 @@ class PROJECT_CIRCLE_API APcQDebugHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
+	// ── Effect Toggles ───────────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Effects") bool bEnableScreenEdgePulse = true;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Effects") bool bEnableOnBeatHitMarker = true;
+
 	// ── Combo feed ───────────────────────────────────────────────────────────
 	UFUNCTION() void OnComboEvent(const FString& Label, FLinearColor Color);
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") float ComboFeed_FadeDuration = 2.4f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") int32 ComboFeed_MaxEntries   = 6;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") float ComboFeed_FadeDuration = 2.5f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") int32 ComboFeed_MaxEntries   = 8;
 
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Debug") bool bShowPlayerBPM = true;
 
@@ -47,44 +51,40 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Rhythm UI|Threats") TArray<FPcHudThreatEvent> ActiveThreats;
 
 	// ── Crosshair ────────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairGateDist    = 32.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairBeatStep    = 40.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairGateDist    = 36.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairBeatStep    = 45.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") int32 CrosshairBeatsToShow =  2;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronWidth  = 9.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronHeight = 7.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float DotSize               = 3.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronWidth  = 10.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronHeight = 8.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float DotSize               = 2.5f;
 
 	// ── Arc Metronome ────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_CenterBelowScreen = 1100.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Radius            = 1260.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Thickness         =    8.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Thickness         =    6.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") int32 Arc_BeatsToShow       =    3;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_FlashWindowPct    =    0.22f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_StrikeGatePercent = 0.88f;
 
 	// ── Glance Board ─────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_XOffset        = 70.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_ScreenYPercent = 0.80f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_Height         = 180.f;
-	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_TrackSpacing   =  26.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_XOffset        = 50.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_ScreenYPercent = 0.85f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_Height         = 200.f;
+	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_TrackSpacing   =  32.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") int32 GlanceBoard_BeatsToShow    =    4;
 
 private:
 	struct FArcGeom { float CX, CY, SpawnAngle, StrikeAngle, BufferAngle; };
 	FArcGeom BuildArcGeom() const;
 
-	void DrawDotCrosshair(float BeatRemainingFraction);
-	void DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G,
-	                      int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS,
-	                      float FlashHard, float FlashSoft);
-	void DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bPassed,
-	                    const FPcHudThreatEvent& Threat, const FArcGeom& G);
-	void DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
-	                     int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard);
+	void DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovementComponent* MC, float FlashSoft);
+	void DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard, float FlashSoft);
+	void DrawThreatNote(float NoteX, float NoteY, float Alpha, bool bPassed, const FPcHudThreatEvent& Threat, const FArcGeom& G);
+	void DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard);
+	
+	void DrawStyleMeter(UPcQPlayerMovementComponent* MC, float FlashSoft);
+	void DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerCharacter* PC, float FlashSoft);
 	void DrawBhopDebug(UPcQPlayerMovementComponent* MC);
-	void DrawComboFeed();
-	void DrawAbilityBars(UPcQPlayerMovementComponent* MC, APlayerController* PC);
-	void DrawFrenzy(UPcQPlayerMovementComponent* MC, float FlashSoft);
 
 	void DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC);
 	void UpdateSyncWaves(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayerMovementComponent* MC);
@@ -100,8 +100,8 @@ private:
 	float SyncLevel       = 0.f;
 	int32 LastNoteIdx     = 0;
 
-	// Frenzy display smoothing
-	float FrenzyDisplayAlpha = 0.f;  // smoothed gauge for bar animation
+	// UI Smoothing Variables
+	float StyleGaugeSmoothed = 0.f;
 
 	FLinearColor GetStateColor(EBhopState State) const;
 	FLinearColor GetFrenzyColor(float Gauge, UPcQPlayerMovementComponent* MC) const;
@@ -110,4 +110,5 @@ private:
 	void DrawCircleHUD(float CX, float CY, float Radius, FLinearColor Color, float Thickness, int32 Segments, float AngleOffset = 0.f);
 	void DrawArcHUD(float CX, float CY, float Radius, float Thickness, float StartAngle, float EndAngle, FLinearColor Color, int32 Segments);
 	void DrawArcFilled(float CX, float CY, float Radius, float Thickness, float StartAngle, float EndAngle, FLinearColor Color, int32 Segments);
+	void DrawTextWithShadow(const FString& Text, FLinearColor Color, float X, float Y, UFont* Font, float Scale);
 };

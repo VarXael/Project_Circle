@@ -98,6 +98,10 @@ void APcQPlayerCharacter::OnGameplayBeat(float)
 	// Camera physically thuds on every beat — implicit rhythm feedback.
 	BeatFOVOffset = CameraBeatPunch;
 	if (MoveComp) MoveComp->TriggerBeatJump();
+
+	// S tier: inject a grounded dash boost on every beat
+	if (MoveComp && MoveComp->IsSTierActive())
+		MoveComp->TriggerFrenzyDashBoost();
 }
 
 void APcQPlayerCharacter::OnActiveBeatAction_Handler()
@@ -152,7 +156,7 @@ bool APcQPlayerCharacter::IsOnBeat() const
 	const int32 NextBeat    = Sub->GetNextGameplayBeatTimeMS();
 	const int32 Interval    = FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS());
 	const int32 PrevBeat    = NextBeat - Interval;
-	const int32 Window      = MoveComp ? MoveComp->OnBeatWindowMS : 160;
+	const int32 Window      = MoveComp ? MoveComp->GetOnBeatWindowMs() : 160;
 
 	return FMath::Min(FMath::Abs(NextBeat - CurrentTime), FMath::Abs(CurrentTime - PrevBeat)) <= Window;
 }
@@ -165,6 +169,7 @@ void APcQPlayerCharacter::TryFire()
 	if (MoveComp && MoveComp->IsWallSwimming()) return;
 
 	const bool bOnBeat = IsOnBeat();
+	// Off-beat with cooldown → blocked. On-beat always fires (one free shot per beat).
 	if (PistolCooldown > 0.f && !bOnBeat) return;
 
 	const FVector CamLoc     = CameraComp->GetComponentLocation();
@@ -172,8 +177,14 @@ void APcQPlayerCharacter::TryFire()
 
 	if (bOnBeat)
 	{
-		PistolCooldown = 0.f;
-		if (MoveComp) MoveComp->NotifyGunFired();
+		if (MoveComp) MoveComp->NotifyGunFired(); // triggers TriggerOnBeatFlash with per-beat gate
+
+		// If the gate granted a free shot this beat, CD = 0 (one more shot available).
+		// If the gate was already used (second on-beat fire in same window), apply normal CD.
+		UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
+		const bool bGotFreeShot = MoveComp && Sub && Sub->IsReadyForPlayback() &&
+		                          (MoveComp->GetLastBeatGrantTimestampMS() == Sub->GetNextGameplayBeatTimeMS());
+		PistolCooldown = bGotFreeShot ? 0.f : MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec);
 
 		TArray<FOverlapResult> Overlaps;
 		FCollisionQueryParams QP; QP.AddIgnoredActor(this);

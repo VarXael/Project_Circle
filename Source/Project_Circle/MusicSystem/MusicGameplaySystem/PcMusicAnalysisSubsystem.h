@@ -68,9 +68,8 @@ private:
 	void UpdateRhythmSection(int32 InCurrentTimeMS);
 	void ResetState();
 
-	// Computes the gameplay BPM for a raw BPM value by picking the ÷1/÷2/÷4
-	// subdivision closest to TargetGameplayBPM.  Returns the winning BPM.
-	float ComputeGameplayBPM(float RawBPM) const;
+	// Takes an explicit target so Enhanced sections can pass TargetGameplayBPM * 2
+	float ComputeGameplayBPM(float RawBPM, float Target) const;
 
 	TArray<FPcRhythmSectionProfile> RhythmSections;
 	TArray<FPcRuntimeEvent>         RuntimeEvents;

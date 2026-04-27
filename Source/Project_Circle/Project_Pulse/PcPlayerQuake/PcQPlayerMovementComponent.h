@@ -57,6 +57,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Beat Sync") void TriggerBeatJump();
 	UFUNCTION(BlueprintCallable, Category = "Snap")      void OnSnapPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement")  void NotifyGunFired();
+	// Called by the character on every gameplay beat when S tier is active and grounded
+	UFUNCTION(BlueprintCallable, Category = "Movement")  void TriggerFrenzyDashBoost();
 
 	UFUNCTION(BlueprintPure) EBhopState      GetBhopState()          const { return BhopState; }
 	UFUNCTION(BlueprintPure) float           GetChargeAlpha()        const { return 0.f; }
@@ -80,12 +82,18 @@ public:
 	}
 
 	// Frenzy
-	UFUNCTION(BlueprintPure) float GetFrenzyGauge()     const { return FrenzyGauge; }
-	UFUNCTION(BlueprintPure) float GetFrenzySpeedMult() const;
+	UFUNCTION(BlueprintPure) float GetFrenzyGauge()              const { return FrenzyGauge; }
+	UFUNCTION(BlueprintPure) float GetFrenzySpeedMult()          const;
+	UFUNCTION(BlueprintPure) bool  IsSTierActive()               const { return bSTierActive; }
+	UFUNCTION(BlueprintPure) bool  IsSTierLocked()               const { return bSTierLocked; }
+	// Returns the next-beat timestamp of the last granted CD reset.
+	// Character uses this to determine if the current on-beat action got a free grant.
+	UFUNCTION(BlueprintPure) int32 GetLastBeatGrantTimestampMS() const { return LastBeatResetTimestampMS; }
 
 	UFUNCTION(BlueprintPure) float GetBoostCooldownAlpha()      const;
 	UFUNCTION(BlueprintPure) float GetBoostActiveAlpha()        const;
 	UFUNCTION(BlueprintPure) float GetDoubleJumpCooldownAlpha() const;
+	UFUNCTION(BlueprintPure) int32 GetOnBeatWindowMs()          const; // dynamic: fraction of current beat interval
 	UFUNCTION(BlueprintPure) float GetBeatSnappedDuration(float BaseSec) const;
 	UFUNCTION(BlueprintPure) float GetScaledSpeed(float BaseSpeed) const;
 
@@ -111,6 +119,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Curve")
 	TObjectPtr<UCurveFloat> JumpCurve = nullptr;
 
+	// ── Base speed ────────────────────────────────────────────────────────────
+	// MaxWalkSpeed = BaseMaxSpeed * TierMultiplier. Song has no effect on speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Speed") float BaseMaxSpeed = 900.f;
+
 	// ── Ground movement ───────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground") float CustomGroundAcceleration = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground") float CustomGroundFriction     = 25.f;
@@ -128,7 +140,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Chain")  float GPBoostJumpHorizMult   = 1.8f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Chain")  float GPComboWindowSec       = 0.45f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop")   float BonusHopSpeedBoost     = 300.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop")   int32 OnBeatWindowMS         = 160;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop")   float BoostJumpExtraSpeed    = 600.f;  // added on top of boost speed on a boost jump
+
+	// On-beat window: scales as a fraction of the current beat interval so it stays
+	// proportional at all BPMs. At 75 BPM (800ms) fraction 0.20 = 160ms.
+	// At 150 BPM (400ms) fraction 0.20 = 80ms — tighter, harder to spam.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Bonus Hop",
+	          meta = (ClampMin = "0.05", ClampMax = "0.5",
+	                  ToolTip = "On-beat hit window as a fraction of the beat interval. 0.20 = 20% of the interval."))
+	float OnBeatWindowFraction = 0.20f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump Arc")    float ReferenceBeatInterval  = 0.55f;
 
 	// ── Power Boost ───────────────────────────────────────────────────────────
@@ -141,13 +162,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Double Jump") float DoubleJumpBaseCooldownSec = 2.0f;
 
 	// ── Ground Pound ──────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundSlamSpeed   = -2800.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundCancelDelay =  0.18f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundSlamSpeed      = -2800.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GroundPoundCancelDelay    =  0.18f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Ground Pound") float GPCancelMinUpVelocity     =  600.f;  // min upward velocity when cancelling a GP mid-air
 
 	// ── GP Pulse (replaces ground Slide) ─────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseSpeedBoost  = 700.f;   // cm/s added on top of current MaxWalkSpeed
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseDurationSec = 0.35f;   // how long the window stays open
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseOnBeatBonus = 0.5f;    // fraction of boost added extra when on beat
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseSpeedBoost    = 700.f;   // cm/s added on top of current MaxWalkSpeed
+	// Duration in beats + window tolerance. At 75 BPM, 1 beat ≈ 0.96s total (800ms + 20% window).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseDurationBeats = 1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GP Pulse") float GPPulseOnBeatBonus   = 0.5f;    // fraction of boost added extra when on beat
 
 	// ── Frenzy ────────────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy") float FrenzyDrainPerSec = 0.04f;
@@ -161,6 +184,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy") float FrenzyThresh_B = 0.50f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy") float FrenzyThresh_A = 0.75f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy") float FrenzyThresh_S = 1.00f;
+
+	// ── S Tier (Frenzy) ───────────────────────────────────────────────────────
+	// S is only reachable when gauge == 1.0 AND the song is in an Enhanced section.
+	// Beat actions reset the lock timer, keeping you in S as long as you play.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy|S Tier") float STierLockSec        = 3.f;   // beat actions reset this
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy|S Tier") float STierDrainMult      = 0.1f;  // gauge drains at this fraction of normal after lock expires
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy|S Tier") float STierExitThreshold  = 0.85f; // drop out below this to avoid flickering
+	// Dash boost: fired on every gameplay beat while grounded in S tier.
+	// Injects FrenzyDashBoostSpeed above MaxWalkSpeed; decays at FrenzyDashDecayRate
+	// so the excess is fully absorbed before the next beat arrives.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy|S Tier") float FrenzyDashBoostSpeed = 900.f;   // cm/s added above MaxWalkSpeed
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Frenzy|S Tier") float FrenzyDashDecayRate  = 2000.f;  // cm/s² — brings excess back to MaxWalkSpeed
+
+	// ── Super Jump ────────────────────────────────────────────────────────────
+	// Triggered by GP Pulse + jump (grounded) or air GP landing + jump.
+	// On beat: arc is synced to land exactly 1 beat later.
+	// Height = clamp(fallHeight * Mult, Min, Max).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Super Jump") float SuperJumpMinHeightCM = 400.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Super Jump") float SuperJumpMaxHeightCM = 1000.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Super Jump") float SuperJumpHeightMult  = 1.5f;
 
 	// ── Wall Spring ───────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall") float Wall_EnterMinSpeed    = 200.f;
@@ -217,6 +260,16 @@ private:
 
 	float OnBeatFlashTimer = 0.f;
 
+	// ── Per-beat CD gate ──────────────────────────────────────────────────────
+	// Tracks the next-beat timestamp of the last CD reset grant.
+	// TriggerOnBeatFlash only grants CDs once per beat cycle to prevent spamming.
+	int32 LastBeatResetTimestampMS = -1;
+
+	// Set false each beat by TriggerOnBeatFlash. Consumed by the first action
+	// that uses the on-beat free charge (free DJ, free GP re-trigger, etc.).
+	// Prevents infinite free-action looping within a single beat window.
+	bool bFreeChargeUsedThisBeat = false;
+
 	// ── GP Pulse ──────────────────────────────────────────────────────────────
 	bool    bGPPulseActive   = false;
 	float   GPPulseTimer     = 0.f;
@@ -225,6 +278,19 @@ private:
 
 	// ── Frenzy ────────────────────────────────────────────────────────────────
 	float FrenzyGauge = 0.f;
+
+	// ── S Tier ────────────────────────────────────────────────────────────────
+	bool  bSTierActive  = false;
+	bool  bSTierLocked  = false;
+	float STierLockTimer = 0.f;
+
+	// ── Frenzy Dash ───────────────────────────────────────────────────────────
+	bool  bFrenzyDashActive = false;
+	float FrenzyDashTimer   = 0.f;
+
+	// ── Super Jump ────────────────────────────────────────────────────────────
+	float GPInitiatedZ        = 0.f;  // Z when air GP was pressed
+	float SuperJumpSourceHeight = 0.f; // height saved at GP landing or 0 for ground GP
 
 	// ── Synced Action ─────────────────────────────────────────────────────────
 	EPcSyncedAction ActiveSyncedAction = EPcSyncedAction::None;
@@ -249,6 +315,7 @@ private:
 	void  PushCombo(const FString& Label, FLinearColor Color);
 	void  OnSnapPressed_Internal();
 	void  ActivateGPPulse(bool bOnBeat);
+	void  ActivateSuperJump(bool bOnBeat);
 
 	bool  IsOnBeat()   const;
 	bool  BoostReady() const { return BoostCooldown <= 0.f && BhopState != EBhopState::PowerBoost; }

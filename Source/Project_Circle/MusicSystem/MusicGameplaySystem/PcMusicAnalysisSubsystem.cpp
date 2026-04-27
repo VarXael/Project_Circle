@@ -11,7 +11,7 @@ void UPcMusicAnalysisSubsystem::InitializePlayback(UPcMusicConfigurationData* So
 	ResetState();
 	if (!SongConfig || !SongConfig->GeneratedRhythmProfile || !SongConfig->GeneratedNoteData) return;
 
-	TargetGameplayBPM = SongConfig->TargetGameplayBPM > 0.f ? SongConfig->TargetGameplayBPM : 55.f;
+	TargetGameplayBPM = SongConfig->TargetGameplayBPM > 0.f ? SongConfig->TargetGameplayBPM : 75.f;
 	PulseNormal       = SongConfig->PulseNormal;
 	PulseEnhanced     = SongConfig->PulseEnhanced;
 
@@ -49,16 +49,16 @@ void UPcMusicAnalysisSubsystem::ResetState()
 //  (> 0) that is used directly instead.
 // =============================================================================
 
-float UPcMusicAnalysisSubsystem::ComputeGameplayBPM(float RawBPM) const
+float UPcMusicAnalysisSubsystem::ComputeGameplayBPM(float RawBPM, float Target) const
 {
 	float Best     = RawBPM;
-	float BestDiff = FMath::Abs(RawBPM - TargetGameplayBPM);
+	float BestDiff = FMath::Abs(RawBPM - Target);
 
 	float Candidate = RawBPM;
 	while (Candidate > 20.f)
 	{
 		Candidate *= 0.5f;
-		const float Diff = FMath::Abs(Candidate - TargetGameplayBPM);
+		const float Diff = FMath::Abs(Candidate - Target);
 		if (Diff < BestDiff) { BestDiff = Diff; Best = Candidate; }
 	}
 	return FMath::Max(Best, 1.f);
@@ -178,11 +178,14 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 		}
 
 		// ── Gameplay BPM ──────────────────────────────────────────────────────
-		// Section may supply an authored override (GameplayBPM > 0).
-		// Otherwise auto-subdivide the raw BPM toward TargetGameplayBPM.
+		// ── Gameplay BPM ──────────────────────────────────────────────────────────────
+		// Enhanced sections target TargetGameplayBPM * 2 (drop doubles the tempo).
+		// Normal sections target TargetGameplayBPM.
+		// Per-section override: set GameplayBPM > 0 in the data table to bypass auto.
+		const float EffectiveTarget = bNewEnhanced ? TargetGameplayBPM * 2.f : TargetGameplayBPM;
 		const float NewGameplayBPM = (Section.GameplayBPM > 0.f)
 			? Section.GameplayBPM
-			: ComputeGameplayBPM(Section.BPM);
+			: ComputeGameplayBPM(Section.BPM, EffectiveTarget);
 
 		if (!FMath::IsNearlyEqual(CurrentGameplayBPM, NewGameplayBPM))
 		{
