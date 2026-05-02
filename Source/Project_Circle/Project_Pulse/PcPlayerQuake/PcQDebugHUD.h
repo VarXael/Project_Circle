@@ -34,23 +34,19 @@ class PROJECT_CIRCLE_API APcQDebugHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	// ── Effect Toggles ───────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Effects") bool bEnableScreenEdgePulse = true;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Effects") bool bEnableOnBeatHitMarker = true;
 
-	// ── Combo feed ───────────────────────────────────────────────────────────
 	UFUNCTION() void OnComboEvent(const FString& Label, FLinearColor Color);
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") float ComboFeed_FadeDuration = 2.5f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combo Feed") int32 ComboFeed_MaxEntries   = 8;
 
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Debug") bool bShowPlayerBPM = true;
 
-	// ── Threat API ──────────────────────────────────────────────────────────
 	UFUNCTION(BlueprintCallable, Category = "Rhythm UI|Threats") void RegisterThreat(int32 TimestampMS, const FString& Label, FLinearColor Color);
 	UFUNCTION(BlueprintCallable, Category = "Rhythm UI|Threats") void PurgeThreat(int32 TimestampMS);
 	UPROPERTY(BlueprintReadWrite, Category = "Rhythm UI|Threats") TArray<FPcHudThreatEvent> ActiveThreats;
 
-	// ── Crosshair ────────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairGateDist    = 36.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairBeatStep    = 45.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") int32 CrosshairBeatsToShow =  2;
@@ -58,7 +54,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float CrosshairChevronHeight = 8.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Crosshair") float DotSize               = 2.5f;
 
-	// ── Arc Metronome ────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_CenterBelowScreen = 1100.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Radius            = 1260.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_Thickness         =    6.f;
@@ -66,7 +61,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_FlashWindowPct    =    0.22f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Combat Metronome") float Arc_StrikeGatePercent = 0.88f;
 
-	// ── Glance Board ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_XOffset        = 50.f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_ScreenYPercent = 0.85f;
 	UPROPERTY(EditAnywhere, Category = "Rhythm UI|Glance Board") float GlanceBoard_Height         = 200.f;
@@ -100,7 +94,6 @@ private:
 	float SyncLevel       = 0.f;
 	int32 LastNoteIdx     = 0;
 
-	// UI Smoothing Variables
 	float StyleGaugeSmoothed = 0.f;
 
 	FLinearColor GetStateColor(EBhopState State) const;

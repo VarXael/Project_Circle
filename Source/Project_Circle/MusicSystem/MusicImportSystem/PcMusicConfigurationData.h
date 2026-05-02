@@ -3,7 +3,8 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Sound/SoundWave.h"
-#include "PcMusicAnalysisTypes.h"
+#include "Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalysisTypes.h"
+// THIS MUST ALWAYS BE THE LAST INCLUDE
 #include "PcMusicConfigurationData.generated.h"
 
 class UDataTable;
@@ -21,18 +22,12 @@ public:
 	TObjectPtr<UDataTable> GameplayMap;
 
 	// ── BPM Anchoring ─────────────────────────────────────────────────────────
-	// The system auto-selects a subdivision of each section's raw BPM (÷1, ÷2,
-	// ÷4) that lands closest to this value. Result is the gameplay beat interval.
-	// Sections tagged Enhanced keep the same subdivision but use the Enhanced preset.
-	// Per-section override: set GameplayBPM > 0 in the data table to bypass auto.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|BPM",
 	          meta = (ClampMin = "20.0", ClampMax = "200.0",
 	                  ToolTip = "Target gameplay BPM. Auto-subdivision snaps each section as close to this as possible."))
 	float TargetGameplayBPM = 55.f;
 
 	// ── Movement Presets ──────────────────────────────────────────────────────
-	// Normal  = regular song sections.
-	// Enhanced = the drop — stronger movement, same beat interval.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gameplay|Presets")
 	FPcMovementPreset PulseNormal = { 200.f, 900.f, 900.f, 0.6f };
 

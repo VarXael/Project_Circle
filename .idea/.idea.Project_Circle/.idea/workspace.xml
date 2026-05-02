@@ -12,17 +12,34 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_FlamePillar.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_FlamePillar.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_NoteShooter.cpp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_NoteShooter.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DA_ImmortalFlame.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DA_ImmortalFlame.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DT_DA_ImmortalFlame_RhythmProfile.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/ImmortalFlame/DT_DA_ImmortalFlame_RhythmProfile.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/Osu_ImportedSongs/MaledettiScarafaggi/DA_MaledettiScarafaggi.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/Osu_ImportedSongs/MaledettiScarafaggi/DA_MaledettiScarafaggi.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Config/DefaultEditor.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultEditor.ini" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerMovementComponent.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerMovementComponent.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Tests/BP_MusicSphere.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Tests/BP_MusicSphere.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/0/CV/XSWYV31M381POX4N2LRNTL.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/0/TR/VD0PT7IM2IPGL4BHG43LI0.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/0/TR/VD0PT7IM2IPGL4BHG43LI0.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/0/UC/28AS9LD9M8E1OXVACCRHZ5.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/0/UC/28AS9LD9M8E1OXVACCRHZ5.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/1/TS/FNGXDELOWTD5TUR546TPJ2.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/2/VZ/2RLAEZ5DD3754PFZFBHHA2.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/2/VZ/2RLAEZ5DD3754PFZFBHHA2.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/4/O1/NP44RR9924455H40NAF9BC.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/AS/G63K9WQBYGGGGDLL3A1WON.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/DB/G8LT72GZJYZGNC4KB7PY05.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/L6/8X4CN7W4080NGSA7L8Y81Q.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/6/AO/YF8SFR6C21QELHEU88D8LZ.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/7/U7/S4OBE3I6KIG97FSBZ1L18P.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/F/08/WPUETL40UJXJXN2JAXZ9KK.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/F/08/WPUETL40UJXJXN2JAXZ9KK.uasset" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalyzer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/MusicSystem/MusicImportSystem/PcMusicAnalyzer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.h" afterDir="false" />
     </list>
@@ -50,7 +67,7 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
-    <setting file="cidr-memory-view://11" root0="FORCE_HIGHLIGHTING" />
+    <setting file="cidr-memory-view://3" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/AutomationTool/SteamDeck/SteamDeckSupport.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/Shared/EpicGames.Core/CityHash.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/../../../Epic Games/UE_5.7/Engine/Source/Programs/Shared/EpicGames.Core/ManagedProcess.cs" root0="FORCE_HIGHLIGHTING" />
@@ -66,6 +83,10 @@
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/PcPlayer/PcProjectile.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Planet/PcPlanet.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_FlamePillar.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_FlamePillar.h" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_NoteShooter.cpp" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/Enemies/PcQEnemy_NoteShooter.h" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.cpp" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" root0="FORCE_HIGHLIGHTING" />
   </component>
@@ -143,6 +164,8 @@
       <workItem from="1776974863856" duration="7383000" />
       <workItem from="1777148529517" duration="1162000" />
       <workItem from="1777200579216" duration="16860000" />
+      <workItem from="1777638094768" duration="1814000" />
+      <workItem from="1777664919796" duration="5027000" />
     </task>
     <servers />
   </component>

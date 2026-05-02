@@ -43,10 +43,6 @@ void UPcMusicAnalysisSubsystem::ResetState()
 
 // =============================================================================
 //  BPM AUTO-SUBDIVISION
-//
-//  Tries raw BPM / 1, / 2, / 4 and picks whichever lands closest to
-//  TargetGameplayBPM.  If the section has an authored GameplayBPM override
-//  (> 0) that is used directly instead.
 // =============================================================================
 
 float UPcMusicAnalysisSubsystem::ComputeGameplayBPM(float RawBPM, float Target) const
@@ -100,7 +96,6 @@ float UPcMusicAnalysisSubsystem::GetTimeUntilNextGameplayBeat() const
 	return FMath::Max(0.f, (float)(NextGameplayBeatTimestampMS - LastProcessedMusicProgressMs)) / 1000.f;
 }
 
-// Gameplay beat interval = 60000 / currentGameplayBPM  (milliseconds)
 float UPcMusicAnalysisSubsystem::GetGameplayBeatIntervalMS() const
 {
 	if (!bIsReadyForPlayback || CurrentGameplayBPM <= 0.f) return 0.f;
@@ -151,7 +146,6 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 {
 	if (RhythmSections.IsEmpty()) return;
 
-	// Advance section index
 	int32 NewSectionIndex = CurrentSectionIndex;
 	while (NewSectionIndex < RhythmSections.Num() - 1
 		&& InCurrentTimeMS >= RhythmSections[NewSectionIndex + 1].StartTimeMS)
@@ -164,12 +158,12 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 		CurrentSectionIndex = NewSectionIndex;
 		const FPcRhythmSectionProfile& Section = RhythmSections[CurrentSectionIndex];
 
+		// Check if actual musical tempo shifted
+		const bool bTempoChanged = !FMath::IsNearlyEqual(CurrentBPM, Section.BPM);
+
 		CurrentBPM = Section.BPM;
 		OnBPMChanged.Broadcast(CurrentBPM);
 
-		// ── Preset ────────────────────────────────────────────────────────────
-		// Auto: Normal unless the section is explicitly tagged Enhanced.
-		// The data table drives this per-section.  No subdivision math involved.
 		const bool bNewEnhanced = (Section.MovementPreset == EPcMovementPresetOverride::Enhanced);
 		if (bNewEnhanced != bCurrentSectionIsEnhanced)
 		{
@@ -177,11 +171,6 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 			OnPresetChanged.Broadcast(bCurrentSectionIsEnhanced);
 		}
 
-		// ── Gameplay BPM ──────────────────────────────────────────────────────
-		// ── Gameplay BPM ──────────────────────────────────────────────────────────────
-		// Enhanced sections target TargetGameplayBPM * 2 (drop doubles the tempo).
-		// Normal sections target TargetGameplayBPM.
-		// Per-section override: set GameplayBPM > 0 in the data table to bypass auto.
 		const float EffectiveTarget = bNewEnhanced ? TargetGameplayBPM * 2.f : TargetGameplayBPM;
 		const float NewGameplayBPM = (Section.GameplayBPM > 0.f)
 			? Section.GameplayBPM
@@ -193,9 +182,14 @@ void UPcMusicAnalysisSubsystem::UpdateRhythmSection(int32 InCurrentTimeMS)
 			OnGameplayBPMChanged.Broadcast(CurrentGameplayBPM);
 		}
 
-		CurrentBeatInSession        = 0;
-		NextBeatTimestampMS         = Section.AnchorTimestampMS;
-		NextGameplayBeatTimestampMS = Section.AnchorTimestampMS;
+		// FIX: Continuous Phase! We ONLY reset the metronome anchor if the song's actual tempo changed.
+		// If we are just transitioning to an Enhanced drop, the beat flows continuously!
+		if (NextGameplayBeatTimestampMS <= 0 || bTempoChanged)
+		{
+			CurrentBeatInSession        = 0;
+			NextBeatTimestampMS         = Section.AnchorTimestampMS;
+			NextGameplayBeatTimestampMS = Section.AnchorTimestampMS;
+		}
 	}
 }
 
@@ -205,7 +199,7 @@ void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 	const FPcRhythmSectionProfile& Section = RhythmSections[CurrentSectionIndex];
 	if (Section.BeatLengthMS <= 0 || InCurrentTimeMS < Section.AnchorTimestampMS) return;
 
-	// ── 1. Raw beat loop (internal, not player-facing) ────────────────────────
+	// ── 1. Raw beat loop ────────────────────────
 	if (NextBeatTimestampMS <= 0
 		|| NextBeatTimestampMS < InCurrentTimeMS - FMath::RoundToInt(Section.BeatLengthMS * 4))
 	{
@@ -223,14 +217,14 @@ void UPcMusicAnalysisSubsystem::ProcessBeatTicks(int32 InCurrentTimeMS)
 			+ FMath::RoundToInt(CurrentBeatInSession * Section.BeatLengthMS);
 	}
 
-	// ── 2. Gameplay beat loop (what the player plays to) ──────────────────────
+	// ── 2. Gameplay beat loop (Continuous Phase) ──────────────────────
 	const float GameplayBeatInterval = GetGameplayBeatIntervalMS();
 	if (GameplayBeatInterval <= 0.f) return;
 
 	if (NextGameplayBeatTimestampMS <= 0)
 		NextGameplayBeatTimestampMS = Section.AnchorTimestampMS;
 
-	// Catch-up if lag occurs
+	// Catch-up if extreme lag occurs (but keeps the exact phase offset intact)
 	if (NextGameplayBeatTimestampMS < InCurrentTimeMS - FMath::RoundToInt(GameplayBeatInterval * 2))
 	{
 		const float TimeSinceAnchor   = (float)(InCurrentTimeMS - Section.AnchorTimestampMS);

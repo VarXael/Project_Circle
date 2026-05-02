@@ -48,19 +48,19 @@ FLinearColor APcQDebugHUD::GetFrenzyColor(float Gauge, UPcQPlayerMovementCompone
 	if (MC->IsSTierActive()) return MC->IsSTierLocked()
 		? FLinearColor(1.f, 0.85f, 0.0f)    // S locked   — Gold
 		: FLinearColor(1.f, 0.20f, 0.0f);   // S draining — Bright Orange/Red
-	if (Gauge >= MC->FrenzyThresh_A) return FLinearColor(1.f,  0.55f, 0.05f);  // A — Orange
-	if (Gauge >= MC->FrenzyThresh_B) return FLinearColor(0.1f, 0.90f, 0.30f);  // B — Green
-	if (Gauge >= MC->FrenzyThresh_C) return FLinearColor(0.1f, 0.60f, 1.00f);  // C — Blue
-	return FLinearColor(0.4f, 0.4f, 0.4f);                                      // D — Grey
+	if (Gauge >= MC->GetFrenzyThresh_A()) return FLinearColor(1.f,  0.55f, 0.05f);  // A — Orange
+	if (Gauge >= MC->GetFrenzyThresh_B()) return FLinearColor(0.1f, 0.90f, 0.30f);  // B — Green
+	if (Gauge >= MC->GetFrenzyThresh_C()) return FLinearColor(0.1f, 0.60f, 1.00f);  // C — Blue
+	return FLinearColor(0.4f, 0.4f, 0.4f);                                          // D — Grey
 }
 
 FString APcQDebugHUD::GetFrenzyTierLabel(float Gauge, UPcQPlayerMovementComponent* MC) const
 {
 	if (!MC) return TEXT("D");
 	if (MC->IsSTierActive()) return TEXT("S");
-	if (Gauge >= MC->FrenzyThresh_A) return TEXT("A");
-	if (Gauge >= MC->FrenzyThresh_B) return TEXT("B");
-	if (Gauge >= MC->FrenzyThresh_C) return TEXT("C");
+	if (Gauge >= MC->GetFrenzyThresh_A()) return TEXT("A");
+	if (Gauge >= MC->GetFrenzyThresh_B()) return TEXT("B");
+	if (Gauge >= MC->GetFrenzyThresh_C()) return TEXT("C");
 	return TEXT("D");
 }
 
@@ -181,19 +181,19 @@ void APcQDebugHUD::DrawStyleMeter(UPcQPlayerMovementComponent* MC, float FlashSo
 
 	if (MC->IsSTierActive()) {
 		TierWord = TEXT("SUPREME");
-		RankProgress = MC->IsSTierLocked() ? 1.f : FMath::Clamp((Gauge - MC->FrenzyThresh_A) / (MC->FrenzyThresh_S - MC->FrenzyThresh_A), 0.f, 1.f);
-	} else if (Gauge >= MC->FrenzyThresh_A) {
+		RankProgress = MC->IsSTierLocked() ? 1.f : FMath::Clamp((Gauge - MC->GetFrenzyThresh_A()) / (MC->GetFrenzyThresh_S() - MC->GetFrenzyThresh_A()), 0.f, 1.f);
+	} else if (Gauge >= MC->GetFrenzyThresh_A()) {
 		TierWord = TEXT("ANARCHIC");
-		RankProgress = (Gauge - MC->FrenzyThresh_A) / (MC->FrenzyThresh_S - MC->FrenzyThresh_A);
-	} else if (Gauge >= MC->FrenzyThresh_B) {
+		RankProgress = (Gauge - MC->GetFrenzyThresh_A()) / (MC->GetFrenzyThresh_S() - MC->GetFrenzyThresh_A());
+	} else if (Gauge >= MC->GetFrenzyThresh_B()) {
 		TierWord = TEXT("BRUTAL");
-		RankProgress = (Gauge - MC->FrenzyThresh_B) / (MC->FrenzyThresh_A - MC->FrenzyThresh_B);
-	} else if (Gauge >= MC->FrenzyThresh_C) {
+		RankProgress = (Gauge - MC->GetFrenzyThresh_B()) / (MC->GetFrenzyThresh_A() - MC->GetFrenzyThresh_B());
+	} else if (Gauge >= MC->GetFrenzyThresh_C()) {
 		TierWord = TEXT("CHAOTIC");
-		RankProgress = (Gauge - MC->FrenzyThresh_C) / (MC->FrenzyThresh_B - MC->FrenzyThresh_C);
+		RankProgress = (Gauge - MC->GetFrenzyThresh_C()) / (MC->GetFrenzyThresh_B() - MC->GetFrenzyThresh_C());
 	} else {
 		TierWord = TEXT("DESTRUCTIVE");
-		RankProgress = Gauge / MC->FrenzyThresh_C;
+		RankProgress = Gauge / MC->GetFrenzyThresh_C();
 	}
 
 	StyleGaugeSmoothed = FMath::FInterpTo(StyleGaugeSmoothed, RankProgress, GetWorld()->GetDeltaSeconds(), 12.f);
@@ -201,11 +201,11 @@ void APcQDebugHUD::DrawStyleMeter(UPcQPlayerMovementComponent* MC, float FlashSo
 	const float BoxW = 280.f;
 	const float BoxH = 80.f;
 	const float BoxX = Canvas->SizeX - BoxW - 40.f;
-	const float BoxY = Canvas->SizeY * 0.15f; // Moved up slightly to make room
+	const float BoxY = Canvas->SizeY * 0.15f; 
 
 	// Background Block & Accents
 	DrawRect(FLinearColor(0.02f, 0.02f, 0.03f, 0.85f), BoxX, BoxY, BoxW, BoxH);
-	DrawRect(TierCol, BoxX, BoxY, 6.f, BoxH); // Bold left rim
+	DrawRect(TierCol, BoxX, BoxY, 6.f, BoxH); 
 	
 	// Sharp Sci-Fi borders
 	const FLinearColor BorderCol = TierCol * FLinearColor(1,1,1, 0.3f);
@@ -254,12 +254,10 @@ void APcQDebugHUD::DrawStyleMeter(UPcQPlayerMovementComponent* MC, float FlashSo
 
 		if (Alpha < 0.01f) continue;
 
-		// Clean Slide-in
 		const float SlideInX = Age < 0.15f ? (1.f - Age / 0.15f) * -30.f : 0.f;
 		const float TxtX = BoxX + 28.f + SlideInX;
 		const float TxtY = ComboY;
 
-		// Side Accent & Shadow Backing
 		DrawRect(FLinearColor(0.01f, 0.01f, 0.02f, Alpha * 0.6f), BoxX + 16.f + SlideInX, TxtY - 2.f, BoxW - 20.f, 20.f);
 		DrawRect(E.Color * FLinearColor(1,1,1, Alpha * 0.9f), BoxX + 16.f + SlideInX, TxtY - 2.f, 4.f, 20.f);
 		
@@ -278,7 +276,7 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 	if (!Canvas || !GEngine || !MC || !PC) return;
 
 	const float CX = Canvas->SizeX * 0.5f;
-	const float BY = Canvas->SizeY * 0.85f; // Lowered to keep central view clear
+	const float BY = Canvas->SizeY * 0.85f; 
 	
 	const float BarW = 160.f;
 	const float BarH = 8.f;
@@ -288,11 +286,9 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 	{
 		DrawTextWithShadow(Label, Col * FLinearColor(1,1,1, 0.95f), X, Y - 20.f, GEngine->GetSmallFont(), 1.05f);
 		
-		// Frame & Backing
 		const FLinearColor FrameCol = FLinearColor(1,1,1, 0.15f);
 		DrawRect(FLinearColor(0.01f, 0.01f, 0.02f, 0.75f), X - 2.f, Y - 2.f, BarW + 4.f, BarH + 4.f);
 		
-		// Cyberpunk Corner brackets
 		DrawLine(X - 4.f, Y - 4.f, X + 10.f, Y - 4.f, FrameCol, 1.5f);
 		DrawLine(X - 4.f, Y - 4.f, X - 4.f, Y + 6.f, FrameCol, 1.5f);
 		DrawLine(X + BarW + 4.f, Y + BarH + 4.f, X + BarW - 10.f, Y + BarH + 4.f, FrameCol, 1.5f);
@@ -313,19 +309,14 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 	bool bMoveActive = false;
 
 	if (MC->IsPowerBoosting()) {
-		MoveFill = MC->GetBoostActiveAlpha();
+		MoveFill = 1.0f;
 		MoveCol = FLinearColor(1.f, 0.55f, 0.15f);
-		MoveLabel = TEXT("POWER BOOST");
+		MoveLabel = TEXT("DASH BOOSTING");
 		bMoveActive = true;
-	} else if (MC->IsGPPulseActive()) {
-		MoveFill = MC->GetGPPulseAlpha();
-		MoveCol = FLinearColor(1.f, 0.35f, 0.05f);
-		MoveLabel = TEXT("GP PULSE");
-		bMoveActive = true;
-	} else if (MC->GetBoostCooldownAlpha() > 0.f) {
-		MoveFill = 1.f - MC->GetBoostCooldownAlpha();
+	} else if (MC->GetDashBoostAlpha() > 0.f) {
+		MoveFill = 1.f - MC->GetDashBoostAlpha();
 		MoveCol = FLinearColor(0.6f, 0.4f, 0.2f);
-		MoveLabel = TEXT("BOOST CD");
+		MoveLabel = TEXT("DASH CD");
 	} else {
 		MoveFill = 1.f;
 		MoveCol = FLinearColor(1.f, 0.8f, 0.2f);
@@ -333,8 +324,8 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 	DrawStatusBlock(CX - BarW - Gap, BY, MoveLabel, MoveFill, MoveCol, bMoveActive);
 
 	// ── RIGHT: Combat Status ──────────────────────
-	float PistolCool = PC->GetPistolCooldownAlpha();
-	float DJCool     = MC->GetDoubleJumpCooldownAlpha();
+	float PistolCool = PC->GetPistolCooldownAlpha(); // Currently 0.f since cooldown is removed
+	float HopCool    = MC->GetAirHopCooldownAlpha();
 	
 	float CombatFill = 1.f;
 	FLinearColor CombatCol = FLinearColor(0.f, 0.8f, 1.f);
@@ -345,10 +336,10 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 		CombatFill = 1.f - PistolCool;
 		CombatCol = FLinearColor(1.f, 0.2f, 0.2f);
 		CombatLabel = TEXT("PISTOL RECHARGE");
-	} else if (DJCool > 0.f) {
-		CombatFill = 1.f - DJCool;
+	} else if (HopCool > 0.f) {
+		CombatFill = 1.f - HopCool;
 		CombatCol = FLinearColor(0.2f, 0.6f, 1.f);
-		CombatLabel = TEXT("JUMP RECHARGE");
+		CombatLabel = TEXT("HOP RECHARGE");
 	}
 	DrawStatusBlock(CX + Gap, BY, CombatLabel, CombatFill, CombatCol, bCombatActive);
 }
@@ -372,9 +363,8 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovem
 
 		FLinearColor SnapCol(0.5f, 0.5f, 0.5f, 0.f);
 		if      (SnapAct == ESnapAction::Jump)        SnapCol = FLinearColor(0.7f, 1.f, 0.3f); 
-		else if (SnapAct == ESnapAction::LandingJump) SnapCol = FLinearColor(1.f, 0.88f, 0.2f); 
-		else if (SnapAct == ESnapAction::DoubleJump)  SnapCol = FLinearColor(0.27f, 0.65f, 1.f);
-		else if (SnapAct == ESnapAction::GPPulse)     SnapCol = FLinearColor(1.f, 0.55f, 0.1f);
+		else if (SnapAct == ESnapAction::AirHop)      SnapCol = FLinearColor(0.27f, 0.65f, 1.f);
+		else if (SnapAct == ESnapAction::DashBoost)   SnapCol = FLinearColor(1.f, 0.55f, 0.1f);
 
 		const float AmbA     = 0.15f + 0.2f * FlashSoft;
 		const float PulseA   = AmbA + SnapPulse * 0.6f;
@@ -390,7 +380,6 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovem
 			const float EndA   = StartA + FMath::DegreesToRadians(SegDeg);
 			const FLinearColor SC = SnapCol * FLinearColor(1,1,1, PulseA);
 			
-			// Draw curved segments using multiple lines
 			const int32 Steps = 8;
 			for (int32 s = 0; s < Steps; ++s) {
 				const float A1 = FMath::Lerp(StartA, EndA, (float)s     / Steps);
@@ -408,10 +397,8 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovem
 		const float BackX = bLeft ? TipX + AW : TipX - AW;
 		const float H = AH + EXTRA_H;
 		const FLinearColor Sh(0.f, 0.f, 0.f, FMath::Min(0.5f, Alpha * 0.8f));
-		// Shadow
 		DrawLine(BackX + 1.f, CY - H + 1.f, TipX + 1.f, CY + 1.f, Sh, THICK + 1.5f); 
 		DrawLine(TipX + 1.f, CY + 1.f, BackX + 1.f, CY + H + 1.f, Sh, THICK + 1.5f);
-		// Core
 		FLinearColor FC = Col; FC.A *= Alpha;
 		DrawLine(BackX, CY - H, TipX, CY, FC, THICK); 
 		DrawLine(TipX, CY, BackX, CY + H, FC, THICK);
@@ -441,7 +428,6 @@ void APcQDebugHUD::DrawDotCrosshair(float BeatRemainingFraction, UPcQPlayerMovem
 	DrawRect(DotCol, CX-DR, CY-DR, DR*2.f, DR*2.f);
 }
 
-// Rest of the implementation details for Arc Metronome and Glance Board
 void APcQDebugHUD::DrawArcMetronome(UPcMusicAnalysisSubsystem* MusicSub, const FArcGeom& G, int32 CurrentTimeMS, int32 NextBeatMS, float IntervalMS, float FlashHard, float FlashSoft)
 {
 	const float BufferTimeMS = IntervalMS * 0.5f;
@@ -544,7 +530,6 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 {
 	if (!MC || !GEngine || !Canvas) return;
 	
-	// Pushed to Top-Left corner to avoid clash with Glance Board
 	const float PanelX = 20.f; float PanelY = 20.f; const float LineH = 22.f;
 	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White) {
 		DrawTextWithShadow(Label + TEXT("  ") + Value, Color, PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
@@ -553,15 +538,11 @@ void APcQDebugHUD::DrawBhopDebug(UPcQPlayerMovementComponent* MC)
 
 	EBhopState State = MC->GetBhopState();
 	FString StateStr;
-	if      (State == EBhopState::PowerBoost)     StateStr = TEXT("BOOST");
+	if      (State == EBhopState::DashBoosting)   StateStr = TEXT("DASH BOOST");
 	else if (State == EBhopState::GroundPounding) StateStr = TEXT("GROUND POUND");
 	else if (State == EBhopState::WallSwim)       StateStr = TEXT("WALL SWIM");
 	else                                          StateStr = TEXT("ACTIVE");
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
-
-	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>()) {
-		Row(TEXT("PRESET:"), Sub->GetActivePresetName(), FLinearColor::Yellow);
-	}
 
 	const float HSpeed = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = MC->IsInBhopChain() ? FLinearColor(1.f,0.45f,0.f) : FLinearColor::White;
@@ -581,7 +562,7 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub, int32 Cu
 	const float PanelPad = 14.f, PanelW = GlanceBoard_TrackSpacing + PanelPad * 2.f;
 
 	DrawRect(FLinearColor(0.01f,0.02f,0.03f,0.75f), PlayerTrackX-PanelPad, TopY-PanelPad, PanelW, GlanceBoard_Height+PanelPad*2.f);
-	DrawLine(PlayerTrackX-PanelPad, TopY-PanelPad, PlayerTrackX-PanelPad, StrikeY+PanelPad, FLinearColor(0.f,0.55f,0.75f,0.3f), 1.5f); // Border
+	DrawLine(PlayerTrackX-PanelPad, TopY-PanelPad, PlayerTrackX-PanelPad, StrikeY+PanelPad, FLinearColor(0.f,0.55f,0.75f,0.3f), 1.5f); 
 	
 	DrawTextWithShadow(TEXT("BEAT"), FLinearColor(0.f,0.70f,0.85f,0.70f), PlayerTrackX-8.f, TopY-18.f, GEngine->GetSmallFont(), 1.f);
 	DrawTextWithShadow(TEXT("THRT"), FLinearColor(1.f,0.20f,0.32f,0.70f), EnemyTrackX-8.f,  TopY-18.f, GEngine->GetSmallFont(), 1.f);
@@ -653,7 +634,7 @@ void APcQDebugHUD::UpdateSyncWaves(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlay
 	WaveSampleTimer += DeltaTime;
 	if (WaveSampleTimer >= 0.05f) {
 		WaveSampleTimer = 0.f;
-		SongWave  [WaveWriteIdx] = SongPulse;
+		SongWave[WaveWriteIdx] = SongPulse;
 		PlayerWave[WaveWriteIdx] = MC->GetPlayerPulse();
 		WaveWriteIdx = (WaveWriteIdx + 1) % WaveHistorySize;
 	}
@@ -671,7 +652,7 @@ void APcQDebugHUD::DrawSyncDebug(UPcMusicAnalysisSubsystem* MusicSub, UPcQPlayer
 	UpdateSyncWaves(MusicSub, MC);
 	const float PanelW = 280.f, WaveH = 40.f, Gap = 6.f;
 	const float PanelX = Canvas->SizeX - PanelW - 40.f;
-	const float PanelY = Canvas->SizeY - (WaveH*2.f + Gap + 30.f); // Anchored bottom right
+	const float PanelY = Canvas->SizeY - (WaveH*2.f + Gap + 30.f); 
 	
 	const FLinearColor SyncCol = FLinearColor::LerpUsingHSV(FLinearColor(0.8f,0.2f,0.2f), FLinearColor(0.2f,1.f,0.4f), FMath::Clamp(SyncLevel,0.f,1.f));
 	DrawTextWithShadow(FString::Printf(TEXT("SYNC  %.2f"), SyncLevel), SyncCol, PanelX, PanelY-18.f, GEngine->GetSmallFont(), 1.0f);
@@ -712,7 +693,7 @@ FLinearColor APcQDebugHUD::GetStateColor(EBhopState State) const
 {
 	if (State == EBhopState::GroundPounding) return FLinearColor::Red;
 	if (State == EBhopState::WallSwim)       return FLinearColor(0.f,0.82f,1.f);
-	if (State == EBhopState::PowerBoost)     return FLinearColor(1.f,0.55f,0.f);
+	if (State == EBhopState::DashBoosting)   return FLinearColor(1.f,0.55f,0.f);
 	return FLinearColor::Green;
 }
 
