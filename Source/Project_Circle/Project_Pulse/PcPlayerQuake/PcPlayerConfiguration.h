@@ -6,13 +6,18 @@
 #include "PcPlayerConfiguration.generated.h"
 
 // ---------------------------------------------------------------------------
-//  PcPlayerConfiguration  —  single data asset driving every tunable value
-//  in the player movement system.
+//  UPcPlayerConfiguration
 //
-//  Durations are expressed in BEATS relative to NormalBPM so you always know
-//  "0.5 beats at 50 BPM = 0.6 seconds" without mental arithmetic.
-//  Runtime converts them:  actualSec = beatFraction * (60f / currentBPM)
+//  Single data asset driving every tunable value in the player system.
+//  Assign this to UPcQPlayerMovementComponent::Config in the Blueprint.
+//
+//  Speed scaling formula:
+//    MaxSpeed = BaseMaxSpeed * clamp(CurrentBPM / ReferenceBPM, ScaleMin, ScaleMax)
+//
+//  Jump timing: durations expressed in beats so they stay musically aligned
+//  regardless of BPM. Converted at runtime: actualSec = beats * beatIntervalSec.
 // ---------------------------------------------------------------------------
+
 UCLASS(BlueprintType)
 class PROJECT_CIRCLE_API UPcPlayerConfiguration : public UDataAsset
 {
@@ -20,164 +25,127 @@ class PROJECT_CIRCLE_API UPcPlayerConfiguration : public UDataAsset
 
 public:
 
-	// ── BPM ──────────────────────────────────────────────────────────────────
-	// Your target "normal" BPM.  On song load the system snaps this to the
-	// song's slowest section BPM automatically.
-	// FastBPM = NormalBPM × 2  (always, no separate property).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="BPM",
-	          meta=(ClampMin="20", ClampMax="240"))
-	float NormalBPM = 50.f;
+	// ── BPM Speed Scaling ─────────────────────────────────────────────────────
+	// At ReferenceBPM the player moves at BaseMaxSpeed.
+	// Faster songs scale up toward ScaleMax, slower toward ScaleMin.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BPM Scaling",
+	          meta = (ClampMin = "20", ClampMax = "300"))
+	float ReferenceBPM = 100.f;
 
-	// Helper — call at runtime to get the beat interval in seconds
-	UFUNCTION(BlueprintPure) float GetNormalBeatInterval() const
-		{ return 60.f / FMath::Max(NormalBPM, 1.f); }
-	UFUNCTION(BlueprintPure) float GetFastBeatInterval() const
-		{ return 60.f / FMath::Max(NormalBPM * 2.f, 1.f); }
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BPM Scaling",
+	          meta = (ClampMin = "0.3", ClampMax = "1.0",
+	                  ToolTip = "Minimum speed multiplier (applied at low BPM)"))
+	float SpeedScaleMin = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BPM Scaling",
+	          meta = (ClampMin = "1.0", ClampMax = "3.0",
+	                  ToolTip = "Maximum speed multiplier (applied at high BPM)"))
+	float SpeedScaleMax = 1.5f;
 
 
 	// ── Base Movement ─────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float BaseMaxSpeed         = 900.f;   // cm/s, Tier-D baseline
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base")
+	float BaseMaxSpeed = 850.f;       // cm/s at reference BPM
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float GroundAcceleration   = 2400.f;  // cm/s² when moving toward desired vel
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base")
+	float GroundAcceleration = 30.f;  // VInterpTo speed toward wish dir on ground
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float GroundFriction       = 2400.f;  // cm/s² deceleration with no input
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base")
+	float GroundFriction = 25.f;      // VInterpTo speed toward zero with no input
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float AirAcceleration      = 700.f;   // cm/s² air-strafe acceleration
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base")
+	float AirAcceleration = 15.f;     // VInterpTo speed while airborne
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float OverspeedDecayRate   = 300.f;   // cm/s² decay when above current max
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base",
+	          meta = (ClampMin = "1.0", ClampMax = "8.0"))
+	float GravityScale = 2.8f;        // applied when not in a jump arc
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base",
-	          meta=(ClampMin="1.0", ClampMax="10.0"))
-	float HardSpeedCapMult     = 4.f;     // absolute max = BaseMaxSpeed × this
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base",
+	          meta = (ClampMin = "1.0", ClampMax = "8.0"))
+	float HardSpeedCapMult = 4.f;     // absolute max = BaseMaxSpeed × this
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base",
-	          meta=(ClampMin="1.0", ClampMax="6.0"))
-	float GravityScale         = 3.f;     // multiplier on −9.8 (Reaver style)
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Base")
-	float MaxFallSpeed         = 3000.f;  // cm/s, abs. clamp on downward velocity
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base")
+	float OverspeedDecayRate = 200.f; // cm/s² bleed when above current max
 
 
 	// ── Jump ──────────────────────────────────────────────────────────────────
-	// Air time = JumpDurationBeats × currentBeatInterval
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Jump",
-	          meta=(ClampMin="0.25", ClampMax="4.0"))
-	float JumpDurationBeats    = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump")
+	float JumpPeakHeightCM = 260.f;
 
-	// Horizontal speed added when jumping on beat (added to current XZ speed)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Jump")
-	float BeatJumpHorizBoost   = 300.f;
+	// Air time in beats. 1.0 = land exactly on the next beat.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump",
+	          meta = (ClampMin = "0.5", ClampMax = "4.0"))
+	float JumpAirTimeBeats = 1.f;
 
-	// Extra horizontal on top of BeatJumpHorizBoost when in Frenzy S
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Jump")
-	float FrenzyBoostedJumpExtraHoriz = 300.f;
-
-	// Optional smooth arc curve (Y = 0→1→0 height fraction over normalized time)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|Jump")
+	// Optional smooth arc curve (Y = 0→1→0 height fraction over normalised time).
+	// Leave null for standard parabolic arc.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump")
 	TObjectPtr<UCurveFloat> JumpCurve = nullptr;
+
+	// Extra horizontal speed added when eating a ground pulse (super jump).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump")
+	float SuperJumpHorizBoost = 420.f;
+
+	// Window before/after a beat where a jump press counts as on-beat.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump",
+	          meta = (ClampMin = "50", ClampMax = "400"))
+	int32 OnBeatWindowMs = 160;
+
+	// How long before landing a jump press is still remembered.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump")
+	float JumpInputBufferSec = 0.22f;
 
 
 	// ── Double Jump ───────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|DoubleJump",
-	          meta=(ClampMin="0.25", ClampMax="4.0"))
-	float DoubleJumpDurationBeats = 1.f;
+	// DJ gives the same arc height but from the player's current position,
+	// maintaining their altitude band without gaining extra height.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump")
+	float DJPeakHeightCM = 220.f;
 
-	// Ratio of DJ vertical force vs regular jump (0.8 = 80% as high)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|DoubleJump",
-	          meta=(ClampMin="0.1", ClampMax="2.0"))
-	float DoubleJumpHeightRatio = 0.8f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|DoubleJump")
-	float BeatDoubleJumpHorizBoost = 300.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|DoubleJump")
-	float FrenzyBoostedDJExtraHoriz = 300.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|DoubleJump",
-	          meta=(ClampMin="0.25", ClampMax="8.0"))
-	float DoubleJumpCooldownBeats = 2.f;
+	// Cooldown in beats after using the double jump.
+	// CD is a global timer — landing and re-jumping doesn't reset it.
+	// Enemy hits can refund it (see NotifyEnemyHit).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump",
+	          meta = (ClampMin = "0.5", ClampMax = "8.0"))
+	float DJCooldownBeats = 2.f;
 
 
 	// ── Ground Pound ──────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound")
-	float GPDownVelocity = 2800.f;        // cm/s downward (positive value)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound")
+	float GPSlamSpeed = 2800.f;       // cm/s downward (absolute)
 
-	// GP Pulse (ground GP): velocity burst in WASD direction
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound")
-	float GPPulseSpeedBoost = 700.f;      // cm/s overshoot above current max
-
-	// Speed decays from (currentMax + GPPulseSpeedBoost) to currentMax over this
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound",
-	          meta=(ClampMin="0.1", ClampMax="4.0"))
-	float GPPulseDurationBeats = 0.5f;
-
-	// GP Pulse + Jump → Super Jump
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound")
-	float SuperJumpVerticalForce  = 1800.f; // cm/s
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound")
-	float SuperJumpOnBeatBonus    =  400.f; // added if triggered on beat
-
-	// Synced air GP bounce: max height you'll get back (in beats of height)
-	// At cap, the bounce air time = exactly 1 beat.  Below cap, proportional.
-	// HeightCap = g × beatInterval² / 8  for your reference, but the config
-	// value below is a hard cm cap.  Set to 0 to let physics handle it freely.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Movement|GroundPound")
-	float GPSyncedBounceHeightCapCm = 800.f;
+	// How many beats of pulse immunity are granted after a GP land.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound",
+	          meta = (ClampMin = "0.0", ClampMax = "8.0"))
+	float GPPulseImmunityBeats = 2.f;
 
 
-	// ── Frenzy (Music Frenzy) ─────────────────────────────────────────────────
-	// Gauge 0→1, D→C→B→A→S tiers.
+	// ── Dash Boost ───────────────────────────────────────────────────────────
+	// Entered from ground: GP press (bypasses/converts the pulse into a dash).
+	// Shooting on beat resets the timer and re-triggers. GP land also auto-enters.
+	// No gauge — pure timed burst. Timer is beat-length based so it naturally aligns.
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy")
-	float FrenzyDrainPerSec = 0.04f;
+	// Speed = ComputeCurrentMaxSpeed() × this multiplier while dashing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash",
+	          meta = (ClampMin = "1.0", ClampMax = "3.0"))
+	float DashBoostSpeedMult = 1.55f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy",
-	          meta=(ClampMin="0.0", ClampMax="1.0"))
-	float FrenzyFillOnBeat  = 0.20f;   // action on beat
+	// How many beats the dash lasts before expiring.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash",
+	          meta = (ClampMin = "0.25", ClampMax = "4.0"))
+	float DashDurationBeats = 1.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy",
-	          meta=(ClampMin="0.0", ClampMax="1.0"))
-	float FrenzyFillOffBeat = 0.05f;   // action off beat
+	// VInterpTo speed while dashing — higher = snappier direction correction.
+	// 30 gives the responsive "feel" of the old boost.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash")
+	float DashSteerAcceleration = 30.f;
 
-	// Thresholds to enter each tier
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Tiers")
-	float TierC_Threshold = 0.25f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Tiers")
-	float TierB_Threshold = 0.50f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Tiers")
-	float TierA_Threshold = 0.75f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Tiers")
-	float TierS_Threshold = 1.00f;
+	// Horizontal bonus added when jumping out of a dash.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash")
+	float DashJumpBoost = 200.f;
 
-	// Max speed multiplier per tier (applied to BaseMaxSpeed)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed") float SpeedMult_D = 1.00f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed") float SpeedMult_C = 1.15f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed") float SpeedMult_B = 1.30f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed") float SpeedMult_A = 1.50f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed") float SpeedMult_S = 1.80f;
-
-	// Ground friction scales DOWN with frenzy (at S it feels like ice)
-	// 0 = no friction reduction at max gauge, 1 = zero friction at max gauge
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|Speed",
-	          meta=(ClampMin="0.0", ClampMax="1.0"))
-	float FrenzyFrictionReductionAtS = 0.85f;
-
-	// Dash boost (Frenzy S, fires on each gameplay beat while grounded)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Frenzy|DashBoost")
-	float DashBoostSpeed = 900.f;   // cm/s injected in WASD dir
-
-
-	// ── Rhythm ────────────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rhythm",
-	          meta=(ClampMin="50", ClampMax="400"))
-	int32 OnBeatWindowMs = 160;
-
-	// How long before landing a jump press is still remembered
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Rhythm")
-	float JumpInputBufferSec = 0.22f;
+	// Brief pulse immunity after dash ends so the player isn't immediately bounced.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash",
+	          meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float PostDashImmunityBeats = 0.25f;
 };

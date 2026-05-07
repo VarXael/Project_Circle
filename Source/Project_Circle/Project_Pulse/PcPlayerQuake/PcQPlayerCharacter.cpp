@@ -6,8 +6,11 @@
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
-#include "Engine/OverlapResult.h"
 #include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
+
+// =============================================================================
+//  CONSTRUCTION
+// =============================================================================
 
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UPcQPlayerMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -25,47 +28,61 @@ APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitial
 	bUseControllerRotationYaw = true;
 }
 
+// =============================================================================
+//  BEGIN PLAY
+// =============================================================================
+
 void APcQPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
 	DefaultFOV     = CameraComp ? CameraComp->FieldOfView             : 90.f;
 	DefaultCameraZ = CameraComp ? CameraComp->GetRelativeLocation().Z : 60.f;
 
-	if (MoveComp)
-		MoveComp->OnActiveBeatAction.AddDynamic(this, &APcQPlayerCharacter::OnActiveBeatAction_Handler);
-
+	// Lock cursor and set input mode
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		PC->bShowMouseCursor = false;
 		PC->SetInputMode(FInputModeGameOnly());
+
 		if (UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
-			if (DefaultMappingContext) Sub->AddMappingContext(DefaultMappingContext, 0);
+			if (DefaultMappingContext)
+				Sub->AddMappingContext(DefaultMappingContext, 0);
 	}
 
+	// Subscribe to gameplay beat for pulse + camera feedback
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
 		Sub->OnGameplayBeatTriggered.AddDynamic(this, &APcQPlayerCharacter::OnGameplayBeat);
 }
 
+// =============================================================================
+//  INPUT SETUP
+// =============================================================================
+
 void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		if (IA_Move)       EIC->BindAction(IA_Move,       ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Move);
-		if (IA_Look)       EIC->BindAction(IA_Look,       ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Look);
+		if (IA_Move)
+			EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Move);
+		if (IA_Look)
+			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &APcQPlayerCharacter::Input_Look);
 		if (IA_Jump)
 		{
 			EIC->BindAction(IA_Jump, ETriggerEvent::Started,   this, &APcQPlayerCharacter::Input_JumpPressed);
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
-		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
-		if (IA_Snap)        EIC->BindAction(IA_Snap,        ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Snap);
-		if (IA_Fire)        EIC->BindAction(IA_Fire,        ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
+		if (IA_GroundPound)
+			EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
+		if (IA_Fire)
+			EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
 	}
 }
 
 // =============================================================================
-//  INPUT
+//  INPUT HANDLERS
 // =============================================================================
 
 void APcQPlayerCharacter::Input_Move(const FInputActionValue& Value)
@@ -87,22 +104,18 @@ void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value)
 void APcQPlayerCharacter::Input_JumpPressed()  { if (MoveComp) MoveComp->OnJumpPressed(); }
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
 void APcQPlayerCharacter::Input_GroundPound()  { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
-void APcQPlayerCharacter::Input_Snap()         { if (MoveComp) MoveComp->OnSnapPressed(); }
 
 // =============================================================================
-//  BEAT
+//  BEAT CALLBACK
 // =============================================================================
 
-void APcQPlayerCharacter::OnGameplayBeat(float)
+void APcQPlayerCharacter::OnGameplayBeat(float /*BeatTimestamp*/)
 {
-	// Camera physically thuds on every beat — implicit rhythm feedback.
+	// Camera FOV dip — implicit rhythm feedback for the player.
 	BeatFOVOffset = CameraBeatPunch;
-	if (MoveComp) MoveComp->TriggerBeatJump();
-}
 
-void APcQPlayerCharacter::OnActiveBeatAction_Handler()
-{
-	PistolCooldown = 0.f;
+	// Forward pulse to movement system.
+	if (MoveComp) MoveComp->TriggerGroundPulse();
 }
 
 // =============================================================================
@@ -120,15 +133,17 @@ void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
 {
 	if (!CameraComp || !MoveComp) return;
 
-	BeatFOVOffset      = FMath::FInterpTo(BeatFOVOffset, 0.f, DeltaTime, 12.f);
+	// Beat FOV punch decays quickly
+	BeatFOVOffset = FMath::FInterpTo(BeatFOVOffset, 0.f, DeltaTime, 12.f);
 
-	const float Target = MoveComp->IsPowerBoosting() ? 1.f : 0.f;
-	CurrentBoostAlpha  = FMath::FInterpTo(CurrentBoostAlpha, Target, DeltaTime, BoostCameraSpeed);
+	// Slide camera effect (replaces old boost effect)
+	const float SlideTarget = MoveComp->IsDashing() ? 1.f : 0.f;
+	CurrentSlideAlpha = FMath::FInterpTo(CurrentSlideAlpha, SlideTarget, DeltaTime, SlideCameraSpeed);
 
 	CameraComp->SetRelativeLocation(FVector(0.f, 0.f,
-		FMath::Lerp(DefaultCameraZ, DefaultCameraZ - BoostCameraDropZ, CurrentBoostAlpha)));
+		FMath::Lerp(DefaultCameraZ, DefaultCameraZ - SlideCameraDropZ, CurrentSlideAlpha)));
 
-	const float BaseFOV = FMath::Lerp(DefaultFOV, DefaultFOV + BoostFOVGain, CurrentBoostAlpha);
+	const float BaseFOV = FMath::Lerp(DefaultFOV, DefaultFOV + SlideFOVGain, CurrentSlideAlpha);
 	CameraComp->SetFieldOfView(BaseFOV - BeatFOVOffset);
 }
 
@@ -148,75 +163,46 @@ bool APcQPlayerCharacter::IsOnBeat() const
 	UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
 	if (!Sub || !Sub->IsReadyForPlayback()) return false;
 
-	const int32 CurrentTime = Sub->GetCurrentPlaybackTimeMS();
-	const int32 NextBeat    = Sub->GetNextGameplayBeatTimeMS();
-	const int32 Interval    = FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS());
-	const int32 PrevBeat    = NextBeat - Interval;
-	const int32 Window      = MoveComp ? MoveComp->OnBeatWindowMS : 160;
+	const int32 Now      = Sub->GetCurrentPlaybackTimeMS();
+	const int32 Next     = Sub->GetNextGameplayBeatTimeMS();
+	const int32 Interval = FMath::RoundToInt(Sub->GetGameplayBeatIntervalMS());
+	const int32 Prev     = Next - Interval;
+	const int32 Window   = MoveComp ? MoveComp->GetOnBeatWindowMs() : 160;
 
-	return FMath::Min(FMath::Abs(NextBeat - CurrentTime), FMath::Abs(CurrentTime - PrevBeat)) <= Window;
+	return FMath::Min(FMath::Abs(Next - Now), FMath::Abs(Now - Prev)) <= Window;
 }
 
 void APcQPlayerCharacter::Input_Fire() { TryFire(); }
 
 void APcQPlayerCharacter::TryFire()
 {
-	if (!CameraComp) return;
-	if (MoveComp && MoveComp->IsWallSwimming()) return;
+	if (!CameraComp)           return;
+	if (PistolCooldown > 0.f)  return;
 
-	const bool bOnBeat = IsOnBeat();
-	if (PistolCooldown > 0.f && !bOnBeat) return;
+	PistolCooldown = PistolBaseCooldownSec;
 
 	const FVector CamLoc     = CameraComp->GetComponentLocation();
 	const FVector CamForward = CameraComp->GetForwardVector();
+	const FVector End        = CamLoc + CamForward * 5000.f;
 
-	if (bOnBeat)
-	{
-		PistolCooldown = 0.f;
-		if (MoveComp) MoveComp->NotifyGunFired();
-
-		TArray<FOverlapResult> Overlaps;
-		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn,
-		                                  FCollisionShape::MakeSphere(5000.f), QP);
-
-		APcQEnemyBase* Best = nullptr;
-		float BestDot = 0.90f;
-		for (const FOverlapResult& O : Overlaps)
-		{
-			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(O.GetActor()))
-			{
-				const float D = FVector::DotProduct(CamForward,
-				                    (E->GetActorLocation() - CamLoc).GetSafeNormal());
-				if (D > BestDot) { BestDot = D; Best = E; }
-			}
-		}
-
-		FVector BeamEnd = CamLoc + CamForward * 5000.f;
-		if (Best)
-		{
-			UGameplayStatics::ApplyDamage(Best, BaseDamage, GetController(), this, nullptr);
-			BeamEnd = Best->GetActorLocation();
-		}
-		DrawDebugLine(GetWorld(), CamLoc, BeamEnd, FColor::Cyan, false, 0.5f, 0, 5.f);
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT + CD RESET"), FLinearColor(1.f, 0.35f, 1.f));
-		return;
-	}
-
-	// Off-beat shot — applies cooldown, line trace only.
-	UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>();
-	PistolCooldown = (Sub && Sub->IsReadyForPlayback() && MoveComp)
-	               ? MoveComp->GetBeatSnappedDuration(PistolBaseCooldownSec)
-	               : PistolBaseCooldownSec;
-	if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("SHOT FIRED"), FLinearColor(1.f, 0.25f, 0.25f));
-
+	// Standard line trace — no rhythm gating, no auto-aim.
 	FHitResult Hit;
-	FCollisionQueryParams QP2; QP2.AddIgnoredActor(this);
-	const FVector End = CamLoc + CamForward * 5000.f;
-	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, QP2))
+	FCollisionQueryParams QP; QP.AddIgnoredActor(this);
+
+	if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, QP))
 	{
+		const bool bOnBeat = IsOnBeat(); // used only for resource refunds, not to gate fire
+
 		UGameplayStatics::ApplyDamage(Hit.GetActor(), BaseDamage, GetController(), this, nullptr);
-		DrawDebugLine(GetWorld(), CamLoc, Hit.ImpactPoint, FColor::Red, false, 0.2f, 0, 1.f);
+
+		// Notify movement component so it can refund DJ / slide gauge as designed.
+		if (MoveComp) MoveComp->NotifyGunFired(bOnBeat);
+
+		DrawDebugLine(GetWorld(), CamLoc, Hit.ImpactPoint,
+		              bOnBeat ? FColor::Yellow : FColor::Red, false, 0.2f, 0, 1.f);
 	}
-	else DrawDebugLine(GetWorld(), CamLoc, End, FColor::Red, false, 0.2f, 0, 1.f);
+	else
+	{
+		DrawDebugLine(GetWorld(), CamLoc, End, FColor::Red, false, 0.2f, 0, 1.f);
+	}
 }
