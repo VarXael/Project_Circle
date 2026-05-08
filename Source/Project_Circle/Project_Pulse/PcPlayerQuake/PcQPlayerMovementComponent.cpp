@@ -194,16 +194,37 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 	// ── Jumping out of a dash ─────────────────────────────────────────────────
 	if (MovState == EPlayerMovementState::Dashing)
 	{
-		const FVector WishDir = Acceleration.GetSafeNormal2D();
-		if (!WishDir.IsZero())
+		// 1. Massive Momentum: Always grant a huge speed boost for Dash-Jumping
+		FVector Dir2D = Acceleration.GetSafeNormal2D();
+		if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+
+		if (!Dir2D.IsZero())
 		{
-			const float LaunchH = FMath::Min(GetHorizontalSpeed() + Cfg_DashJumpBoost(),
+			// Stack Dash boost + Super Jump boost for that Quake-style speed
+			const float LaunchH = FMath::Min(GetHorizontalSpeed() + Cfg_DashJumpBoost() + Cfg_SuperJumpHorizBoost(),
 			                                 Cfg_BaseMaxSpeed() * Cfg_HardSpeedCapMult());
-			Velocity.X = WishDir.X * LaunchH;
-			Velocity.Y = WishDir.Y * LaunchH;
+			Velocity.X = Dir2D.X * LaunchH;
+			Velocity.Y = Dir2D.Y * LaunchH;
 		}
 		ExitDash();
-		IsNearBeat() ? DoSuperJump() : DoNormalJump();
+
+		if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+		MovState     = EPlayerMovementState::InAir;
+		bDJAvailable = (DJCooldownTimer <= 0.f);
+
+		// 2. Alignment: Only align landing to the beat if hit perfectly on-beat.
+		if (IsNearBeat())
+		{
+			ApplyArcWithAirTime(Cfg_JumpPeakHeight(), ComputeSyncedAirTime(Cfg_JumpAirTimeBeats()));
+			OnBeatFlashTimer = OnBeatFlashDuration;
+			OnSuperJumped.Broadcast();
+			PushCombo(TEXT("PERFECT DASH JUMP"), FLinearColor(1.f, 0.85f, 0.1f));
+		}
+		else
+		{
+			ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+			PushCombo(TEXT("DASH JUMP"), FLinearColor(0.85f, 0.85f, 0.85f));
+		}
 		return;
 	}
 
@@ -220,8 +241,23 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 			JumpInputBufferTimer = Cfg_JumpInputBuffer();
 			return;
 		}
-		if (bDJAvailable && DJCooldownTimer <= 0.f)
+		
+		// ── Double Jump Logic ─────────────────────────────────────────────────
+		// You can DJ if you hit the beat (bypassing cooldown) OR if it's off cooldown.
+		if (IsNearBeat())
+		{
+			// Perfect beat hit: Grants jump, ignores current CD, and resets the CD!
+			DoFreeDoubleJump();
+			bDJAvailable    = true; 
+			DJCooldownTimer = 0.f;
+			OnBeatFlashTimer = OnBeatFlashDuration;
+			PushCombo(TEXT("BEAT DJ (BYPASS)"), FLinearColor(1.f, 0.85f, 0.1f));
+		}
+		else if (bDJAvailable && DJCooldownTimer <= 0.f)
+		{
+			// Off-beat hit: Only works if the cooldown is actually ready. Consumes it.
 			DoDoubleJump();
+		}
 		break;
 
 	case EPlayerMovementState::GroundPounding:
