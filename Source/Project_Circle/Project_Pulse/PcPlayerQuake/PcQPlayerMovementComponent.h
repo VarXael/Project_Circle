@@ -63,6 +63,16 @@ public:
 	// 0→1 flash on notable on-beat actions (for HUD)
 	UFUNCTION(BlueprintPure) float GetOnBeatFlash() const;
 
+	// Beat phase: 0 = beat just fired, 1 = next beat imminent.
+	// Useful for drawing a timing bar in the HUD.
+	UFUNCTION(BlueprintPure) float GetBeatPhase() const;
+
+	// 0→1 remaining life of the jump input buffer (for HUD).
+	UFUNCTION(BlueprintPure) float GetJumpBufferAlpha() const;
+
+	// True if a pulse is buffered waiting for landing.
+	UFUNCTION(BlueprintPure) bool  GetPulseBuffered() const { return bPulseBufferedForLanding; }
+
 	// Utility: snaps BaseSec to the nearest whole-beat boundary ahead
 	UFUNCTION(BlueprintPure) float GetBeatSnappedDuration(float BaseSec) const;
 
@@ -104,6 +114,11 @@ private:
 	bool  bGPInputBuffered     = false;
 	float GPInputBufferTimer   = 0.f;
 
+	// Pulse buffering — beat fired while player was in air.
+	// Fires the pulse on landing if the player touches down within the window.
+	bool  bPulseBufferedForLanding = false;
+	float PulseBufferTimer         = 0.f;
+
 	float OnBeatFlashTimer    = 0.f;
 	float OnBeatFlashDuration = 0.35f;
 
@@ -134,6 +149,11 @@ private:
 	bool IsNearBeat()       const;
 	bool CanBufferLanding() const;
 	void PushCombo(const FString& Label, FLinearColor Color);
+
+	// Returns the air time (seconds) needed so the player lands exactly
+	// AirTimeBeats beats after the nearest beat — compensates for when
+	// in the beat cycle the jump was pressed.
+	float ComputeSyncedAirTime(float AirTimeBeats) const;
 
 	// ── Config Accessors ──────────────────────────────────────────────────────
 	float         Cfg_BaseMaxSpeed()           const;

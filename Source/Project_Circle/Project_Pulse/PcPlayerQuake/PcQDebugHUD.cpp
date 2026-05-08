@@ -512,19 +512,75 @@ void APcQDebugHUD::DrawGlanceBoard(UPcMusicAnalysisSubsystem* MusicSub,
 
 void APcQDebugHUD::DrawMovementDebug(UPcQPlayerMovementComponent* MC)
 {
-	if (!MC || !GEngine) return;
+	if (!MC || !GEngine || !Canvas) return;
 
 	const float PanelX = 30.f;
 	float       PanelY = 30.f;
-	const float LineH  = 22.f;
+	const float LineH  = 20.f;
+	const float BarW   = 140.f;
+	const float BarH   =   5.f;
 
 	auto Row = [&](const FString& Label, const FString& Value, FLinearColor Color = FLinearColor::White)
 	{
 		DrawText(Label + TEXT("  ") + Value, Color, PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
 		PanelY += LineH;
 	};
+	auto Bar = [&](float Fill, FLinearColor Col, float ExtraH = 0.f)
+	{
+		const float H = BarH + ExtraH;
+		DrawRect(FLinearColor(0.05f,0.05f,0.05f,0.85f), PanelX,                    PanelY, BarW,       H);
+		DrawRect(Col,                                    PanelX, PanelY, BarW * FMath::Clamp(Fill,0.f,1.f), H);
+		PanelY += H + 4.f;
+	};
 
-	// ── State ─────────────────────────────────────────────────────────────────
+	// ── Beat timing bar ───────────────────────────────────────────────────────
+	// Phase 0=just fired → 1=next beat imminent. Hit window shown as bright zones.
+	{
+		const float Phase    = MC->GetBeatPhase(); // 0→1
+		const float Interval = [&]() -> float {
+			if (UPcMusicAnalysisSubsystem* S = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
+				if (S->IsReadyForPlayback()) return S->GetGameplayBeatIntervalMS() / 1000.f;
+			return 0.6f;
+		}();
+		const float WinFrac  = Interval > 0.f
+			? ((float)MC->GetOnBeatWindowMs() / 1000.f) / Interval
+			: 0.f;
+
+		const float BH2 = 8.f;
+		DrawRect(FLinearColor(0.05f,0.05f,0.05f,0.85f), PanelX, PanelY, BarW, BH2);
+
+		// Hit windows: near phase=0 (just after beat) and near phase=1 (just before)
+		const float WinPx = BarW * WinFrac;
+		DrawRect(FLinearColor(0.f,0.75f,0.3f,0.35f), PanelX,              PanelY, WinPx, BH2); // post-beat window
+		DrawRect(FLinearColor(0.f,0.75f,0.3f,0.35f), PanelX+BarW-WinPx, PanelY, WinPx, BH2); // pre-beat window
+
+		// Phase cursor
+		const float CurX = PanelX + Phase * BarW;
+		const bool  bInWindow = Phase < WinFrac || Phase > (1.f - WinFrac);
+		DrawRect(bInWindow ? FLinearColor(0.2f,1.f,0.5f,1.f) : FLinearColor(0.9f,0.9f,0.9f,0.9f),
+		         CurX - 1.f, PanelY - 1.f, 3.f, BH2 + 2.f);
+
+		DrawText(TEXT("BEAT"), FLinearColor(0.5f,0.5f,0.5f,0.8f), PanelX, PanelY - 13.f, GEngine->GetSmallFont(), 1.f);
+		PanelY += BH2 + 8.f;
+	}
+
+	// ── Jump input buffer ─────────────────────────────────────────────────────
+	{
+		const float JBA = MC->GetJumpBufferAlpha();
+		DrawText(TEXT("JMP BUF"), JBA > 0.f ? FLinearColor(0.4f,0.8f,1.f) : FLinearColor(0.3f,0.3f,0.3f,0.6f),
+		         PanelX, PanelY, GEngine->GetSmallFont(), 1.f);
+		PanelY += LineH - 4.f;
+		Bar(JBA, FLinearColor(0.4f, 0.8f, 1.f, 0.85f));
+	}
+
+	// ── Pulse buffer (waiting to fire on landing) ─────────────────────────────
+	if (MC->GetPulseBuffered())
+	{
+		DrawRect(FLinearColor(1.f,0.85f,0.f,0.25f), PanelX-4.f, PanelY-2.f, BarW+8.f, LineH+2.f);
+		Row(TEXT("PULSE"), TEXT("BUFFERED →"), FLinearColor(1.f, 0.85f, 0.f));
+	}
+
+	// ── Movement state ────────────────────────────────────────────────────────
 	const EPlayerMovementState State = MC->GetMovementState();
 	FString StateStr;
 	switch (State)
@@ -538,49 +594,34 @@ void APcQDebugHUD::DrawMovementDebug(UPcQPlayerMovementComponent* MC)
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
 	// ── Double jump ───────────────────────────────────────────────────────────
-	const bool bDJ = MC->HasDoubleJump();
-	Row(TEXT("DJ:"), bDJ ? TEXT("READY") : TEXT("CD"),
-	    bDJ ? FLinearColor::Green : FLinearColor(0.5f, 0.5f, 0.5f));
+	const bool  bDJ      = MC->HasDoubleJump();
+	const float DJAlpha  = MC->GetDJCooldownAlpha();
+	Row(TEXT("DJ:"), bDJ ? TEXT("READY") : FString::Printf(TEXT("CD %.0f%%"), DJAlpha * 100.f),
+	    bDJ ? FLinearColor(0.27f, 0.67f, 1.f) : FLinearColor(0.4f, 0.4f, 0.55f));
+	Bar(bDJ ? 1.f : (1.f - DJAlpha), FLinearColor(0.27f, 0.67f, 1.f, 0.8f));
 
-	if (!bDJ)
-	{
-		const float DJAlpha = MC->GetDJCooldownAlpha();
-		DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), PanelX, PanelY, 80.f, 5.f);
-		DrawRect(FLinearColor(0.27f, 0.67f, 1.f, 0.8f),    PanelX, PanelY, 80.f * (1.f - DJAlpha), 5.f);
-		PanelY += 10.f;
-	}
+	// ── Dash ─────────────────────────────────────────────────────────────────
+	const float DashA = MC->GetDashActiveAlpha();
+	Row(TEXT("DASH:"), DashA > 0.f ? FString::Printf(TEXT("ACTIVE %.0f%%"), DashA * 100.f) : TEXT("IDLE"),
+	    DashA > 0.f ? FLinearColor(1.f, 0.55f, 0.15f) : FLinearColor(0.4f, 0.3f, 0.2f));
+	Bar(DashA, FLinearColor(1.f, 0.55f, 0.15f, 0.8f));
 
-	// ── Dash active ───────────────────────────────────────────────────────────
-	const float DashAlpha = MC->GetDashActiveAlpha();
-	Row(TEXT("DASH:"), FString::Printf(TEXT("%.0f%%"), DashAlpha * 100.f),
-	    DashAlpha > 0.3f ? FLinearColor(1.f, 0.55f, 0.15f) : FLinearColor(0.55f, 0.25f, 0.05f));
-
-	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), PanelX, PanelY, 80.f, 5.f);
-	DrawRect(FLinearColor(1.f, 0.55f, 0.15f, 0.8f),    PanelX, PanelY, 80.f * DashAlpha, 5.f);
-	PanelY += 12.f;
-
-	// ── BPM / speed ──────────────────────────────────────────────────────────
+	// ── BPM and speed ─────────────────────────────────────────────────────────
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>())
-	{
-		Row(TEXT("BPM:"),     FString::Printf(TEXT("%.1f"), Sub->GetCurrentGameplayBPM()), FLinearColor::Yellow);
-		Row(TEXT("MAX SPD:"), FString::Printf(TEXT("%.0f"), MC->MaxWalkSpeed));
-	}
+		Row(TEXT("BPM:"), FString::Printf(TEXT("%.1f  MAX %.0f"), Sub->GetCurrentGameplayBPM(), MC->MaxWalkSpeed),
+		    FLinearColor::Yellow);
 
 	const float HSpeed = MC->GetHorizontalSpeed();
 	const bool  bOver  = HSpeed > MC->MaxWalkSpeed * 1.05f;
 	Row(TEXT("SPEED:"), FString::Printf(TEXT("%.0f u/s"), HSpeed),
 	    bOver ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White);
+	Bar(FMath::Clamp(HSpeed / (MC->MaxWalkSpeed * 3.f), 0.f, 1.f),
+	    bOver ? FLinearColor(1.f,0.45f,0.f,0.8f) : FLinearColor(1.f,1.f,1.f,0.7f), 1.f);
 
-	DrawRect(FLinearColor(0.05f, 0.05f, 0.05f, 0.85f), PanelX, PanelY, 160.f, 6.f);
-	DrawRect(bOver ? FLinearColor(1.f, 0.45f, 0.f) : FLinearColor::White, PanelX, PanelY,
-	         160.f * FMath::Clamp(HSpeed / (MC->MaxWalkSpeed * 3.f), 0.f, 1.f), 6.f);
-	PanelY += 14.f;
-
-	Row(TEXT("V SPD:"), FString::Printf(TEXT("%.0f u/s"), MC->Velocity.Z),
-	    MC->Velocity.Z < -10.f ? FLinearColor(0.6f, 0.6f, 1.f) : FLinearColor::White);
-
+	Row(TEXT("V SPD:"), FString::Printf(TEXT("%.0f"), MC->Velocity.Z),
+	    MC->Velocity.Z < -10.f ? FLinearColor(0.6f,0.6f,1.f) : FLinearColor(0.7f,0.7f,0.7f));
 	Row(TEXT("GRND:"), MC->IsMovingOnGround() ? TEXT("YES") : TEXT("NO"),
-	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f, 0.6f, 1.f));
+	    MC->IsMovingOnGround() ? FLinearColor::Green : FLinearColor(0.6f,0.6f,1.f));
 }
 
 // =============================================================================

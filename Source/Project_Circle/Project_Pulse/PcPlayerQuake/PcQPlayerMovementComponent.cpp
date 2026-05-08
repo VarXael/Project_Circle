@@ -116,6 +116,60 @@ float UPcQPlayerMovementComponent::GetBeatSnappedDuration(float BaseSec) const
 	return FMath::Max((float)WholeBeats * IntervalSec - AlreadyElapsed, IntervalSec);
 }
 
+float UPcQPlayerMovementComponent::ComputeSyncedAirTime(float AirTimeBeats) const
+{
+	// Calculates the air time so the player lands on a beat boundary, regardless
+	// of when in the beat cycle they jumped.
+	//
+	// The math: find the nearest beat in time, then compute how long until
+	// the beat that is AirTimeBeats steps after it.
+	//   - Just past a beat (timeSince <= timeToNext):
+	//       airTime = AirTimeBeats * interval - timeSincePrev
+	//   - Approaching a beat (timeToNext < timeSince):
+	//       airTime = timeToNext + AirTimeBeats * interval
+	//
+	// Example at 600ms interval, AirTimeBeats=1:
+	//   Jump at beat  (timeSince=0,   toNext=600): airTime = 600-0   = 600ms ✓
+	//   Jump 80ms late (timeSince=80, toNext=520): airTime = 600-80  = 520ms → lands at +600ms ✓
+	//   Jump 80ms early (timeSince=520,toNext=80): airTime = 80+600  = 680ms → lands at +600ms ✓
+
+	UPcMusicAnalysisSubsystem* Sub = GetWorld() ? GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>() : nullptr;
+	if (!Sub || !Sub->IsReadyForPlayback())
+		return AirTimeBeats * GetCurrentBeatIntervalSec();
+
+	const float IntervalSec      = Sub->GetGameplayBeatIntervalMS() / 1000.f;
+	if (IntervalSec <= 0.f) return AirTimeBeats * GetCurrentBeatIntervalSec();
+
+	const float TimeToNextSec    = Sub->GetTimeUntilNextGameplayBeat();
+	const float TimeSincePrevSec = IntervalSec - TimeToNextSec;
+
+	float AirTime;
+	if (TimeSincePrevSec <= TimeToNextSec)
+		AirTime = AirTimeBeats * IntervalSec - TimeSincePrevSec; // just past a beat
+	else
+		AirTime = TimeToNextSec + AirTimeBeats * IntervalSec;   // approaching a beat
+
+	// Never degenerate (shouldn't happen in practice but guard it)
+	return FMath::Max(AirTime, IntervalSec * 0.15f);
+}
+
+float UPcQPlayerMovementComponent::GetBeatPhase() const
+{
+	// 0 = beat just fired, 1 = next beat imminent
+	UPcMusicAnalysisSubsystem* Sub = GetWorld() ? GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>() : nullptr;
+	if (!Sub || !Sub->IsReadyForPlayback()) return 0.f;
+	const float Interval = Sub->GetGameplayBeatIntervalMS() / 1000.f;
+	if (Interval <= 0.f) return 0.f;
+	return 1.f - FMath::Clamp(Sub->GetTimeUntilNextGameplayBeat() / Interval, 0.f, 1.f);
+}
+
+float UPcQPlayerMovementComponent::GetJumpBufferAlpha() const
+{
+	if (!bJumpInputBuffered) return 0.f;
+	const float MaxBuffer = Cfg_JumpInputBuffer();
+	return MaxBuffer > 0.f ? FMath::Clamp(JumpInputBufferTimer / MaxBuffer, 0.f, 1.f) : 0.f;
+}
+
 // =============================================================================
 //  BEAT HELPER
 // =============================================================================
@@ -214,11 +268,23 @@ void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 
 void UPcQPlayerMovementComponent::TriggerGroundPulse()
 {
-	if (!IsMovingOnGround())                              return;
-	if (PulseImmunityTimer > 0.f)                        return;
-	if (MovState != EPlayerMovementState::Grounded)       return;
+	if (PulseImmunityTimer > 0.f) return;
 
-	// Pre-buffered jump near this beat → super jump instead of auto-bounce.
+	if (!IsMovingOnGround())
+	{
+		// Player is in the air. If they're descending, buffer the pulse so landing
+		// within the beat window still triggers the bounce (fixes the "miss on landing" bug).
+		if (IsFalling() && Velocity.Z < 0.f && MovState == EPlayerMovementState::InAir)
+		{
+			bPulseBufferedForLanding = true;
+			PulseBufferTimer = (float)Cfg_OnBeatWindowMs() / 1000.f;
+		}
+		return;
+	}
+
+	if (MovState != EPlayerMovementState::Grounded) return;
+
+	// Pre-buffered jump near this beat → super jump.
 	if (bJumpInputBuffered && JumpInputBufferTimer > 0.f)
 	{
 		bJumpInputBuffered   = false;
@@ -270,6 +336,7 @@ void UPcQPlayerMovementComponent::NotifyGunFired(bool bWasOnBeat)
 void UPcQPlayerMovementComponent::DoNormalJump()
 {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
+	// Normal jump: fixed arc duration. No beat sync — this is intentionally off-beat.
 	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
 	MovState     = EPlayerMovementState::InAir;
 	bDJAvailable = (DJCooldownTimer <= 0.f);
@@ -279,7 +346,8 @@ void UPcQPlayerMovementComponent::DoNormalJump()
 void UPcQPlayerMovementComponent::DoSuperJump()
 {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	// Super jump: synced arc — always lands on a beat regardless of press timing.
+	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), ComputeSyncedAirTime(Cfg_JumpAirTimeBeats()));
 
 	FVector Dir2D = Acceleration.GetSafeNormal2D();
 	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
@@ -302,7 +370,9 @@ void UPcQPlayerMovementComponent::DoSuperJump()
 void UPcQPlayerMovementComponent::DoPulseJump()
 {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	// Pulse jump: fired exactly at the beat, so synced time = exactly 1 beat.
+	// Still uses ComputeSyncedAirTime as a safety in case of sub-frame drift.
+	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), ComputeSyncedAirTime(Cfg_JumpAirTimeBeats()));
 	MovState     = EPlayerMovementState::InAir;
 	bDJAvailable = (DJCooldownTimer <= 0.f);
 }
@@ -470,10 +540,28 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	MovState = EPlayerMovementState::Grounded;
 	Super::ProcessLanded(Hit, remainingTime, Iterations);
 
+	// Buffered pulse: the beat fired just before we landed — trigger it now.
+	if (bPulseBufferedForLanding && PulseBufferTimer > 0.f && PulseImmunityTimer <= 0.f)
+	{
+		bPulseBufferedForLanding = false;
+		PulseBufferTimer         = 0.f;
+
+		// If the player also has a jump buffered, make it a super jump.
+		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f)
+		{
+			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
+			DoSuperJump();
+			return;
+		}
+		DoPulseJump();
+		return;
+	}
+	bPulseBufferedForLanding = false;
+
 	if (bGPInputBuffered && GPInputBufferTimer > 0.f)
 	{
 		bGPInputBuffered = false; GPInputBufferTimer = 0.f;
-		OnGroundPoundPressed(); // will enter dash
+		OnGroundPoundPressed();
 		return;
 	}
 	if (bJumpInputBuffered && JumpInputBufferTimer > 0.f)
@@ -642,6 +730,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	auto Tick = [&](float& T) { if (T > 0.f) T = FMath::Max(0.f, T - DeltaTime); };
 	Tick(PulseImmunityTimer);
 	Tick(OnBeatFlashTimer);
+	if (bPulseBufferedForLanding) { PulseBufferTimer -= DeltaTime; if (PulseBufferTimer <= 0.f) bPulseBufferedForLanding = false; }
 
 	if (DJCooldownTimer > 0.f)
 	{
