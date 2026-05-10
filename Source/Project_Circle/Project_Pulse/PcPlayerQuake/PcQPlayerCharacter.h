@@ -10,6 +10,7 @@ class UInputMappingContext;
 class UInputAction;
 struct FInputActionValue;
 class UPcQHealthComponent;
+class USkeletalMeshComponent;
 
 UCLASS()
 class PROJECT_CIRCLE_API APcQPlayerCharacter : public ACharacter
@@ -25,9 +26,11 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 public:
-	// ── Components ────────────────────────────────────────────────────────────
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UCameraComponent* CameraComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USkeletalMeshComponent* WeaponMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcQPlayerMovementComponent* MoveComp;
@@ -35,7 +38,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UPcQHealthComponent* HealthComp;
 
-	// ── Input Assets ──────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputMappingContext* DefaultMappingContext;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Move;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Look;
@@ -43,27 +45,37 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_GroundPound;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Fire;
 
-	// ── Look sensitivity ──────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityX = 0.4f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityY = 0.4f;
 
-	// ── Combat ────────────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage           = 25.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float PistolBaseCooldownSec = 0.2f;  // plain rate of fire, no beat gating
+	// ── Combat & Ammo ─────────────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float PistolBaseCooldownSec = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ammo") int32 MaxAmmo = 6;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ammo") float ReloadDuration = 1.2f;
 
 	UFUNCTION(BlueprintPure) float GetPistolCooldownAlpha() const;
+	UFUNCTION(BlueprintPure) int32 GetCurrentAmmo() const { return CurrentAmmo; }
+	UFUNCTION(BlueprintPure) bool  IsReloading() const { return bIsReloading; }
+	
+	// Called by Movement Component when the floor pulses
+	UFUNCTION() void HandleGroundPulseHit();
 
-	// ── Camera feedback ───────────────────────────────────────────────────────
-	// Beat punch: small FOV dip on every gameplay beat (implicit rhythm feel).
+	// ── Camera Effects ────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Beat") float CameraBeatPunch  = 3.f;
-
-	// Slide FOV / camera drop (mirrors the old boost camera, now tied to slide state).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideCameraDropZ = 18.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideFOVGain     =  8.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideCameraSpeed =  8.f;
 
+	// ── Sway Settings ─────────────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FVector BaseWeaponLocation = FVector(20.f, 15.f, -10.f);
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FRotator BaseWeaponRotation = FRotator(0.f, 0.f, 0.f);
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") float SwayRotMultiplier = -1.5f;
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") float SwaySmoothness = 12.f;
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") float RecoilRecoverySpeed = 15.f;
+
 private:
-	// ── Input handlers ────────────────────────────────────────────────────────
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
@@ -71,19 +83,28 @@ private:
 	void Input_GroundPound();
 	void Input_Fire();
 
-	// ── Combat ────────────────────────────────────────────────────────────────
 	void TryFire();
-	bool IsOnBeat() const; // used for NotifyEnemyHit, NOT for gating fire
+	bool IsOnBeat() const;
 
-	// ── Beat callback ─────────────────────────────────────────────────────────
 	UFUNCTION() void OnGameplayBeat(float BeatTimestamp);
-
-	// ── Camera ────────────────────────────────────────────────────────────────
 	void UpdateCameraEffects(float DeltaTime);
+	void UpdateWeaponSway(float DeltaTime);
 
 	float DefaultCameraZ      = 60.f;
 	float DefaultFOV          = 90.f;
-	float CurrentSlideAlpha   = 0.f;  // 0 = not sliding, 1 = fully sliding
+	float CurrentSlideAlpha   = 0.f; 
 	float PistolCooldown      = 0.f;
 	float BeatFOVOffset       = 0.f;
+
+	// Ammo State
+	int32 CurrentAmmo = 6;
+	float ReloadTimer = 0.f;
+	bool  bIsReloading = false;
+
+	// ── Sway State ────────────────────────────────────────────────────────────
+	FVector2D CurrentLookDelta;
+	FRotator CurrentSwayRot;
+	FVector CurrentSwayLoc;
+	FRotator CurrentRecoilRot;
+	FVector CurrentRecoilLoc;
 };
