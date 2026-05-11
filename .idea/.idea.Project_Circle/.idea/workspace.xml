@@ -13,11 +13,11 @@
   <component name="ChangeListManager">
     <list default="true" id="034b1999-b1d0-4a3d-9948-a314a597a12c" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.Project_Circle/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/DefaultEditor.ini" beforeDir="false" afterPath="$PROJECT_DIR$/Config/DefaultEditor.ini" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/BP_PcQPlayerCharacter.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/PlayerMovementConfig.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/PlayerMovementConfig.uasset" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQDebugHUD.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/Inputs/IA_Snap.uasset" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/Inputs/IMC_PcQPlayer.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/_Pulse_Prototype/Blueprints/Player/Inputs/IMC_PcQPlayer.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" beforeDir="false" afterPath="$PROJECT_DIR$/Content/__ExternalActors__/_Pulse_Prototype/Maps/L_MusicTest/5/0U/NO08N1EDB2Q2KLX8O2UUMY.uasset" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcPlayerConfiguration.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.h" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerCharacter.h" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Source/Project_Circle/Project_Pulse/PcPlayerQuake/PcQPlayerMovementComponent.cpp" afterDir="false" />
@@ -145,6 +145,7 @@
       <workItem from="1778276313063" duration="2854000" />
       <workItem from="1778327303918" duration="3085000" />
       <workItem from="1778365874087" duration="2270000" />
+      <workItem from="1778446475738" duration="2524000" />
     </task>
     <servers />
   </component>

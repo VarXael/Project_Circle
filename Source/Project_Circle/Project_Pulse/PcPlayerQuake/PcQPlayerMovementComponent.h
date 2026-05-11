@@ -6,21 +6,25 @@
 #include "PcPlayerConfiguration.h"
 #include "PcQPlayerMovementComponent.generated.h"
 
+class APcQEnemyBase;
+
 UENUM(BlueprintType)
 enum class EPlayerMovementState : uint8
 {
 	Grounded       UMETA(DisplayName = "Grounded"),
 	InAir          UMETA(DisplayName = "In Air"),
 	GroundPounding UMETA(DisplayName = "Ground Pounding"),
-	Dashing        UMETA(DisplayName = "Dashing")
+	Dashing        UMETA(DisplayName = "Dashing"),
+	SwordLunging   UMETA(DisplayName = "Sword Lunging")
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnComboEvent,   const FString&, Label, FLinearColor, Color);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSwordHitEnemy, APcQEnemyBase*, Enemy);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSuperJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDoubleJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDashStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDashEnded);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGroundPulseHit); // <--- NEW
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGroundPulseHit);
 
 UCLASS(Blueprintable, BlueprintType)
 class PROJECT_CIRCLE_API UPcQPlayerMovementComponent : public UCharacterMovementComponent
@@ -36,9 +40,10 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "Beat") void TriggerGroundPulse();
 	UFUNCTION(BlueprintCallable, Category = "Combat") void NotifyGunFired(bool bWasOnBeat);
-	
-	// Called by Character when a bullet hits an enemy
 	UFUNCTION(BlueprintCallable, Category = "Combat") void ResetMobilityAbilities();
+
+	UFUNCTION(BlueprintCallable, Category = "Combat") void DoSwordLunge(FVector ViewDirection);
+	UFUNCTION(BlueprintCallable, Category = "Combat") void DoSwordBop(bool bIsWallKick);
 
 	UFUNCTION(BlueprintPure) EPlayerMovementState GetMovementState()   const { return MovState; }
 	UFUNCTION(BlueprintPure) float                GetHorizontalSpeed() const;
@@ -52,19 +57,18 @@ public:
 	UFUNCTION(BlueprintPure) float                GetJumpBufferAlpha() const;
 	UFUNCTION(BlueprintPure) bool                 GetPulseBuffered()   const { return bPulseBufferedForLanding; }
 	UFUNCTION(BlueprintPure) int32                GetOnBeatWindowMs()  const;
-	
-	// How much time is left on the ground speed boost
 	UFUNCTION(BlueprintPure) float                GetGroundPulseBoostAlpha() const; 
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
 	TObjectPtr<UPcPlayerConfiguration> Config;
 
 	UPROPERTY(BlueprintAssignable) FOnComboEvent     OnComboEvent;
+	UPROPERTY(BlueprintAssignable) FOnSwordHitEnemy  OnSwordHitEnemy;
 	UPROPERTY(BlueprintAssignable) FOnSuperJumped    OnSuperJumped;
 	UPROPERTY(BlueprintAssignable) FOnDoubleJumped   OnDoubleJumped;
 	UPROPERTY(BlueprintAssignable) FOnDashStarted    OnDashStarted;
 	UPROPERTY(BlueprintAssignable) FOnDashEnded      OnDashEnded;
-	UPROPERTY(BlueprintAssignable) FOnGroundPulseHit OnGroundPulseHit; // <--- NEW
+	UPROPERTY(BlueprintAssignable) FOnGroundPulseHit OnGroundPulseHit;
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -81,8 +85,10 @@ private:
 	float DashBoostTimer   = 0.f;
 	float DashBoostMaxTime = 0.f;
 	float PulseImmunityTimer = 0.f;
-	
-	float GroundPulseBoostTimer = 0.f; // <--- NEW
+	float GroundPulseBoostTimer = 0.f;
+
+	float SwordLungeTimer = 0.f;
+	FVector SwordLungeDirection;
 
 	bool  bJumpInputBuffered   = false;
 	float JumpInputBufferTimer = 0.f;
@@ -138,6 +144,14 @@ private:
 	float Cfg_JumpInputBuffer() const;
 	UCurveFloat* Cfg_JumpCurve() const;
 
+	// Phase C Configs
+	float Cfg_SwordLungeSpeed() const;
+	float Cfg_SwordLungeDurationSec() const;
+	float Cfg_SwordBopEnemyLift() const;
+	float Cfg_SwordBopWallLift() const;
+	float Cfg_SwordBopHorizRetain() const;
+
 	float ComputeCurrentMaxSpeed() const;
 	float GetCurrentBeatIntervalSec() const;
+	float GetSyncedJumpAirTime() const;
 };

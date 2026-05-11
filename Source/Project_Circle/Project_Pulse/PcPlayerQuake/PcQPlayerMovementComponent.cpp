@@ -2,6 +2,7 @@
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
 #include "Project_Circle/MusicSystem/MusicGameplaySystem/PcMusicAnalysisSubsystem.h"
+#include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
 
 UPcQPlayerMovementComponent::UPcQPlayerMovementComponent()
 {
@@ -13,7 +14,6 @@ UPcQPlayerMovementComponent::UPcQPlayerMovementComponent()
 	bUseSeparateBrakingFriction = false; BrakingFriction = 0.f;
 }
 
-// ... (KEEP ALL YOUR EXISTING Cfg_ CONFIG GETTERS HERE) ...
 float UPcQPlayerMovementComponent::Cfg_BaseMaxSpeed() const { return Config ? Config->BaseMaxSpeed : 850.f; }
 float UPcQPlayerMovementComponent::Cfg_GroundAcceleration() const { return Config ? Config->GroundAcceleration : 30.f; }
 float UPcQPlayerMovementComponent::Cfg_GroundFriction() const { return Config ? Config->GroundFriction : 25.f; }
@@ -37,12 +37,30 @@ int32 UPcQPlayerMovementComponent::Cfg_OnBeatWindowMs() const { return Config ? 
 float UPcQPlayerMovementComponent::Cfg_JumpInputBuffer() const { return Config ? Config->JumpInputBufferSec : 0.22f; }
 UCurveFloat* UPcQPlayerMovementComponent::Cfg_JumpCurve() const { return Config ? Config->JumpCurve.Get() : nullptr; }
 
+// Sword Configs
+float UPcQPlayerMovementComponent::Cfg_SwordLungeSpeed() const { return Config ? Config->SwordLungeSpeed : 3500.f; }
+float UPcQPlayerMovementComponent::Cfg_SwordLungeDurationSec() const { return Config ? Config->SwordLungeDurationSec : 0.15f; }
+float UPcQPlayerMovementComponent::Cfg_SwordBopEnemyLift() const { return Config ? Config->SwordBopEnemyLift : 700.f; }
+float UPcQPlayerMovementComponent::Cfg_SwordBopWallLift() const { return Config ? Config->SwordBopWallLift : 500.f; }
+float UPcQPlayerMovementComponent::Cfg_SwordBopHorizRetain() const { return Config ? Config->SwordBopHorizRetain : 0.2f; }
+
 float UPcQPlayerMovementComponent::GetHorizontalSpeed() const { return FVector(Velocity.X, Velocity.Y, 0.f).Size(); }
+
 float UPcQPlayerMovementComponent::GetCurrentBeatIntervalSec() const {
 	if (UPcMusicAnalysisSubsystem* Sub = GetWorld() ? GetWorld()->GetSubsystem<UPcMusicAnalysisSubsystem>() : nullptr)
 		if (Sub->IsReadyForPlayback()) return Sub->GetGameplayBeatIntervalMS() / 1000.f;
 	const float RefBPM = Config ? Config->ReferenceBPM : 100.f;
 	return 60.f / FMath::Max(RefBPM, 1.f);
+}
+
+float UPcQPlayerMovementComponent::GetSyncedJumpAirTime() const {
+	float Interval = GetCurrentBeatIntervalSec();
+	if (Interval <= 0.f) return 0.65f; 
+	float IdealAirTime = 0.65f;
+	float Beats = IdealAirTime / Interval;
+	float SnappedBeats = FMath::RoundToFloat(Beats * 2.f) / 2.f;
+	SnappedBeats = FMath::Max(0.5f, SnappedBeats); 
+	return SnappedBeats * Interval;
 }
 
 float UPcQPlayerMovementComponent::ComputeCurrentMaxSpeed() const {
@@ -54,9 +72,8 @@ float UPcQPlayerMovementComponent::ComputeCurrentMaxSpeed() const {
 	const float Scale = FMath::Clamp(CurrentBPM / FMath::Max(Config->ReferenceBPM, 1.f), Config->SpeedScaleMin, Config->SpeedScaleMax);
 	Base *= Scale;
 	
-	// ── NEW: Apply Ground Pulse Speed Boost ──
 	if (GroundPulseBoostTimer > 0.f && MovState == EPlayerMovementState::Grounded) {
-		Base *= 1.4f; // 40% speed boost while the floor pulse affects you
+		Base *= 1.4f; 
 	}
 	return Base;
 }
@@ -99,7 +116,7 @@ bool UPcQPlayerMovementComponent::IsNearBeat() const {
 
 void UPcQPlayerMovementComponent::OnJumpPressed()
 {
-	if (MovState == EPlayerMovementState::Dashing)
+	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::SwordLunging)
 	{
 		FVector Dir2D = Acceleration.GetSafeNormal2D();
 		if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
@@ -114,8 +131,7 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 		if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
 		MovState = EPlayerMovementState::InAir;
 
-		// No more forced sync arc! It's just a normal jump arc but with huge speed.
-		ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+		ApplyArcWithAirTime(Cfg_JumpPeakHeight(), GetSyncedJumpAirTime());
 		
 		if (IsNearBeat() || GroundPulseBoostTimer > 0.f) {
 			OnBeatFlashTimer = OnBeatFlashDuration;
@@ -133,7 +149,6 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 	switch (MovState)
 	{
 	case EPlayerMovementState::Grounded:
-		// If the floor pulse is currently boosting us, or we hit it exactly on beat, SUPER JUMP.
 		(IsNearBeat() || GroundPulseBoostTimer > 0.f) ? DoSuperJump() : DoNormalJump();
 		break;
 
@@ -158,7 +173,7 @@ void UPcQPlayerMovementComponent::OnJumpPressed()
 void UPcQPlayerMovementComponent::OnJumpReleased() {}
 void UPcQPlayerMovementComponent::OnGroundPoundPressed()
 {
-	if (MovState == EPlayerMovementState::Dashing) return;
+	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::SwordLunging) return;
 	switch (MovState) {
 	case EPlayerMovementState::Grounded: EnterDash(); break;
 	case EPlayerMovementState::InAir:
@@ -181,49 +196,65 @@ void UPcQPlayerMovementComponent::TriggerGroundPulse()
 	}
 	if (MovState != EPlayerMovementState::Grounded) return;
 	
-	// ── NO MORE FORCED JUMP! ──
-	// The ground pulse gives you a temporary speed multiplier window and refunds your ammo.
 	GroundPulseBoostTimer = GetCurrentBeatIntervalSec() * 0.8f; 
 	OnBeatFlashTimer = OnBeatFlashDuration;
-
-	// Tell the Character to refund ammo
 	OnGroundPulseHit.Broadcast();
 
-	// If player was buffering a jump, pop them into a Super Jump
 	if (bJumpInputBuffered && JumpInputBufferTimer > 0.f) {
 		bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
 		DoSuperJump(); 
 	}
 }
 
-void UPcQPlayerMovementComponent::NotifyGunFired(bool bWasOnBeat)
-{
-	// Only flashes the screen. The actual mobility reset happens when a bullet HITS an enemy now!
-	if (bWasOnBeat) {
-		OnBeatFlashTimer = OnBeatFlashDuration;
-	}
+void UPcQPlayerMovementComponent::NotifyGunFired(bool bWasOnBeat) {
+	if (bWasOnBeat) OnBeatFlashTimer = OnBeatFlashDuration;
 }
 
-void UPcQPlayerMovementComponent::ResetMobilityAbilities()
-{
-	// Called by the Pistol when it successfully damages an enemy
+void UPcQPlayerMovementComponent::ResetMobilityAbilities() {
 	bDJAvailable = true; 
 	DJCooldownTimer = 0.f;
-	// Dash CD can be added here if you want Dash to be limited
-	PushCombo(TEXT("ENEMY HIT -> MOBILITY RESET!"), FLinearColor(0.2f, 1.f, 0.4f));
+	PushCombo(TEXT("MOBILITY RESET!"), FLinearColor(0.2f, 1.f, 0.4f));
+}
+
+void UPcQPlayerMovementComponent::DoSwordLunge(FVector ViewDirection)
+{
+	MovState = EPlayerMovementState::SwordLunging;
+	SwordLungeDirection = ViewDirection;
+	SwordLungeTimer = Cfg_SwordLungeDurationSec();
+	Velocity = SwordLungeDirection * Cfg_SwordLungeSpeed();
+	PushCombo(TEXT("SWORD LUNGE"), FLinearColor(1.f, 0.1f, 0.3f));
+}
+
+void UPcQPlayerMovementComponent::DoSwordBop(bool bIsWallKick)
+{
+	MovState = EPlayerMovementState::InAir;
+	
+	// Phase C requirement: Convert 80% horiz to vertical, keep 20%.
+	float HorizSpeed = GetHorizontalSpeed();
+	
+	Velocity.X *= Cfg_SwordBopHorizRetain();
+	Velocity.Y *= Cfg_SwordBopHorizRetain();
+	
+	float BaseLift = bIsWallKick ? Cfg_SwordBopWallLift() : Cfg_SwordBopEnemyLift();
+	// Cap the physics conversion so they don't launch into orbit at 3000 speed.
+	float BonusLift = FMath::Min(HorizSpeed * 0.8f, 1200.f); 
+	
+	Velocity.Z = BaseLift + BonusLift; 
+	bDJAvailable = true; 
+	
+	PushCombo(bIsWallKick ? TEXT("WALL KICK") : TEXT("ENEMY STEP"), FLinearColor(1.f, 0.3f, 0.4f));
 }
 
 void UPcQPlayerMovementComponent::DoNormalJump() {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), GetSyncedJumpAirTime());
 	MovState = EPlayerMovementState::InAir; bDJAvailable = (DJCooldownTimer <= 0.f);
 	PushCombo(TEXT("JUMP"), FLinearColor(0.85f, 0.85f, 0.85f));
 }
 
 void UPcQPlayerMovementComponent::DoSuperJump() {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	// ── REMOVED FORCED SYNC MATH! Uses normal arc now, but goes much faster horizontally ──
-	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	ApplyArcWithAirTime(Cfg_JumpPeakHeight(), GetSyncedJumpAirTime());
 	
 	FVector Dir2D = Acceleration.GetSafeNormal2D();
 	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
@@ -234,14 +265,13 @@ void UPcQPlayerMovementComponent::DoSuperJump() {
 	MovState = EPlayerMovementState::InAir; bDJAvailable = (DJCooldownTimer <= 0.f);
 	OnBeatFlashTimer = OnBeatFlashDuration; OnSuperJumped.Broadcast();
 	
-	// Consume the ground pulse boost if we used it to jump
 	GroundPulseBoostTimer = 0.f; 
 	PushCombo(TEXT("SUPER JUMP"), FLinearColor(1.f, 0.85f, 0.1f));
 }
 
 void UPcQPlayerMovementComponent::DoDoubleJump() {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	ApplyArcWithAirTime(Cfg_DJPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	ApplyArcWithAirTime(Cfg_DJPeakHeight(), GetSyncedJumpAirTime());
 	bDJAvailable = false; DJCooldownTimer = Cfg_DJCooldownBeats() * GetCurrentBeatIntervalSec();
 	OnBeatFlashTimer = OnBeatFlashDuration; OnDoubleJumped.Broadcast();
 	PushCombo(TEXT("DOUBLE JUMP"), FLinearColor(0.27f, 0.67f, 1.f));
@@ -249,7 +279,7 @@ void UPcQPlayerMovementComponent::DoDoubleJump() {
 
 void UPcQPlayerMovementComponent::DoFreeDoubleJump() {
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
-	ApplyArcWithAirTime(Cfg_DJPeakHeight(), Cfg_JumpAirTimeBeats() * GetCurrentBeatIntervalSec());
+	ApplyArcWithAirTime(Cfg_DJPeakHeight(), GetSyncedJumpAirTime());
 	OnDoubleJumped.Broadcast();
 }
 
@@ -318,11 +348,10 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 	MovState = EPlayerMovementState::Grounded;
 	Super::ProcessLanded(Hit, remainingTime, Iterations);
 	
-	// Wait! We no longer auto jump on buffer, we grant the speed boost!
 	if (bPulseBufferedForLanding && PulseBufferTimer > 0.f && PulseImmunityTimer <= 0.f) {
 		bPulseBufferedForLanding = false; PulseBufferTimer = 0.f;
-		GroundPulseBoostTimer = GetCurrentBeatIntervalSec() * 0.8f; // Grant Speed Boost
-		OnGroundPulseHit.Broadcast(); // Refund Ammo
+		GroundPulseBoostTimer = GetCurrentBeatIntervalSec() * 0.8f; 
+		OnGroundPulseHit.Broadcast(); 
 		if (bJumpInputBuffered && JumpInputBufferTimer > 0.f) {
 			bJumpInputBuffered = false; JumpInputBufferTimer = 0.f;
 			DoSuperJump(); 
@@ -342,7 +371,7 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations) {
 	if (deltaTime < MIN_TICK_TIME) return;
-	if (MovState == EPlayerMovementState::Dashing) {
+	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::SwordLunging) {
 		FVector Saved = Acceleration; Acceleration = FVector::ZeroVector;
 		Super::PhysWalking(deltaTime, Iterations);
 		Acceleration = Saved; return;
@@ -379,6 +408,41 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	MaxWalkSpeed = ComputeCurrentMaxSpeed();
 	if (IsMovingOnGround() && MovState == EPlayerMovementState::InAir && !bUsingJumpCurve) MovState = EPlayerMovementState::Grounded;
 	
+	// --- Phase C: SWORD LUNGE PHYSICS & SWEEPING ---
+	if (MovState == EPlayerMovementState::SwordLunging) {
+		SwordLungeTimer -= DeltaTime;
+		
+		if (SwordLungeTimer <= 0.f) {
+			MovState = IsMovingOnGround() ? EPlayerMovementState::Grounded : EPlayerMovementState::InAir;
+			Velocity *= 0.4f; // Lose momentum naturally
+		} else {
+			// Lock velocity to huge lunge speed
+			Velocity = SwordLungeDirection * Cfg_SwordLungeSpeed();
+			
+			// Sweep for Enemy & Wall Kicks
+			FHitResult Hit;
+			FCollisionQueryParams QP; QP.AddIgnoredActor(CharacterOwner);
+			FCollisionShape Shape = FCollisionShape::MakeSphere(55.f); // generous sweeping sphere
+			
+			FVector Start = CharacterOwner->GetActorLocation();
+			FVector End = Start + Velocity * DeltaTime * 2.f; // Look slightly ahead
+			
+			TArray<FHitResult> Hits;
+			GetWorld()->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, ECC_Visibility, Shape, QP);
+			
+			for(const FHitResult& H : Hits) {
+				if (APcQEnemyBase* Enemy = Cast<APcQEnemyBase>(H.GetActor())) {
+					OnSwordHitEnemy.Broadcast(Enemy);
+					DoSwordBop(false); // Enemy Step
+					break;
+				} else if (H.bBlockingHit && H.GetActor() != CharacterOwner) {
+					DoSwordBop(true); // Wall Kick
+					break;
+				}
+			}
+		}
+	}
+
 	if (MovState == EPlayerMovementState::Dashing && IsMovingOnGround()) {
 		const float BoostSpd = ComputeCurrentMaxSpeed() * Cfg_DashBoostSpeedMult();
 		const FVector WishDir = Acceleration.GetSafeNormal2D();
@@ -415,7 +479,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 		} else ExitCurveJump();
 	}
 
-	if (MovState != EPlayerMovementState::Dashing) {
+	if (MovState != EPlayerMovementState::Dashing && MovState != EPlayerMovementState::SwordLunging) {
 		const float CurH = GetHorizontalSpeed();
 		const float MaxSpd = ComputeCurrentMaxSpeed();
 		const float HardCap = MaxSpd * Cfg_HardSpeedCapMult();
@@ -452,4 +516,5 @@ bool UPcQPlayerMovementComponent::CanBufferLanding() const {
 	FCollisionShape Shape = FCollisionShape::MakeSphere(CapsuleRadius * 0.9f);
 	return GetWorld()->SweepSingleByChannel(Hit, CharacterOwner->GetActorLocation(), CharacterOwner->GetActorLocation() - FVector(0.f, 0.f, CheckDist), FQuat::Identity, ECC_WorldStatic, Shape, P);
 }
+
 void UPcQPlayerMovementComponent::PushCombo(const FString& Label, FLinearColor Color) { OnComboEvent.Broadcast(Label, Color); }
