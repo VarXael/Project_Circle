@@ -27,13 +27,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GroundAcceleration = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GroundFriction = 25.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float AirAcceleration = 15.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GravityScale = 2.8f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GravityScale = 2.2f; // REDUCED GRAVITY
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float HardSpeedCapMult = 4.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float OverspeedDecayRate = 200.f;
 
-	// ── Jump ──────────────────────────────────────────────────────────────────
+	// ── Adaptive Jump ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float JumpPeakHeightCM = 260.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float JumpAirTimeBeats = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ToolTip = "Ideal real-world time. Will dynamically snap to closest music beat.")) 
+	float IdealJumpAirTimeSec = 0.65f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") TObjectPtr<UCurveFloat> JumpCurve = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float SuperJumpHorizBoost = 420.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") int32 OnBeatWindowMs = 160;
@@ -47,20 +48,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float GPSlamSpeed = 2800.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float GPPulseImmunityBeats = 2.f;
 
-	// ── Dash Boost ───────────────────────────────────────────────────────────
+	// ── Adaptive Dash Boost ───────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashBoostSpeedMult = 1.55f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashDurationBeats = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash", meta = (ToolTip = "Ideal real-world time. Will dynamically snap to closest music beat.")) 
+	float IdealDashDurationSec = 0.35f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashSteerAcceleration = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashJumpBoost = 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float PostDashImmunityBeats = 0.25f;
 
-	// ── Phase C: Sword ────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword") float SwordLungeSpeed = 3500.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword") float SwordLungeDurationSec = 0.15f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword") float SwordBopEnemyLift = 700.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword") float SwordBopWallLift = 500.f;
-	
-	// Percentage of horizontal speed kept after a bop (e.g. 0.2 = 20%)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword", meta = (ClampMin = "0.0", ClampMax = "1.0")) 
-	float SwordBopHorizRetain = 0.2f;
+	// ── Kinetic Lunge (Phase C) ───────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordLungeSpeed = 3500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordLungeDurationSec = 0.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordBopEnemyLift = 700.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordBopWallLift = 500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge", meta = (ClampMin = "0.0", ClampMax = "1.0")) float SwordBopHorizRetain = 0.2f;
 };

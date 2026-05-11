@@ -59,6 +59,9 @@ public:
 	UFUNCTION(BlueprintPure) int32                GetOnBeatWindowMs()  const;
 	UFUNCTION(BlueprintPure) float                GetGroundPulseBoostAlpha() const; 
 
+	// ── Master Adaptive Timing Function ──
+	UFUNCTION(BlueprintPure) float GetAdaptiveTime(float IdealTimeSec) const;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
 	TObjectPtr<UPcPlayerConfiguration> Config;
 
@@ -127,14 +130,14 @@ private:
 	float Cfg_AirAcceleration() const;
 	float Cfg_GravityScale() const;
 	float Cfg_JumpPeakHeight() const;
-	float Cfg_JumpAirTimeBeats() const;
+	float Cfg_IdealJumpAirTime() const;
 	float Cfg_SuperJumpHorizBoost() const;
 	float Cfg_DJPeakHeight() const;
 	float Cfg_DJCooldownBeats() const;
 	float Cfg_GPSlamSpeed() const;
 	float Cfg_GPImmunityBeats() const;
 	float Cfg_DashBoostSpeedMult() const;
-	float Cfg_DashDurationBeats() const;
+	float Cfg_IdealDashDuration() const;
 	float Cfg_DashSteerAccel() const;
 	float Cfg_DashJumpBoost() const;
 	float Cfg_PostDashImmunityBeats() const;
@@ -144,7 +147,6 @@ private:
 	float Cfg_JumpInputBuffer() const;
 	UCurveFloat* Cfg_JumpCurve() const;
 
-	// Phase C Configs
 	float Cfg_SwordLungeSpeed() const;
 	float Cfg_SwordLungeDurationSec() const;
 	float Cfg_SwordBopEnemyLift() const;
@@ -153,5 +155,4 @@ private:
 
 	float ComputeCurrentMaxSpeed() const;
 	float GetCurrentBeatIntervalSec() const;
-	float GetSyncedJumpAirTime() const;
 };

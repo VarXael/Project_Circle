@@ -8,6 +8,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/DamageEvents.h"
+#include "Project_Circle/Project_Pulse/Core/PcQHealthComponent.h"
 #include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
 
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
@@ -39,7 +41,6 @@ void APcQPlayerCharacter::BeginPlay()
 	DefaultFOV     = CameraComp ? CameraComp->FieldOfView             : 90.f;
 	DefaultCameraZ = CameraComp ? CameraComp->GetRelativeLocation().Z : 60.f;
 	
-	// Grab the live offsets from your Blueprint Viewport
 	BaseSwordLocation = SwordMesh->GetRelativeLocation();
 	BaseSwordRotation = SwordMesh->GetRelativeRotation();
 	BaseWeaponLocation = WeaponMesh->GetRelativeLocation();
@@ -109,11 +110,7 @@ void APcQPlayerCharacter::OnGameplayBeat(float)
 {
 	BeatFOVOffset = CameraBeatPunch;
 	if (MoveComp) MoveComp->TriggerGroundPulse();
-	
-	// Phase C: Passively reset Sword on beat
-	if (!bSwordReady) {
-		bSwordReady = true;
-	}
+	if (!bSwordReady) bSwordReady = true;
 }
 
 void APcQPlayerCharacter::HandleGroundPulseHit()
@@ -170,7 +167,6 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 	FVector LocalVel = GetActorRotation().UnrotateVector(GetVelocity());
 	float SwayVelZ = FMath::Clamp(LocalVel.Z, -600.f, 600.f);
 
-	// --- Right Hand (Gun) Sway ---
 	if (WeaponMesh)
 	{
 		FRotator TargetRotSway = FRotator(CurrentLookDelta.Y * SwayRotMultiplier, CurrentLookDelta.X * SwayRotMultiplier, CurrentLookDelta.X * -0.7f);
@@ -196,7 +192,6 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 		WeaponMesh->SetRelativeLocation(BaseWeaponLocation + CurrentSwayLoc + CurrentRecoilLoc);
 	}
 
-	// --- Left Hand (Sword) Sway & Procedural Strike ---
 	if (SwordMesh)
 	{
 		FRotator TargetSwordRotSway = FRotator(CurrentLookDelta.Y * SwayRotMultiplier, CurrentLookDelta.X * SwayRotMultiplier, CurrentLookDelta.X * 0.7f);
@@ -208,13 +203,10 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 
 		if (BeatFOVOffset > 0.1f) TargetSwordLocSway.Z -= 1.5f; 
 
-		// Process the actual procedural lunging motion
 		if (SwordStrikeTimer > 0.f) {
 			SwordStrikeTimer -= DeltaTime;
 			float Alpha = FMath::Clamp(SwordStrikeTimer / SwordStrikeMaxTime, 0.f, 1.f);
-			// Thrust out rapidly and pull back smoothly (Sine wave)
 			float Ease = FMath::InterpEaseOut(0.f, 1.f, FMath::Sin(Alpha * PI), 2.f); 
-			
 			SwordStrikeLocOffset = FVector(Ease * 60.f, Ease * -10.f, Ease * 15.f);
 			SwordStrikeRotOffset = FRotator(Ease * -40.f, Ease * 30.f, Ease * -20.f);
 		} else {
@@ -265,7 +257,6 @@ void APcQPlayerCharacter::TryFire()
 	const FVector CamLoc = CameraComp->GetComponentLocation();
 	const FVector CamForward = CameraComp->GetForwardVector();
 	
-	// Phase C: Firing instantly resets the sword cooldown to keep loops flowing!
 	bSwordReady = true;
 
 	FVector VisualMuzzleLoc = WeaponMesh->GetSocketLocation(FName("Muzzle"));
@@ -275,6 +266,13 @@ void APcQPlayerCharacter::TryFire()
 
 	bool bHitEnemy = false;
 
+	// ── REMOVED AUTO AIM: Pure Line Trace! ──
+	FHitResult Hit;
+	FCollisionQueryParams QP; QP.AddIgnoredActor(this);
+	FVector End = CamLoc + CamForward * 5000.f;
+	
+	bool bHitSomething = GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, QP);
+
 	if (bOnBeat)
 	{
 		if (MoveComp) MoveComp->NotifyGunFired(true); 
@@ -282,27 +280,14 @@ void APcQPlayerCharacter::TryFire()
 		CurrentRecoilRot += FRotator(12.f, FMath::RandRange(-2.f, 2.f), FMath::RandRange(-5.f, 5.f));
 		CurrentRecoilLoc += FVector(-18.f, 0.f, 6.f);
 
-		TArray<FOverlapResult> Overlaps;
-		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-		GetWorld()->OverlapMultiByChannel(Overlaps, CamLoc, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(5000.f), QP);
-
-		APcQEnemyBase* Best = nullptr;
-		float BestDot = 0.85f; 
-		for (const FOverlapResult& O : Overlaps) {
-			if (APcQEnemyBase* E = Cast<APcQEnemyBase>(O.GetActor())) {
-				const float D = FVector::DotProduct(CamForward, (E->GetActorLocation() - CamLoc).GetSafeNormal());
-				if (D > BestDot) { BestDot = D; Best = E; }
-			}
-		}
-
-		FVector BeamEnd = CamLoc + CamForward * 5000.f;
-		if (Best) {
-			UGameplayStatics::ApplyDamage(Best, BaseDamage * 3.f, GetController(), this, nullptr); 
-			BeamEnd = Best->GetActorLocation();
-			bHitEnemy = true;
+		if (bHitSomething) {
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), BaseDamage * 3.f, CamForward, Hit, GetController(), this, nullptr);
+			DrawDebugLine(GetWorld(), VisualMuzzleLoc, Hit.ImpactPoint, FColor::Cyan, false, 0.4f, 0, 15.f);
+			if (Cast<APcQEnemyBase>(Hit.GetActor())) bHitEnemy = true;
+		} else {
+			DrawDebugLine(GetWorld(), VisualMuzzleLoc, End, FColor::Cyan, false, 0.4f, 0, 15.f);
 		}
 		
-		DrawDebugLine(GetWorld(), VisualMuzzleLoc, BeamEnd, FColor::Cyan, false, 0.4f, 0, 15.f);
 		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("POWER SHOT ★"), FLinearColor(0.2f, 1.f, 1.f));
 	}
 	else
@@ -312,14 +297,9 @@ void APcQPlayerCharacter::TryFire()
 		CurrentRecoilRot += FRotator(2.5f, FMath::RandRange(-0.5f, 0.5f), FMath::RandRange(-1.f, 1.f));
 		CurrentRecoilLoc += FVector(-5.f, 0.f, 2.f);
 
-		FHitResult Hit;
-		FCollisionQueryParams QP2; QP2.AddIgnoredActor(this);
-		const FVector End = CamLoc + CamForward * 5000.f;
-		
-		if (GetWorld()->LineTraceSingleByChannel(Hit, CamLoc, End, ECC_Visibility, QP2)) {
-			UGameplayStatics::ApplyDamage(Hit.GetActor(), BaseDamage, GetController(), this, nullptr);
+		if (bHitSomething) {
+			UGameplayStatics::ApplyPointDamage(Hit.GetActor(), BaseDamage, CamForward, Hit, GetController(), this, nullptr);
 			DrawDebugLine(GetWorld(), VisualMuzzleLoc, Hit.ImpactPoint, FColor::Red, false, 0.1f, 0, 2.f);
-			
 			if (Cast<APcQEnemyBase>(Hit.GetActor())) bHitEnemy = true;
 		} else {
 			DrawDebugLine(GetWorld(), VisualMuzzleLoc, End, FColor::Red, false, 0.1f, 0, 2.f);
@@ -336,10 +316,25 @@ void APcQPlayerCharacter::TryMelee()
 {
 	if (!bSwordReady || !MoveComp || !CameraComp) return;
 	
-	// Start Procedural animation
 	SwordStrikeTimer = SwordStrikeMaxTime;
 	bSwordReady = false; 
 
-	// Start Physics Action
-	MoveComp->DoSwordLunge(CameraComp->GetForwardVector());
+	// ── OMNIDIRECTIONAL DASH ──
+	FVector WorldInput = GetPendingMovementInputVector(); // Grab Raw WASD Input
+	FVector LungeDir = CameraComp->GetForwardVector();
+
+	if (!WorldInput.IsNearlyZero()) {
+		// Map the 2D input onto the 3D Camera axes
+		FVector CamFwd2D = CameraComp->GetForwardVector().GetSafeNormal2D();
+		FVector CamRight2D = CameraComp->GetRightVector().GetSafeNormal2D();
+		FVector Input2D = WorldInput.GetSafeNormal2D();
+		
+		float FwdDot = FVector::DotProduct(Input2D, CamFwd2D);
+		float RightDot = FVector::DotProduct(Input2D, CamRight2D);
+		
+		// Reconstruct 3D dash vector relative to camera pitch/yaw!
+		LungeDir = (CameraComp->GetForwardVector() * FwdDot + CameraComp->GetRightVector() * RightDot).GetSafeNormal();
+	}
+
+	MoveComp->DoSwordLunge(LungeDir);
 }
