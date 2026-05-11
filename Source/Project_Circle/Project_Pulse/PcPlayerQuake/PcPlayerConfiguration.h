@@ -27,39 +27,44 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GroundAcceleration = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GroundFriction = 25.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float AirAcceleration = 15.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GravityScale = 2.2f; // REDUCED GRAVITY
+	
+	// REDUCED GRAVITY for floatier, calmer movement
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float GravityScale = 1.8f; 
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float HardSpeedCapMult = 4.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Base") float OverspeedDecayRate = 200.f;
 
 	// ── Adaptive Jump ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float JumpPeakHeightCM = 260.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ToolTip = "Ideal real-world time. Will dynamically snap to closest music beat.")) 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump", meta = (ToolTip = "Ideal real-world time. Dynamically snaps to nearest music beat.")) 
 	float IdealJumpAirTimeSec = 0.65f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") TObjectPtr<UCurveFloat> JumpCurve = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float SuperJumpHorizBoost = 420.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") int32 OnBeatWindowMs = 160;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Jump") float JumpInputBufferSec = 0.22f;
 
-	// ── Double Jump ───────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump") float DJPeakHeightCM = 220.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump") float DJCooldownBeats = 2.f;
+	// ── Adaptive Double Jump (Charges) ────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump") int32 MaxDoubleJumps = 2;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump") float DJPeakHeightCM = 150.f; // Gentler hop
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|DoubleJump") float IdealDJAirTimeSec = 0.5f;
 
-	// ── Ground Pound ──────────────────────────────────────────────────────────
+	// ── Ground Pound & Pulse ──────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float GPSlamSpeed = 2800.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float GPPulseImmunityBeats = 2.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float IdealGroundPulseDurationSec = 0.6f;
 
 	// ── Adaptive Dash Boost ───────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashBoostSpeedMult = 1.55f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash", meta = (ToolTip = "Ideal real-world time. Will dynamically snap to closest music beat.")) 
-	float IdealDashDurationSec = 0.35f; 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float IdealDashDurationSec = 0.35f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashSteerAcceleration = 30.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashJumpBoost = 200.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float PostDashImmunityBeats = 0.25f;
 
-	// ── Kinetic Lunge (Phase C) ───────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordLungeSpeed = 3500.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordLungeDurationSec = 0.15f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordBopEnemyLift = 700.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge") float SwordBopWallLift = 500.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticLunge", meta = (ClampMin = "0.0", ClampMax = "1.0")) float SwordBopHorizRetain = 0.2f;
+	// ── Kinetic Slash ─────────────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash") float SlashCooldownSec = 2.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash") float SlashLungeSpeed = 3500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash") float SlashLungeDurationSec = 0.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash") float SlashBopEnemyLift = 700.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash") float SlashBopWallLift = 500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|KineticSlash", meta = (ClampMin = "0.0", ClampMax = "1.0")) float SlashBopHorizRetain = 0.2f;
 };

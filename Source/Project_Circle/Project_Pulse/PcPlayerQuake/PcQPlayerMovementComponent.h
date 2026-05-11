@@ -47,8 +47,10 @@ public:
 
 	UFUNCTION(BlueprintPure) EPlayerMovementState GetMovementState()   const { return MovState; }
 	UFUNCTION(BlueprintPure) float                GetHorizontalSpeed() const;
-	UFUNCTION(BlueprintPure) bool                 HasDoubleJump()      const { return bDJAvailable; }
-	UFUNCTION(BlueprintPure) float                GetDJCooldownAlpha() const;
+	
+	UFUNCTION(BlueprintPure) int32                GetDoubleJumpCharges() const { return CurrentDJCount; }
+	UFUNCTION(BlueprintPure) bool                 HasDoubleJump()      const { return CurrentDJCount > 0; }
+	
 	UFUNCTION(BlueprintPure) bool                 IsDashing()          const { return MovState == EPlayerMovementState::Dashing; }
 	UFUNCTION(BlueprintPure) bool                 IsGroundPounding()   const { return MovState == EPlayerMovementState::GroundPounding; }
 	UFUNCTION(BlueprintPure) float                GetDashActiveAlpha() const;
@@ -59,7 +61,6 @@ public:
 	UFUNCTION(BlueprintPure) int32                GetOnBeatWindowMs()  const;
 	UFUNCTION(BlueprintPure) float                GetGroundPulseBoostAlpha() const; 
 
-	// ── Master Adaptive Timing Function ──
 	UFUNCTION(BlueprintPure) float GetAdaptiveTime(float IdealTimeSec) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
@@ -82,8 +83,7 @@ protected:
 private:
 	EPlayerMovementState MovState = EPlayerMovementState::Grounded;
 
-	bool  bDJAvailable    = true;
-	float DJCooldownTimer = 0.f;
+	int32 CurrentDJCount = 2;
 
 	float DashBoostTimer   = 0.f;
 	float DashBoostMaxTime = 0.f;
@@ -132,10 +132,12 @@ private:
 	float Cfg_JumpPeakHeight() const;
 	float Cfg_IdealJumpAirTime() const;
 	float Cfg_SuperJumpHorizBoost() const;
+	int32 Cfg_MaxDoubleJumps() const;
 	float Cfg_DJPeakHeight() const;
-	float Cfg_DJCooldownBeats() const;
+	float Cfg_IdealDJAirTime() const;
 	float Cfg_GPSlamSpeed() const;
 	float Cfg_GPImmunityBeats() const;
+	float Cfg_IdealGroundPulseDuration() const;
 	float Cfg_DashBoostSpeedMult() const;
 	float Cfg_IdealDashDuration() const;
 	float Cfg_DashSteerAccel() const;
@@ -147,11 +149,11 @@ private:
 	float Cfg_JumpInputBuffer() const;
 	UCurveFloat* Cfg_JumpCurve() const;
 
-	float Cfg_SwordLungeSpeed() const;
-	float Cfg_SwordLungeDurationSec() const;
-	float Cfg_SwordBopEnemyLift() const;
-	float Cfg_SwordBopWallLift() const;
-	float Cfg_SwordBopHorizRetain() const;
+	float Cfg_SlashLungeSpeed() const;
+	float Cfg_SlashLungeDurationSec() const;
+	float Cfg_SlashBopEnemyLift() const;
+	float Cfg_SlashBopWallLift() const;
+	float Cfg_SlashBopHorizRetain() const;
 
 	float ComputeCurrentMaxSpeed() const;
 	float GetCurrentBeatIntervalSec() const;

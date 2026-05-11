@@ -55,7 +55,7 @@ public:
 
 	// ── Combat & Ammo ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float SwordDamage = 45.f; // Phase C
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float SwordDamage = 45.f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float PistolBaseCooldownSec = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ammo") int32 MaxAmmo = 6;
@@ -66,8 +66,6 @@ public:
 	UFUNCTION(BlueprintPure) bool  IsReloading() const { return bIsReloading; }
 	
 	UFUNCTION() void HandleGroundPulseHit();
-	
-	// Triggered by MoveComp sweeping an enemy during a lunge
 	UFUNCTION() void HandleSwordHitEnemy(APcQEnemyBase* Enemy);
 
 	// ── Camera Effects ────────────────────────────────────────────────────────
@@ -109,17 +107,15 @@ private:
 	float PistolCooldown      = 0.f;
 	float BeatFOVOffset       = 0.f;
 
-	// Ammo State
 	int32 CurrentAmmo = 6;
 	float ReloadTimer = 0.f;
 	bool  bIsReloading = false;
 
-	// Phase C: Sword Sync
-	bool  bSwordReady = true;
+	// Kinetic Slash Cooldown & Animation
+	float SwordCooldownTimer = 0.f;
 	float SwordStrikeTimer = 0.f;
-	float SwordStrikeMaxTime = 0.25f;
+	float SwordStrikeMaxTime = 0.35f; // Slower, wider horizontal swing
 
-	// ── Sway State ────────────────────────────────────────────────────────────
 	FVector2D CurrentLookDelta;
 	FRotator CurrentSwayRot;
 	FVector CurrentSwayLoc;
