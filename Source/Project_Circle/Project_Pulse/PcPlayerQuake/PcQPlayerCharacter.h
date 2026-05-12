@@ -27,20 +27,11 @@ protected:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 public:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UCameraComponent* CameraComp;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USkeletalMeshComponent* WeaponMesh;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USkeletalMeshComponent* SwordMesh;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UPcQPlayerMovementComponent* MoveComp;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UPcQHealthComponent* HealthComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") UCameraComponent* CameraComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") USkeletalMeshComponent* WeaponMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") USkeletalMeshComponent* SwordMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") UPcQPlayerMovementComponent* MoveComp;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components") UPcQHealthComponent* HealthComp;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputMappingContext* DefaultMappingContext;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input") UInputAction* IA_Move;
@@ -53,13 +44,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityX = 0.4f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input") float LookSensitivityY = 0.4f;
 
-	// ── Combat & Ammo ─────────────────────────────────────────────────────────
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float BaseDamage = 25.f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float SwordDamage = 45.f; 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat") float PistolBaseCooldownSec = 0.2f;
+	// ── Combat: Gun Variables ──────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float GunBaseDamage = 25.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float GunHeadshotMultiplier = 3.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float GunBeatMultiplier = 2.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float GunCooldownSec = 0.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float GunBulletRadius = 25.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") int32 MaxAmmo = 6;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Gun") float ReloadDuration = 1.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ammo") int32 MaxAmmo = 6;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ammo") float ReloadDuration = 1.2f;
+	// ── Combat: Sword Variables ────────────────────────────────────────────────
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Sword") float SwordDamage = 45.f; 
 
 	UFUNCTION(BlueprintPure) float GetPistolCooldownAlpha() const;
 	UFUNCTION(BlueprintPure) int32 GetCurrentAmmo() const { return CurrentAmmo; }
@@ -68,17 +63,17 @@ public:
 	UFUNCTION() void HandleGroundPulseHit();
 	UFUNCTION() void HandleSwordHitEnemy(APcQEnemyBase* Enemy);
 
-	// ── Camera Effects ────────────────────────────────────────────────────────
+	// ── Camera & Sway Settings ────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Beat") float CameraBeatPunch  = 3.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideCameraDropZ = 18.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideFOVGain     =  8.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Slide") float SlideCameraSpeed =  8.f;
 
-	// ── Sway Settings ─────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FVector BaseWeaponLocation = FVector(20.f, 15.f, -10.f);
 	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FRotator BaseWeaponRotation = FRotator(0.f, 0.f, 0.f);
+	
 	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FVector BaseSwordLocation = FVector(20.f, -18.f, -8.f);
-	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FRotator BaseSwordRotation = FRotator(0.f, 0.f, 45.f);
+	UPROPERTY(EditAnywhere, Category = "Combat|Sway") FRotator BaseSwordRotation = FRotator(0.f, 0.f, 0.f); // NORMAL GRIP
 
 	UPROPERTY(EditAnywhere, Category = "Combat|Sway") float SwayRotMultiplier = -1.5f;
 	UPROPERTY(EditAnywhere, Category = "Combat|Sway") float SwaySmoothness = 12.f;
@@ -111,10 +106,9 @@ private:
 	float ReloadTimer = 0.f;
 	bool  bIsReloading = false;
 
-	// Kinetic Slash Cooldown & Animation
 	float SwordCooldownTimer = 0.f;
 	float SwordStrikeTimer = 0.f;
-	float SwordStrikeMaxTime = 0.35f; // Slower, wider horizontal swing
+	float SwordStrikeMaxTime = 0.15f; 
 
 	FVector2D CurrentLookDelta;
 	FRotator CurrentSwayRot;

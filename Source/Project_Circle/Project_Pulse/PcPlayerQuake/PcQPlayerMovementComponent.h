@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Curves/CurveFloat.h"
 #include "PcPlayerConfiguration.h"
 #include "PcQPlayerMovementComponent.generated.h"
 
@@ -92,6 +91,9 @@ private:
 
 	float SwordLungeTimer = 0.f;
 	FVector SwordLungeDirection;
+	
+	float LastSlashTime = -1.f;
+	float LastJumpTime  = -1.f;
 
 	bool  bJumpInputBuffered   = false;
 	float JumpInputBufferTimer = 0.f;
@@ -104,36 +106,33 @@ private:
 	float OnBeatFlashTimer    = 0.f;
 	float OnBeatFlashDuration = 0.35f;
 
-	bool  bUsingJumpCurve     = false;
-	float JumpCurveTimer      = 0.f;
-	float JumpCurveTotalTime  = 0.f;
-	float JumpCurvePeakHeight = 0.f;
 	float PreviousFrameSpeed  = 0.f;
 
+	void ExecuteKineticJump();
 	void DoNormalJump();
-	void DoSuperJump();
 	void DoDoubleJump();
-	void DoFreeDoubleJump(); 
 	void DoGroundPound();
 	void EnterDash();
 	void ExitDash();
-	void ApplyArcWithAirTime(float PeakHeightCM, float AirTimeSec);
-	void ExitCurveJump();
+	
+	// NEW: Replaced Jump Curve with pure Rhythm Magnetism!
+	void ApplyMagneticJump(float IdealAirTimeSec);
 
 	bool IsNearBeat()       const;
 	bool CanBufferLanding() const;
 	void PushCombo(const FString& Label, FLinearColor Color);
 
+	float ComputeRhythmGravity() const;
+	float GetSmoothScaledTime(float BaseTimeSec) const; // NEW
+
 	float Cfg_BaseMaxSpeed() const;
 	float Cfg_GroundAcceleration() const;
 	float Cfg_GroundFriction() const;
 	float Cfg_AirAcceleration() const;
-	float Cfg_GravityScale() const;
 	float Cfg_JumpPeakHeight() const;
 	float Cfg_IdealJumpAirTime() const;
 	float Cfg_SuperJumpHorizBoost() const;
 	int32 Cfg_MaxDoubleJumps() const;
-	float Cfg_DJPeakHeight() const;
 	float Cfg_IdealDJAirTime() const;
 	float Cfg_GPSlamSpeed() const;
 	float Cfg_GPImmunityBeats() const;
@@ -147,9 +146,8 @@ private:
 	float Cfg_OverspeedDecay() const;
 	int32 Cfg_OnBeatWindowMs() const;
 	float Cfg_JumpInputBuffer() const;
-	UCurveFloat* Cfg_JumpCurve() const;
 
-	float Cfg_SlashLungeSpeed() const;
+	float Cfg_SlashLungeDistance() const;
 	float Cfg_SlashLungeDurationSec() const;
 	float Cfg_SlashBopEnemyLift() const;
 	float Cfg_SlashBopWallLift() const;

@@ -27,6 +27,7 @@ APcQEnemyBase::APcQEnemyBase()
 	HeadMesh->SetupAttachment(RootComponent);
 	HeadMesh->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
 	HeadMesh->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	HeadMesh->ComponentTags.Add(FName("Head"));
 
 	LeftHandMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftHandMesh"));
 	LeftHandMesh->SetupAttachment(RootComponent);
