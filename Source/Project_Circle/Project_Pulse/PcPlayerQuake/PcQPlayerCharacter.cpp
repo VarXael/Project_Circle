@@ -8,8 +8,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/DamageEvents.h"
-#include "Project_Circle/Project_Pulse/Core/PcQHealthComponent.h"
 #include "Project_Circle/Project_Pulse/Enemies/PcQEnemyBase.h"
+#include "Project_Circle/Project_Pulse/Core/PcQHealthComponent.h"
 
 APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UPcQPlayerMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -26,10 +26,6 @@ APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitial
 	WeaponMesh->SetupAttachment(CameraComp);
 	WeaponMesh->CastShadow = false;
 
-	SwordMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SwordMesh"));
-	SwordMesh->SetupAttachment(CameraComp);
-	SwordMesh->CastShadow = false;
-
 	HealthComp = CreateDefaultSubobject<UPcQHealthComponent>(TEXT("HealthComp"));
 	bUseControllerRotationYaw = true;
 }
@@ -40,8 +36,6 @@ void APcQPlayerCharacter::BeginPlay()
 	DefaultFOV     = CameraComp ? CameraComp->FieldOfView             : 90.f;
 	DefaultCameraZ = CameraComp ? CameraComp->GetRelativeLocation().Z : 60.f;
 	
-	BaseSwordLocation = SwordMesh->GetRelativeLocation();
-	BaseSwordRotation = SwordMesh->GetRelativeRotation();
 	BaseWeaponLocation = WeaponMesh->GetRelativeLocation();
 	BaseWeaponRotation = WeaponMesh->GetRelativeRotation();
 
@@ -50,7 +44,7 @@ void APcQPlayerCharacter::BeginPlay()
 	if (MoveComp)
 	{
 		MoveComp->OnGroundPulseHit.AddDynamic(this, &APcQPlayerCharacter::HandleGroundPulseHit);
-		MoveComp->OnSwordHitEnemy.AddDynamic(this, &APcQPlayerCharacter::HandleSwordHitEnemy);
+		MoveComp->OnMagneticSlam.AddDynamic(this, &APcQPlayerCharacter::HandleMagneticSlam);
 	}
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -75,9 +69,9 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 			EIC->BindAction(IA_Jump, ETriggerEvent::Started,   this, &APcQPlayerCharacter::Input_JumpPressed);
 			EIC->BindAction(IA_Jump, ETriggerEvent::Completed, this, &APcQPlayerCharacter::Input_JumpReleased);
 		}
-		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound);
+		if (IA_Dash) EIC->BindAction(IA_Dash, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Dash);
+		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound); 
 		if (IA_Fire) EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
-		if (IA_Melee) EIC->BindAction(IA_Melee, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Melee);
 	}
 }
 
@@ -99,9 +93,13 @@ void APcQPlayerCharacter::Input_Look(const FInputActionValue& Value) {
 
 void APcQPlayerCharacter::Input_JumpPressed()  { if (MoveComp) MoveComp->OnJumpPressed(); }
 void APcQPlayerCharacter::Input_JumpReleased() { if (MoveComp) MoveComp->OnJumpReleased(); }
-void APcQPlayerCharacter::Input_GroundPound()  { if (MoveComp) MoveComp->OnGroundPoundPressed(); }
-void APcQPlayerCharacter::Input_Fire()         { TryFire(); }
-void APcQPlayerCharacter::Input_Melee()        { TryMelee(); }
+void APcQPlayerCharacter::Input_GroundPound()  { if (MoveComp) MoveComp->OnGroundPoundPressed(); } 
+
+void APcQPlayerCharacter::Input_Dash() { 
+	if (MoveComp) MoveComp->EnterDash(); 
+}
+
+void APcQPlayerCharacter::Input_Fire() { TryFire(); }
 
 void APcQPlayerCharacter::OnGameplayBeat(float)
 {
@@ -119,16 +117,9 @@ void APcQPlayerCharacter::HandleGroundPulseHit()
 	}
 }
 
-void APcQPlayerCharacter::HandleSwordHitEnemy(APcQEnemyBase* Enemy)
+void APcQPlayerCharacter::HandleMagneticSlam()
 {
-	if (Enemy) {
-		UGameplayStatics::ApplyDamage(Enemy, SwordDamage, GetController(), this, nullptr);
-		
-		PistolCooldown = 0.f;
-		CurrentAmmo = MaxAmmo;
-		bIsReloading = false;
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("GUN RELOADED!"), FLinearColor(1.f, 1.f, 1.f));
-	}
+	MagnetDipAlpha = 1.0f; 
 }
 
 void APcQPlayerCharacter::Tick(float DeltaTime)
@@ -138,7 +129,6 @@ void APcQPlayerCharacter::Tick(float DeltaTime)
 	UpdateWeaponSway(DeltaTime);
 	
 	if (PistolCooldown > 0.f) PistolCooldown = FMath::Max(0.f, PistolCooldown - DeltaTime);
-	if (SwordCooldownTimer > 0.f) SwordCooldownTimer = FMath::Max(0.f, SwordCooldownTimer - DeltaTime);
 
 	if (bIsReloading) {
 		ReloadTimer -= DeltaTime;
@@ -154,9 +144,15 @@ void APcQPlayerCharacter::UpdateCameraEffects(float DeltaTime)
 {
 	if (!CameraComp || !MoveComp) return;
 	BeatFOVOffset = FMath::FInterpTo(BeatFOVOffset, 0.f, DeltaTime, 12.f);
-	const float SlideTarget = MoveComp->IsDashing() ? 1.f : 0.f;
+	MagnetDipAlpha = FMath::FInterpTo(MagnetDipAlpha, 0.f, DeltaTime, 15.f);
+
+	const float SlideTarget = MoveComp->IsDashing() && MoveComp->IsMovingOnGround() ? 1.f : 0.f;
 	CurrentSlideAlpha = FMath::FInterpTo(CurrentSlideAlpha, SlideTarget, DeltaTime, SlideCameraSpeed);
-	CameraComp->SetRelativeLocation(FVector(0.f, 0.f, FMath::Lerp(DefaultCameraZ, DefaultCameraZ - SlideCameraDropZ, CurrentSlideAlpha)));
+	
+	float CamZ = FMath::Lerp(DefaultCameraZ, DefaultCameraZ - SlideCameraDropZ, CurrentSlideAlpha) - (MagnetDipAlpha * 15.f);
+	CameraComp->SetRelativeLocation(FVector(0.f, 0.f, CamZ));
+	CameraComp->SetRelativeRotation(FRotator(MagnetDipAlpha * -5.f, 0.f, 0.f));
+
 	const float BaseFOV = FMath::Lerp(DefaultFOV, DefaultFOV + SlideFOVGain, CurrentSlideAlpha);
 	CameraComp->SetFieldOfView(BaseFOV - BeatFOVOffset);
 }
@@ -170,15 +166,12 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 	if (WeaponMesh) {
 		FRotator TargetRotSway = FRotator(CurrentLookDelta.Y * SwayRotMultiplier, CurrentLookDelta.X * SwayRotMultiplier, CurrentLookDelta.X * -0.7f);
 		FVector TargetLocSway = FVector(LocalVel.X * -0.003f, LocalVel.Y * -0.003f, SwayVelZ * 0.004f);
-
 		TargetLocSway.X = FMath::Clamp(TargetLocSway.X, -8.f, 5.f);
 		TargetLocSway.Y = FMath::Clamp(TargetLocSway.Y, -5.f, 5.f);
 		TargetLocSway.Z = FMath::Clamp(TargetLocSway.Z, -6.f, 6.f);
 
 		if (BeatFOVOffset > 0.1f) TargetLocSway.Z -= 1.5f; 
-		if (bIsReloading) {
-			TargetLocSway.Z -= 10.f; TargetRotSway.Pitch -= 20.f;
-		}
+		if (bIsReloading) { TargetLocSway.Z -= 10.f; TargetRotSway.Pitch -= 20.f; }
 
 		CurrentRecoilRot = FMath::RInterpTo(CurrentRecoilRot, FRotator::ZeroRotator, DeltaTime, RecoilRecoverySpeed);
 		CurrentRecoilLoc = FMath::VInterpTo(CurrentRecoilLoc, FVector::ZeroVector, DeltaTime, RecoilRecoverySpeed);
@@ -187,41 +180,6 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 
 		WeaponMesh->SetRelativeRotation(BaseWeaponRotation + CurrentSwayRot + CurrentRecoilRot);
 		WeaponMesh->SetRelativeLocation(BaseWeaponLocation + CurrentSwayLoc + CurrentRecoilLoc);
-	}
-
-	if (SwordMesh) {
-		FRotator TargetSwordRotSway = FRotator(CurrentLookDelta.Y * SwayRotMultiplier, CurrentLookDelta.X * SwayRotMultiplier, CurrentLookDelta.X * 0.7f);
-		FVector TargetSwordLocSway = FVector(LocalVel.X * -0.003f, LocalVel.Y * -0.003f, SwayVelZ * 0.004f);
-
-		TargetSwordLocSway.X = FMath::Clamp(TargetSwordLocSway.X, -8.f, 5.f);
-		TargetSwordLocSway.Y = FMath::Clamp(TargetSwordLocSway.Y, -5.f, 5.f);
-		TargetSwordLocSway.Z = FMath::Clamp(TargetSwordLocSway.Z, -6.f, 6.f);
-
-		if (BeatFOVOffset > 0.1f) TargetSwordLocSway.Z -= 1.5f; 
-
-		// ── NORMAL GRIP LEFT-TO-RIGHT HORIZONTAL SLASH ──
-		if (SwordStrikeTimer > 0.f) {
-			SwordStrikeTimer -= DeltaTime;
-			float Alpha = FMath::Clamp(SwordStrikeTimer / SwordStrikeMaxTime, 0.f, 1.f);
-			float Progress = 1.f - Alpha; 
-			
-			float Swing = FMath::Sin(Progress * PI); 
-			
-			// X: Push Forward, Y: Sweep from Left (-75) to Right (+75), Z: Slight chop down
-			SwordStrikeLocOffset = FVector(Swing * 60.f, (Progress * 150.f) - 75.f, Swing * -20.f);
-			
-			// Yaw sweeps the blade across
-			SwordStrikeRotOffset = FRotator(Swing * -15.f, (Progress * 120.f) - 60.f, Swing * -45.f);
-		} else {
-			SwordStrikeLocOffset = FMath::VInterpTo(SwordStrikeLocOffset, FVector::ZeroVector, DeltaTime, 15.f);
-			SwordStrikeRotOffset = FMath::RInterpTo(SwordStrikeRotOffset, FRotator::ZeroRotator, DeltaTime, 15.f);
-		}
-
-		CurrentSwordSwayRot = FMath::RInterpTo(CurrentSwordSwayRot, TargetSwordRotSway, DeltaTime, SwaySmoothness);
-		CurrentSwordSwayLoc = FMath::VInterpTo(CurrentSwordSwayLoc, TargetSwordLocSway, DeltaTime, SwaySmoothness);
-
-		SwordMesh->SetRelativeRotation(BaseSwordRotation + CurrentSwordSwayRot + SwordStrikeRotOffset);
-		SwordMesh->SetRelativeLocation(BaseSwordLocation + CurrentSwordSwayLoc + SwordStrikeLocOffset);
 	}
 }
 
@@ -259,9 +217,7 @@ void APcQPlayerCharacter::TryFire()
 	const FVector CamForward = CameraComp->GetForwardVector();
 
 	FVector VisualMuzzleLoc = WeaponMesh->GetSocketLocation(FName("Muzzle"));
-	if (VisualMuzzleLoc == WeaponMesh->GetComponentLocation()) {
-		VisualMuzzleLoc += WeaponMesh->GetForwardVector() * 45.f; 
-	}
+	if (VisualMuzzleLoc == WeaponMesh->GetComponentLocation()) { VisualMuzzleLoc += WeaponMesh->GetForwardVector() * 45.f; }
 
 	TArray<FHitResult> Hits;
 	FCollisionQueryParams QP; QP.AddIgnoredActor(this);
@@ -278,10 +234,7 @@ void APcQPlayerCharacter::TryFire()
 		if (APcQEnemyBase* Enemy = Cast<APcQEnemyBase>(H.GetActor())) {
 			bHitEnemy = true;
 			BestHit = H;
-			if (H.Component.IsValid() && H.Component->ComponentHasTag(FName("Head"))) {
-				bHeadshot = true;
-				break;
-			}
+			if (H.Component.IsValid() && H.Component->ComponentHasTag(FName("Head"))) { bHeadshot = true; break; }
 		} else if (H.bBlockingHit && !bHitEnemy) {
 			BestHit = H;
 		}
@@ -290,8 +243,7 @@ void APcQPlayerCharacter::TryFire()
 	CurrentRecoilRot += FRotator(10.f, FMath::RandRange(-1.f, 1.f), FMath::RandRange(-2.f, 2.f));
 	CurrentRecoilLoc += FVector(-12.f, 0.f, 4.f);
 
-	if (bHitEnemy)
-	{
+	if (bHitEnemy) {
 		float FinalDamage = GunBaseDamage;
 		if (bHeadshot) FinalDamage *= GunHeadshotMultiplier;
 		
@@ -300,14 +252,9 @@ void APcQPlayerCharacter::TryFire()
 		
 		UGameplayStatics::ApplyPointDamage(BestHit.GetActor(), FinalDamage, CamForward, BestHit, GetController(), this, nullptr);
 		
-		FColor BeamColor = bOnBeat ? FColor::Cyan : FColor::Red;
-		DrawDebugLine(GetWorld(), VisualMuzzleLoc, BestHit.ImpactPoint, BeamColor, false, 0.4f, 0, bOnBeat ? 15.f : 5.f);
+		DrawDebugLine(GetWorld(), VisualMuzzleLoc, BestHit.ImpactPoint, bOnBeat ? FColor::Cyan : FColor::Red, false, 0.4f, 0, bOnBeat ? 15.f : 5.f);
 
-		if (MoveComp) {
-			MoveComp->NotifyGunFired(bOnBeat); 
-			MoveComp->ResetMobilityAbilities(); 
-		}
-
+		if (MoveComp) { MoveComp->NotifyGunFired(bOnBeat); MoveComp->ResetMobilityAbilities(); }
 		if (bOnBeat && MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("POWER SHOT ★"), FLinearColor(0.2f, 1.f, 1.f));
 
 		if (bHeadshot) {
@@ -316,45 +263,11 @@ void APcQPlayerCharacter::TryFire()
 			bIsReloading = false;
 			if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("HEADSHOT + RELOAD!"), FLinearColor(1.f, 0.1f, 0.1f));
 		}
-
-		SwordCooldownTimer = 0.f; 
-	}
-	else if (BestHit.bBlockingHit) 
-	{
+	} else if (BestHit.bBlockingHit) {
 		DrawDebugLine(GetWorld(), VisualMuzzleLoc, BestHit.ImpactPoint, FColor::Red, false, 0.1f, 0, 2.f);
 		if (MoveComp) MoveComp->NotifyGunFired(false);
-	}
-	else 
-	{
+	} else {
 		DrawDebugLine(GetWorld(), VisualMuzzleLoc, End, FColor::Red, false, 0.1f, 0, 2.f);
 		if (MoveComp) MoveComp->NotifyGunFired(false);
 	}
-}
-
-void APcQPlayerCharacter::TryMelee()
-{
-	if (SwordCooldownTimer > 0.f || !MoveComp || !CameraComp) return;
-	
-	if (MoveComp->Config) {
-		SwordStrikeMaxTime = MoveComp->Config->SlashLungeDurationSec;
-	}
-	
-	SwordStrikeTimer = SwordStrikeMaxTime;
-	SwordCooldownTimer = MoveComp->Config ? MoveComp->Config->SlashCooldownSec : 2.5f; 
-
-	FVector WorldInput = GetPendingMovementInputVector(); 
-	FVector LungeDir = CameraComp->GetForwardVector();
-
-	if (!WorldInput.IsNearlyZero()) {
-		FVector CamFwd2D = CameraComp->GetForwardVector().GetSafeNormal2D();
-		FVector CamRight2D = CameraComp->GetRightVector().GetSafeNormal2D();
-		FVector Input2D = WorldInput.GetSafeNormal2D();
-		
-		float FwdDot = FVector::DotProduct(Input2D, CamFwd2D);
-		float RightDot = FVector::DotProduct(Input2D, CamRight2D);
-		
-		LungeDir = (CameraComp->GetForwardVector() * FwdDot + CameraComp->GetRightVector() * RightDot).GetSafeNormal();
-	}
-
-	MoveComp->DoSwordLunge(LungeDir);
 }

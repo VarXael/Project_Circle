@@ -59,22 +59,6 @@ void APcQDebugHUD::DrawHUD()
 				if (!MC->OnComboEvent.IsAlreadyBound(this, &APcQDebugHUD::OnComboEvent))
 					MC->OnComboEvent.AddDynamic(this, &APcQDebugHUD::OnComboEvent);
 
-				// ── NEW: Pulse Power Visuals (Screen Edges) ──
-				float PulseBoostAlpha = MC->GetGroundPulseBoostAlpha();
-				if (bEnableScreenEdgePulse && (FlashSoft > 0.01f || PulseBoostAlpha > 0.f)) {
-					const float W = Canvas->SizeX, H = Canvas->SizeY;
-					// If we have the Pulse Boost, keep it glowing bright Cyan! Otherwise, just regular beat flash.
-					const float EdgeThick = PulseBoostAlpha > 0.f ? 16.f : (4.f + 12.f * FlashSoft); 
-					const float Opacity = PulseBoostAlpha > 0.f ? PulseBoostAlpha * 0.4f : FlashSoft * 0.15f;
-					const FLinearColor EdgeCol(0.1f, 0.95f, 0.8f, Opacity); // Electric Cyan
-					
-					DrawRect(EdgeCol, 0, 0, W, EdgeThick); 
-					DrawRect(EdgeCol, 0, H - EdgeThick, W, EdgeThick); 
-					DrawRect(EdgeCol, 0, 0, EdgeThick, H); 
-					DrawRect(EdgeCol, W - EdgeThick, 0, EdgeThick, H); 
-					DrawRect(FLinearColor(0.05f, 0.4f, 1.0f, Opacity * 0.1f), 0, 0, W, H);
-				}
-
 				float ActionFlash = MC->GetOnBeatFlash();
 				if (bEnableOnBeatHitMarker && ActionFlash > 0.01f) {
 					const float CX = Canvas->SizeX * 0.5f, CY = Canvas->SizeY * 0.5f;
@@ -181,8 +165,6 @@ void APcQDebugHUD::DrawMovementDebug(UPcQPlayerMovementComponent* MC)
 	Row(TEXT("STATE:"), StateStr, GetStateColor(State));
 
 	if (MC->GetJumpBufferAlpha() > 0.f) Row(TEXT("BUFFER:"), TEXT("JUMP READY"), FLinearColor(0.4f, 0.8f, 1.f));
-	if (MC->GetPulseBuffered()) Row(TEXT("PULSE:"), TEXT("BUFFERED -> LANDING"), FLinearColor(1.f, 0.85f, 0.f));
-	if (MC->GetGroundPulseBoostAlpha() > 0.f) Row(TEXT("BUFF:"), TEXT("GROUND PULSE ACCEL"), FLinearColor(0.1f, 0.95f, 0.8f));
 
 	const float HSpeed = MC->GetHorizontalSpeed();
 	FLinearColor SpeedCol = HSpeed > MC->MaxWalkSpeed * 1.05f ? FLinearColor(1.f,0.45f,0.f) : FLinearColor::White;

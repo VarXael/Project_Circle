@@ -5,25 +5,22 @@
 #include "PcPlayerConfiguration.h"
 #include "PcQPlayerMovementComponent.generated.h"
 
-class APcQEnemyBase;
-
 UENUM(BlueprintType)
 enum class EPlayerMovementState : uint8
 {
 	Grounded       UMETA(DisplayName = "Grounded"),
 	InAir          UMETA(DisplayName = "In Air"),
 	GroundPounding UMETA(DisplayName = "Ground Pounding"),
-	Dashing        UMETA(DisplayName = "Dashing"),
-	SwordLunging   UMETA(DisplayName = "Sword Lunging")
+	Dashing        UMETA(DisplayName = "Dashing") 
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnComboEvent,   const FString&, Label, FLinearColor, Color);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSwordHitEnemy, APcQEnemyBase*, Enemy);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSuperJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDoubleJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDashStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDashEnded);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGroundPulseHit);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMagneticSlam); 
 
 UCLASS(Blueprintable, BlueprintType)
 class PROJECT_CIRCLE_API UPcQPlayerMovementComponent : public UCharacterMovementComponent
@@ -36,29 +33,26 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnJumpPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnJumpReleased();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundPressed();
+	UFUNCTION(BlueprintCallable, Category = "Movement") void EnterDash();
 	
 	UFUNCTION(BlueprintCallable, Category = "Beat") void TriggerGroundPulse();
 	UFUNCTION(BlueprintCallable, Category = "Combat") void NotifyGunFired(bool bWasOnBeat);
 	UFUNCTION(BlueprintCallable, Category = "Combat") void ResetMobilityAbilities();
 
-	UFUNCTION(BlueprintCallable, Category = "Combat") void DoSwordLunge(FVector ViewDirection);
-	UFUNCTION(BlueprintCallable, Category = "Combat") void DoSwordBop(bool bIsWallKick);
-
 	UFUNCTION(BlueprintPure) EPlayerMovementState GetMovementState()   const { return MovState; }
 	UFUNCTION(BlueprintPure) float                GetHorizontalSpeed() const;
-	
 	UFUNCTION(BlueprintPure) int32                GetDoubleJumpCharges() const { return CurrentDJCount; }
 	UFUNCTION(BlueprintPure) bool                 HasDoubleJump()      const { return CurrentDJCount > 0; }
-	
 	UFUNCTION(BlueprintPure) bool                 IsDashing()          const { return MovState == EPlayerMovementState::Dashing; }
-	UFUNCTION(BlueprintPure) bool                 IsGroundPounding()   const { return MovState == EPlayerMovementState::GroundPounding; }
 	UFUNCTION(BlueprintPure) float                GetDashActiveAlpha() const;
 	UFUNCTION(BlueprintPure) float                GetOnBeatFlash()     const;
-	UFUNCTION(BlueprintPure) float                GetBeatPhase()       const;
 	UFUNCTION(BlueprintPure) float                GetJumpBufferAlpha() const;
-	UFUNCTION(BlueprintPure) bool                 GetPulseBuffered()   const { return bPulseBufferedForLanding; }
 	UFUNCTION(BlueprintPure) int32                GetOnBeatWindowMs()  const;
+
+	// Restored for the HUD:
+	UFUNCTION(BlueprintPure) float                GetBeatPhase()       const;
 	UFUNCTION(BlueprintPure) float                GetGroundPulseBoostAlpha() const; 
+	UFUNCTION(BlueprintPure) bool                 GetPulseBuffered()   const { return bPulseBufferedForLanding; }
 
 	UFUNCTION(BlueprintPure) float GetAdaptiveTime(float IdealTimeSec) const;
 
@@ -66,12 +60,12 @@ public:
 	TObjectPtr<UPcPlayerConfiguration> Config;
 
 	UPROPERTY(BlueprintAssignable) FOnComboEvent     OnComboEvent;
-	UPROPERTY(BlueprintAssignable) FOnSwordHitEnemy  OnSwordHitEnemy;
 	UPROPERTY(BlueprintAssignable) FOnSuperJumped    OnSuperJumped;
 	UPROPERTY(BlueprintAssignable) FOnDoubleJumped   OnDoubleJumped;
 	UPROPERTY(BlueprintAssignable) FOnDashStarted    OnDashStarted;
 	UPROPERTY(BlueprintAssignable) FOnDashEnded      OnDashEnded;
 	UPROPERTY(BlueprintAssignable) FOnGroundPulseHit OnGroundPulseHit;
+	UPROPERTY(BlueprintAssignable) FOnMagneticSlam   OnMagneticSlam; 
 
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -83,76 +77,36 @@ private:
 	EPlayerMovementState MovState = EPlayerMovementState::Grounded;
 
 	int32 CurrentDJCount = 2;
-
 	float DashBoostTimer   = 0.f;
 	float DashBoostMaxTime = 0.f;
 	float PulseImmunityTimer = 0.f;
 	float GroundPulseBoostTimer = 0.f;
 
-	float SwordLungeTimer = 0.f;
-	FVector SwordLungeDirection;
-	
-	float LastSlashTime = -1.f;
-	float LastJumpTime  = -1.f;
+	float LastDashTime = -1.f;
+	float LastJumpTime = -1.f;
 
 	bool  bJumpInputBuffered   = false;
 	float JumpInputBufferTimer = 0.f;
 	bool  bGPInputBuffered     = false;
 	float GPInputBufferTimer   = 0.f;
-
 	bool  bPulseBufferedForLanding = false;
 	float PulseBufferTimer         = 0.f;
-
 	float OnBeatFlashTimer    = 0.f;
 	float OnBeatFlashDuration = 0.35f;
 
-	float PreviousFrameSpeed  = 0.f;
-
-	void ExecuteKineticJump();
+	void ExecuteDashJump();
+	void ExitDash();
 	void DoNormalJump();
 	void DoDoubleJump();
-	void DoGroundPound();
-	void EnterDash();
-	void ExitDash();
-	
-	// NEW: Replaced Jump Curve with pure Rhythm Magnetism!
-	void ApplyMagneticJump(float IdealAirTimeSec);
+	void DoGroundPound(); 
+	void ApplyJumpVelocity(float AirTimeSec);
 
 	bool IsNearBeat()       const;
 	bool CanBufferLanding() const;
 	void PushCombo(const FString& Label, FLinearColor Color);
 
 	float ComputeRhythmGravity() const;
-	float GetSmoothScaledTime(float BaseTimeSec) const; // NEW
-
-	float Cfg_BaseMaxSpeed() const;
-	float Cfg_GroundAcceleration() const;
-	float Cfg_GroundFriction() const;
-	float Cfg_AirAcceleration() const;
-	float Cfg_JumpPeakHeight() const;
-	float Cfg_IdealJumpAirTime() const;
-	float Cfg_SuperJumpHorizBoost() const;
-	int32 Cfg_MaxDoubleJumps() const;
-	float Cfg_IdealDJAirTime() const;
-	float Cfg_GPSlamSpeed() const;
-	float Cfg_GPImmunityBeats() const;
-	float Cfg_IdealGroundPulseDuration() const;
-	float Cfg_DashBoostSpeedMult() const;
-	float Cfg_IdealDashDuration() const;
-	float Cfg_DashSteerAccel() const;
-	float Cfg_DashJumpBoost() const;
-	float Cfg_PostDashImmunityBeats() const;
-	float Cfg_HardSpeedCapMult() const;
-	float Cfg_OverspeedDecay() const;
-	int32 Cfg_OnBeatWindowMs() const;
-	float Cfg_JumpInputBuffer() const;
-
-	float Cfg_SlashLungeDistance() const;
-	float Cfg_SlashLungeDurationSec() const;
-	float Cfg_SlashBopEnemyLift() const;
-	float Cfg_SlashBopWallLift() const;
-	float Cfg_SlashBopHorizRetain() const;
-
+	float GetSmoothScaledTime(float BaseTimeSec) const; 
 	float ComputeCurrentMaxSpeed() const;
 	float GetCurrentBeatIntervalSec() const;
 };
