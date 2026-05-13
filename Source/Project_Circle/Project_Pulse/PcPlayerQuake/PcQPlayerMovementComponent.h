@@ -5,16 +5,20 @@
 #include "PcPlayerConfiguration.h"
 #include "PcQPlayerMovementComponent.generated.h"
 
+class APcQEnemyBase;
+
 UENUM(BlueprintType)
 enum class EPlayerMovementState : uint8
 {
 	Grounded       UMETA(DisplayName = "Grounded"),
 	InAir          UMETA(DisplayName = "In Air"),
 	GroundPounding UMETA(DisplayName = "Ground Pounding"),
-	Dashing        UMETA(DisplayName = "Dashing") 
+	Dashing        UMETA(DisplayName = "Dashing"),
+	RecallLunging  UMETA(DisplayName = "Recall Lunging") 
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnComboEvent,   const FString&, Label, FLinearColor, Color);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSwordHitEnemy, APcQEnemyBase*, Enemy);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSuperJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDoubleJumped);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDashStarted);
@@ -35,9 +39,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void EnterDash();
 	
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallDash(FVector Direction, float PowerPercent, float DistanceToTarget);
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallImpulse(FVector Direction, float PowerPercent);
+	
 	UFUNCTION(BlueprintCallable, Category = "Beat") void TriggerGroundPulse();
 	UFUNCTION(BlueprintCallable, Category = "Combat") void NotifyGunFired(bool bWasOnBeat);
 	UFUNCTION(BlueprintCallable, Category = "Combat") void ResetMobilityAbilities();
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteEnemyStep();
 
 	UFUNCTION(BlueprintPure) EPlayerMovementState GetMovementState()   const { return MovState; }
 	UFUNCTION(BlueprintPure) float                GetHorizontalSpeed() const;
@@ -49,7 +57,6 @@ public:
 	UFUNCTION(BlueprintPure) float                GetJumpBufferAlpha() const;
 	UFUNCTION(BlueprintPure) int32                GetOnBeatWindowMs()  const;
 
-	// Restored for the HUD:
 	UFUNCTION(BlueprintPure) float                GetBeatPhase()       const;
 	UFUNCTION(BlueprintPure) float                GetGroundPulseBoostAlpha() const; 
 	UFUNCTION(BlueprintPure) bool                 GetPulseBuffered()   const { return bPulseBufferedForLanding; }
@@ -60,6 +67,7 @@ public:
 	TObjectPtr<UPcPlayerConfiguration> Config;
 
 	UPROPERTY(BlueprintAssignable) FOnComboEvent     OnComboEvent;
+	UPROPERTY(BlueprintAssignable) FOnSwordHitEnemy  OnSwordHitEnemy;
 	UPROPERTY(BlueprintAssignable) FOnSuperJumped    OnSuperJumped;
 	UPROPERTY(BlueprintAssignable) FOnDoubleJumped   OnDoubleJumped;
 	UPROPERTY(BlueprintAssignable) FOnDashStarted    OnDashStarted;
@@ -82,6 +90,9 @@ private:
 	float PulseImmunityTimer = 0.f;
 	float GroundPulseBoostTimer = 0.f;
 
+	FVector DashDirection; 
+	float CurrentDashPower = 1.0f; 
+
 	float LastDashTime = -1.f;
 	float LastJumpTime = -1.f;
 
@@ -93,6 +104,10 @@ private:
 	float PulseBufferTimer         = 0.f;
 	float OnBeatFlashTimer    = 0.f;
 	float OnBeatFlashDuration = 0.35f;
+	float PreviousFrameSpeed  = 0.f;
+
+	// NEW: Active Frames for the Impulse Slingshot
+	float RecallImpulseSweepTimer = 0.f;
 
 	void ExecuteDashJump();
 	void ExitDash();

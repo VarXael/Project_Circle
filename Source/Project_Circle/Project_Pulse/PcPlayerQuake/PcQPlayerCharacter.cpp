@@ -26,6 +26,10 @@ APcQPlayerCharacter::APcQPlayerCharacter(const FObjectInitializer& ObjectInitial
 	WeaponMesh->SetupAttachment(CameraComp);
 	WeaponMesh->CastShadow = false;
 
+	SwordMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("SwordMesh"));
+	SwordMesh->SetupAttachment(CameraComp);
+	SwordMesh->CastShadow = false;
+
 	HealthComp = CreateDefaultSubobject<UPcQHealthComponent>(TEXT("HealthComp"));
 	bUseControllerRotationYaw = true;
 }
@@ -38,13 +42,17 @@ void APcQPlayerCharacter::BeginPlay()
 	
 	BaseWeaponLocation = WeaponMesh->GetRelativeLocation();
 	BaseWeaponRotation = WeaponMesh->GetRelativeRotation();
+	BaseSwordLocation = SwordMesh->GetRelativeLocation();
+	BaseSwordRotation = SwordMesh->GetRelativeRotation();
 
 	CurrentAmmo = MaxAmmo;
+	SwordState = ESwordState::InHand;
 
 	if (MoveComp)
 	{
 		MoveComp->OnGroundPulseHit.AddDynamic(this, &APcQPlayerCharacter::HandleGroundPulseHit);
 		MoveComp->OnMagneticSlam.AddDynamic(this, &APcQPlayerCharacter::HandleMagneticSlam);
+		MoveComp->OnSwordHitEnemy.AddDynamic(this, &APcQPlayerCharacter::HandleSwordHitEnemy);
 	}
 
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -72,6 +80,7 @@ void APcQPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		if (IA_Dash) EIC->BindAction(IA_Dash, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Dash);
 		if (IA_GroundPound) EIC->BindAction(IA_GroundPound, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_GroundPound); 
 		if (IA_Fire) EIC->BindAction(IA_Fire, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Fire);
+		if (IA_Melee) EIC->BindAction(IA_Melee, ETriggerEvent::Started, this, &APcQPlayerCharacter::Input_Melee);
 	}
 }
 
@@ -100,6 +109,7 @@ void APcQPlayerCharacter::Input_Dash() {
 }
 
 void APcQPlayerCharacter::Input_Fire() { TryFire(); }
+void APcQPlayerCharacter::Input_Melee() { TrySwordAction(); }
 
 void APcQPlayerCharacter::OnGameplayBeat(float)
 {
@@ -117,9 +127,13 @@ void APcQPlayerCharacter::HandleGroundPulseHit()
 	}
 }
 
-void APcQPlayerCharacter::HandleMagneticSlam()
+void APcQPlayerCharacter::HandleMagneticSlam() { MagnetDipAlpha = 1.0f; }
+
+void APcQPlayerCharacter::HandleSwordHitEnemy(APcQEnemyBase* Enemy)
 {
-	MagnetDipAlpha = 1.0f; 
+	if (Enemy) {
+		UGameplayStatics::ApplyDamage(Enemy, SwordDamage, GetController(), this, nullptr);
+	}
 }
 
 void APcQPlayerCharacter::Tick(float DeltaTime)
@@ -127,6 +141,7 @@ void APcQPlayerCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	UpdateCameraEffects(DeltaTime);
 	UpdateWeaponSway(DeltaTime);
+	UpdateSwordPhysics(DeltaTime);
 	
 	if (PistolCooldown > 0.f) PistolCooldown = FMath::Max(0.f, PistolCooldown - DeltaTime);
 
@@ -181,6 +196,162 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 		WeaponMesh->SetRelativeRotation(BaseWeaponRotation + CurrentSwayRot + CurrentRecoilRot);
 		WeaponMesh->SetRelativeLocation(BaseWeaponLocation + CurrentSwayLoc + CurrentRecoilLoc);
 	}
+
+	if (SwordMesh && SwordState == ESwordState::InHand) {
+		FRotator TargetSwordRotSway = FRotator(CurrentLookDelta.Y * SwayRotMultiplier, CurrentLookDelta.X * SwayRotMultiplier, CurrentLookDelta.X * 0.7f);
+		FVector TargetSwordLocSway = FVector(LocalVel.X * -0.003f, LocalVel.Y * -0.003f, SwayVelZ * 0.004f);
+		TargetSwordLocSway.X = FMath::Clamp(TargetSwordLocSway.X, -8.f, 5.f);
+		TargetSwordLocSway.Y = FMath::Clamp(TargetSwordLocSway.Y, -5.f, 5.f);
+		TargetSwordLocSway.Z = FMath::Clamp(TargetSwordLocSway.Z, -6.f, 6.f);
+
+		if (BeatFOVOffset > 0.1f) TargetSwordLocSway.Z -= 1.5f; 
+
+		CurrentSwordSwayRot = FMath::RInterpTo(CurrentSwordSwayRot, TargetSwordRotSway, DeltaTime, SwaySmoothness);
+		CurrentSwordSwayLoc = FMath::VInterpTo(CurrentSwordSwayLoc, TargetSwordLocSway, DeltaTime, SwaySmoothness);
+
+		SwordMesh->SetRelativeRotation(BaseSwordRotation + CurrentSwordSwayRot);
+		SwordMesh->SetRelativeLocation(BaseSwordLocation + CurrentSwordSwayLoc);
+	}
+}
+
+// ── FIX: TRACE FROM CAMERA CROSSHAIR FIRST ──
+void APcQPlayerCharacter::TrySwordAction()
+{
+	if (!MoveComp || !MoveComp->Config || !CameraComp || !SwordMesh) return;
+
+	if (SwordState == ESwordState::InHand) 
+	{
+		FVector CamLoc = CameraComp->GetComponentLocation();
+		FVector CamForward = CameraComp->GetForwardVector();
+		FVector End = CamLoc + CamForward * MoveComp->Config->SwordMaxDistance;
+
+		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
+		
+		// Pre-calculate where it should stick based on the Crosshair
+		GetWorld()->SweepSingleByChannel(SwordTargetHit, CamLoc, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(20.f), QP);
+
+		if (SwordTargetHit.bBlockingHit || SwordTargetHit.GetActor()) {
+			SwordTargetLocation = SwordTargetHit.ImpactPoint;
+			bSwordWillStick = true;
+		} else {
+			SwordTargetLocation = End;
+			bSwordWillStick = false;
+		}
+
+		SwordState = ESwordState::Thrown;
+		SwordMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+		ThrownStartPosition = SwordMesh->GetComponentLocation();
+		
+		// Set velocity towards the pre-calculated crosshair target
+		SwordVelocity = (SwordTargetLocation - ThrownStartPosition).GetSafeNormal() * MoveComp->Config->SwordThrowSpeed;
+		
+		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("KUNAI THROWN"), FLinearColor(0.2f, 0.8f, 1.f));
+	}
+	else if (SwordState == ESwordState::Stuck || SwordState == ESwordState::Returning) 
+	{
+		bool bStuckInEnemy = (SwordState == ESwordState::Stuck && SwordMesh->GetAttachParent() && Cast<APcQEnemyBase>(SwordMesh->GetAttachParent()->GetOwner()));
+		
+		// Default: Aim where the sword currently is
+		FVector TargetDashPos = SwordMesh->GetComponentLocation();
+		
+		// FIX: If stuck in an enemy, dash to the ENEMY'S CORE instead of the sword mesh!
+		if (bStuckInEnemy) {
+			TargetDashPos = SwordMesh->GetAttachParent()->GetOwner()->GetActorLocation();
+		}
+
+		float Dist = FVector::Dist(GetActorLocation(), TargetDashPos);
+		float PowerPercent = bStuckInEnemy ? 1.0f : FMath::Clamp(Dist / MoveComp->Config->SwordMaxDistance, 0.5f, 1.0f);
+
+		RetrieveSword(); 
+
+		if (bStuckInEnemy) {
+			FVector LungeDir = (TargetDashPos - CameraComp->GetComponentLocation()).GetSafeNormal();
+			MoveComp->ExecuteRecallDash(LungeDir, PowerPercent, Dist); 
+		} else {
+			FVector ImpulseDir = CameraComp->GetForwardVector();
+			MoveComp->ExecuteRecallImpulse(ImpulseDir, PowerPercent); 
+		}
+	}
+}
+
+// ── FLIES EXACTLY TO PRE-CALCULATED TARGET ──
+void APcQPlayerCharacter::UpdateSwordPhysics(float DeltaTime)
+{
+	if (!SwordMesh || SwordState == ESwordState::InHand || !MoveComp || !MoveComp->Config) return;
+
+	FVector OldLoc = SwordMesh->GetComponentLocation();
+
+	if (SwordState == ESwordState::Thrown) 
+	{
+		float DistToTarget = FVector::Dist(OldLoc, SwordTargetLocation);
+		float MoveStep = MoveComp->Config->SwordThrowSpeed * DeltaTime;
+
+		if (MoveStep >= DistToTarget) 
+		{
+			if (bSwordWillStick) 
+			{
+				SwordMesh->SetWorldLocation(SwordTargetLocation);
+				SwordMesh->SetWorldRotation((-SwordTargetHit.ImpactNormal).Rotation());
+				if (SwordTargetHit.Component.IsValid()) {
+					SwordMesh->AttachToComponent(SwordTargetHit.Component.Get(), FAttachmentTransformRules::KeepWorldTransform);
+				}
+
+				SwordState = ESwordState::Stuck;
+				SwordStuckTimer = MoveComp->Config->SwordStuckDurationSec;
+
+				if (APcQEnemyBase* Enemy = Cast<APcQEnemyBase>(SwordTargetHit.GetActor())) {
+					UGameplayStatics::ApplyDamage(Enemy, SwordDamage, GetController(), this, nullptr);
+					CurrentAmmo = MaxAmmo;
+					bIsReloading = false;
+					MoveComp->OnComboEvent.Broadcast(TEXT("KUNAI STICK + RELOAD"), FLinearColor(1.f, 0.2f, 0.2f));
+				}
+			} 
+			else 
+			{
+				SwordMesh->SetWorldLocation(SwordTargetLocation);
+				SwordState = ESwordState::Returning; 
+			}
+		} 
+		else 
+		{
+			SwordMesh->SetWorldLocation(OldLoc + SwordVelocity * DeltaTime);
+			SwordMesh->AddLocalRotation(FRotator(2000.f * DeltaTime, 0.f, 0.f)); 
+		}
+	}
+	else if (SwordState == ESwordState::Stuck) 
+	{
+		SwordStuckTimer -= DeltaTime;
+		
+		float Dist = FVector::Dist(GetActorLocation(), SwordMesh->GetComponentLocation());
+		if (SwordStuckTimer <= 0.f || Dist > MoveComp->Config->SwordMaxDistance) {
+			SwordState = ESwordState::Returning; 
+		}
+	}
+	
+	if (SwordState == ESwordState::Returning) 
+	{
+		FVector TargetLoc = CameraComp->GetComponentLocation() + CameraComp->GetForwardVector() * 40.f;
+		FVector Dir = (TargetLoc - OldLoc).GetSafeNormal();
+		
+		SwordMesh->SetWorldLocation(OldLoc + Dir * MoveComp->Config->SwordReturnSpeed * DeltaTime);
+		SwordMesh->AddLocalRotation(FRotator(2000.f * DeltaTime, 0.f, 0.f)); 
+	}
+
+	if (SwordState == ESwordState::Stuck || SwordState == ESwordState::Returning) 
+	{
+		if (FVector::Dist(GetActorLocation(), SwordMesh->GetComponentLocation()) < 100.0f) 
+		{
+			RetrieveSword(); 
+		}
+	}
+}
+
+void APcQPlayerCharacter::RetrieveSword()
+{
+	SwordState = ESwordState::InHand;
+	SwordMesh->AttachToComponent(CameraComp, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	SwordMesh->SetRelativeLocation(BaseSwordLocation);
+	SwordMesh->SetRelativeRotation(BaseSwordRotation);
 }
 
 float APcQPlayerCharacter::GetPistolCooldownAlpha() const {
@@ -215,16 +386,14 @@ void APcQPlayerCharacter::TryFire()
 	PistolCooldown = GunCooldownSec;
 	const FVector CamLoc = CameraComp->GetComponentLocation();
 	const FVector CamForward = CameraComp->GetForwardVector();
+	FVector End = CamLoc + CamForward * 5000.f;
 
 	FVector VisualMuzzleLoc = WeaponMesh->GetSocketLocation(FName("Muzzle"));
 	if (VisualMuzzleLoc == WeaponMesh->GetComponentLocation()) { VisualMuzzleLoc += WeaponMesh->GetForwardVector() * 45.f; }
 
 	TArray<FHitResult> Hits;
 	FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-	FVector End = CamLoc + CamForward * 5000.f;
-	FCollisionShape ThickBullet = FCollisionShape::MakeSphere(GunBulletRadius); 
-	
-	GetWorld()->SweepMultiByChannel(Hits, CamLoc, End, FQuat::Identity, ECC_Visibility, ThickBullet, QP);
+	GetWorld()->SweepMultiByChannel(Hits, CamLoc, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(GunBulletRadius), QP);
 
 	FHitResult BestHit;
 	bool bHitEnemy = false;
