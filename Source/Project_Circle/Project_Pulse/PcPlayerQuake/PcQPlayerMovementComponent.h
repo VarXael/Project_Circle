@@ -39,8 +39,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Movement") void OnGroundPoundPressed();
 	UFUNCTION(BlueprintCallable, Category = "Movement") void EnterDash();
 	
-	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallDash(FVector Direction, float PowerPercent, float DistanceToTarget);
-	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallImpulse(FVector Direction, float PowerPercent);
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallDash(FVector Direction, float PowerPercent, float DistanceToTarget, FVector ImpactNormal);
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ExecuteRecallImpulse(float PowerPercent);
+	UFUNCTION(BlueprintCallable, Category = "Combat") void ApplyAirHang(float DurationSec);
 	
 	UFUNCTION(BlueprintCallable, Category = "Beat") void TriggerGroundPulse();
 	UFUNCTION(BlueprintCallable, Category = "Combat") void NotifyGunFired(bool bWasOnBeat);
@@ -104,10 +105,13 @@ private:
 	float PulseBufferTimer         = 0.f;
 	float OnBeatFlashTimer    = 0.f;
 	float OnBeatFlashDuration = 0.35f;
-	float PreviousFrameSpeed  = 0.f;
 
-	// NEW: Active Frames for the Impulse Slingshot
 	float RecallImpulseSweepTimer = 0.f;
+	FVector ZipImpactNormal = FVector::UpVector;
+	
+	// MATRIX HIT STOP LOGIC
+	float AirHangTimer = 0.f;
+	FVector SavedHangVelocity = FVector::ZeroVector;
 
 	void ExecuteDashJump();
 	void ExitDash();

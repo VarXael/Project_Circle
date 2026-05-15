@@ -41,7 +41,8 @@ float UPcQPlayerMovementComponent::GetSmoothScaledTime(float BaseTimeSec) const 
 
 float UPcQPlayerMovementComponent::ComputeRhythmGravity() const {
 	float TargetHeight = Config ? Config->JumpPeakHeightCM : 260.f;
-	float TargetTime = FMath::Max(0.2f, GetSmoothScaledTime(Config ? Config->IdealJumpAirTimeSec : 0.85f));
+	float TargetTime = GetSmoothScaledTime(Config ? Config->IdealJumpAirTimeSec : 0.85f);
+	if (TargetTime <= 0.01f) return FMath::Abs(GetWorld()->GetDefaultGravityZ());
 	return (8.f * TargetHeight) / (TargetTime * TargetTime);
 }
 
@@ -101,7 +102,7 @@ void UPcQPlayerMovementComponent::ExecuteDashJump()
 	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) ExitDash();
 	if (CharacterOwner) CharacterOwner->JumpCurrentCount = 0;
 	MovState = EPlayerMovementState::InAir;
-	RecallImpulseSweepTimer = 0.f; 
+	RecallImpulseSweepTimer = 0.f;
 
 	ApplyJumpVelocity(GetSmoothScaledTime(Config ? Config->IdealJumpAirTimeSec : 0.85f));
 	OnSuperJumped.Broadcast();
@@ -180,6 +181,13 @@ void UPcQPlayerMovementComponent::ResetMobilityAbilities() {
 	PushCombo(TEXT("MOBILITY RESET!"), FLinearColor(0.2f, 1.f, 0.4f));
 }
 
+void UPcQPlayerMovementComponent::ApplyAirHang(float DurationSec) {
+	if (AirHangTimer <= 0.f) {
+		SavedHangVelocity = Velocity;
+	}
+	AirHangTimer = FMath::Max(AirHangTimer, DurationSec);
+}
+
 void UPcQPlayerMovementComponent::EnterDash() {
 	float Now = GetWorld()->GetTimeSeconds();
 	LastDashTime = Now;
@@ -189,13 +197,16 @@ void UPcQPlayerMovementComponent::EnterDash() {
 		return;
 	}
 
-	DashDirection = Acceleration.GetSafeNormal2D();
-	if (DashDirection.IsZero()) DashDirection = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
-	if (DashDirection.IsZero() && CharacterOwner) DashDirection = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+	FVector Dir2D = Acceleration.GetSafeNormal2D();
+	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (Dir2D.IsZero() && CharacterOwner) Dir2D = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 	
 	float BoostSpd = ComputeCurrentMaxSpeed() * (Config ? Config->DashBoostSpeedMult : 1.55f);
-	if (!DashDirection.IsZero()) { Velocity.X = DashDirection.X * BoostSpd; Velocity.Y = DashDirection.Y * BoostSpd; Velocity.Z = 0.f; }
+	if (!Dir2D.IsZero()) { Velocity.X = Dir2D.X * BoostSpd; Velocity.Y = Dir2D.Y * BoostSpd; Velocity.Z = 0.f; }
 	
+	DashDirection = Dir2D;
+	CurrentDashPower = 1.0f;
+
 	float Duration = GetAdaptiveTime(Config ? Config->IdealDashDurationSec : 0.35f);
 	DashBoostTimer = Duration; DashBoostMaxTime = Duration;
 	MovState = EPlayerMovementState::Dashing;
@@ -203,7 +214,7 @@ void UPcQPlayerMovementComponent::EnterDash() {
 	OnDashStarted.Broadcast(); PushCombo(TEXT("DASH"), FLinearColor(1.f, 0.55f, 0.15f));
 }
 
-void UPcQPlayerMovementComponent::ExecuteRecallImpulse(FVector Direction, float PowerPercent)
+void UPcQPlayerMovementComponent::ExecuteRecallImpulse(float PowerPercent)
 {
 	float Now = GetWorld()->GetTimeSeconds();
 	LastDashTime = Now;
@@ -215,22 +226,31 @@ void UPcQPlayerMovementComponent::ExecuteRecallImpulse(FVector Direction, float 
 		Velocity.Z = 0.f; 
 	}
 	
+	FVector Dir2D = Acceleration.GetSafeNormal2D();
+	if (Dir2D.IsZero()) Dir2D = FVector(Velocity.X, Velocity.Y, 0.f).GetSafeNormal();
+	if (Dir2D.IsZero() && CharacterOwner) Dir2D = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+	
 	float Impulse = (Config ? Config->SwordRecallImpulse : 2000.f) * PowerPercent;
-	Velocity += Direction * Impulse;
+	Velocity.X += Dir2D.X * Impulse;
+	Velocity.Y += Dir2D.Y * Impulse;
+	Velocity.Z += 400.f * PowerPercent;
 
 	float MaxAllowed = (Config ? Config->BaseMaxSpeed : 1000.f) * 6.f;
 	if (Velocity.Size() > MaxAllowed) {
 		Velocity = Velocity.GetSafeNormal() * MaxAllowed;
 	}
 
+	if (AirHangTimer > 0.f) {
+		SavedHangVelocity = Velocity;
+	}
+
 	CurrentDJCount = Config ? Config->MaxDoubleJumps : 2; 
 	PushCombo(FString::Printf(TEXT("RECALL BOOST [%d%%]"), FMath::RoundToInt(PowerPercent * 100.f)), FLinearColor(0.2f, 1.f, 0.6f));
 
-	// ── THE "HUMAN TORPEDO" ACTIVE FRAMES ──
 	RecallImpulseSweepTimer = 0.6f; 
 }
 
-void UPcQPlayerMovementComponent::ExecuteRecallDash(FVector Direction, float PowerPercent, float DistanceToTarget)
+void UPcQPlayerMovementComponent::ExecuteRecallDash(FVector Direction, float PowerPercent, float DistanceToTarget, FVector ImpactNormal)
 {
 	float Now = GetWorld()->GetTimeSeconds();
 	LastDashTime = Now;
@@ -238,17 +258,26 @@ void UPcQPlayerMovementComponent::ExecuteRecallDash(FVector Direction, float Pow
 	MovState = EPlayerMovementState::RecallLunging;
 	DashDirection = Direction;
 	CurrentDashPower = PowerPercent;
+	ZipImpactNormal = ImpactNormal;
 
-	float Speed = (Config ? Config->SwordRecallBaseSpeed : 6000.f) * PowerPercent;
+	float ZipDuration = 0.09f; 
+	float Speed = DistanceToTarget / ZipDuration;
+	
+	Speed = FMath::Clamp(Speed, 4000.f, 30000.f);
+
 	Velocity = DashDirection * Speed;
-	SetMovementMode(MOVE_Falling); 
 
-	float CalculatedDuration = (DistanceToTarget / FMath::Max(Speed, 1.f)) + 0.15f;
-	DashBoostTimer = FMath::Clamp(CalculatedDuration, 0.1f, 1.0f); 
-	DashBoostMaxTime = DashBoostTimer;
+	if (AirHangTimer > 0.f) {
+		SavedHangVelocity = Velocity;
+	}
+	
+	SetMovementMode(MOVE_Flying); 
+
+	DashBoostTimer = ZipDuration; 
+	DashBoostMaxTime = ZipDuration;
 
 	PulseImmunityTimer = FMath::Max(PulseImmunityTimer, DashBoostTimer + 0.05f);
-	PushCombo(TEXT("RECALL LUNGE [MAX]"), FLinearColor(1.f, 0.1f, 0.1f)); 
+	PushCombo(TEXT("ZIP STRIKE"), FLinearColor(1.f, 0.1f, 0.1f)); 
 }
 
 void UPcQPlayerMovementComponent::ExecuteEnemyStep()
@@ -257,15 +286,16 @@ void UPcQPlayerMovementComponent::ExecuteEnemyStep()
 	SetMovementMode(MOVE_Falling); 
 	if (CharacterOwner) CharacterOwner->AddActorWorldOffset(FVector(0.f, 0.f, 5.f)); 
 	
-	FVector ForwardDir = DashDirection.GetSafeNormal2D();
-	float Retain = Config ? Config->EnemyStepHorizRetain : 0.4f;
-	
-	Velocity.X = ForwardDir.X * (Config ? Config->SwordRecallBaseSpeed : 6000.f) * Retain;
-	Velocity.Y = ForwardDir.Y * (Config ? Config->SwordRecallBaseSpeed : 6000.f) * Retain;
+	FVector WishDir = Acceleration.GetSafeNormal2D();
+	FVector BounceDir = WishDir.IsZero() ? -DashDirection.GetSafeNormal2D() : WishDir;
 	
 	float GravityMultiplier = FMath::Max(1.f, ComputeRhythmGravity() / FMath::Abs(GetWorld()->GetDefaultGravityZ()));
 	float BaseLift = Config ? Config->EnemyStepLift : 800.f; 
 	Velocity.Z = BaseLift * GravityMultiplier; 
+	
+	float PushSpd = ComputeCurrentMaxSpeed() * 1.25f;
+	Velocity.X = BounceDir.X * PushSpd;
+	Velocity.Y = BounceDir.Y * PushSpd;
 	
 	CurrentDJCount = Config ? Config->MaxDoubleJumps : 2; 
 	PushCombo(TEXT("ENEMY STEP"), FLinearColor(1.f, 0.3f, 0.4f));
@@ -273,11 +303,10 @@ void UPcQPlayerMovementComponent::ExecuteEnemyStep()
 
 void UPcQPlayerMovementComponent::ExitDash() {
 	MovState = IsMovingOnGround() ? EPlayerMovementState::Grounded : EPlayerMovementState::InAir;
+	SetMovementMode(IsMovingOnGround() ? MOVE_Walking : MOVE_Falling);
 	DashBoostTimer = 0.f;
 	DashBoostMaxTime = 0.f;
-	CurrentDashPower = 1.0f;
 	PulseImmunityTimer = FMath::Max(PulseImmunityTimer, (Config ? Config->PostDashImmunityBeats : 0.25f) * GetCurrentBeatIntervalSec());
-	Velocity *= 0.4f; 
 	OnDashEnded.Broadcast();
 }
 
@@ -333,9 +362,10 @@ void UPcQPlayerMovementComponent::ApplyJumpVelocity(float AirTimeSec) {
 }
 
 void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float remainingTime, int32 Iterations) {
-	RecallImpulseSweepTimer = 0.f; // Lose active frames on landing!
+	RecallImpulseSweepTimer = 0.f;
+	AirHangTimer = 0.f; 
 
-	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
+	if (MovState == EPlayerMovementState::RecallLunging) {
 		Super::ProcessLanded(Hit, remainingTime, Iterations);
 		return;
 	}
@@ -384,14 +414,13 @@ void UPcQPlayerMovementComponent::ProcessLanded(const FHitResult& Hit, float rem
 
 void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations) {
 	if (deltaTime < MIN_TICK_TIME) return;
-	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
+	
+	if (AirHangTimer > 0.f || MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
 		FVector Saved = Acceleration; Acceleration = FVector::ZeroVector;
-		float OldFriction = GroundFriction; float OldBraking = BrakingFrictionFactor;
-		GroundFriction = 0.f; BrakingFrictionFactor = 0.f;
 		Super::PhysWalking(deltaTime, Iterations);
-		GroundFriction = OldFriction; BrakingFrictionFactor = OldBraking;
 		Acceleration = Saved; return;
 	}
+	
 	float TargetSpeed = ComputeCurrentMaxSpeed();
 	FVector WishDir = Acceleration.GetSafeNormal2D();
 	FVector Vel2D(Velocity.X, Velocity.Y, 0.f);
@@ -405,16 +434,21 @@ void UPcQPlayerMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
 
 void UPcQPlayerMovementComponent::PhysFalling(float deltaTime, int32 Iterations) {
 	if (deltaTime < MIN_TICK_TIME) return;
-	if (MovState == EPlayerMovementState::GroundPounding || MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
+	
+	if (AirHangTimer > 0.f || MovState == EPlayerMovementState::GroundPounding || MovState == EPlayerMovementState::RecallLunging) {
 		FVector Saved = Acceleration; Acceleration = FVector::ZeroVector; 
 		Super::PhysFalling(deltaTime, Iterations); Acceleration = Saved; return;
 	}
+	
 	float TargetAirSpeed = ComputeCurrentMaxSpeed();
 	FVector WishDir = Acceleration.GetSafeNormal2D();
 	FVector Vel2D(Velocity.X, Velocity.Y, 0.f);
-	float EffTarget = WishDir.IsZero() ? 0.f : FMath::Max(Vel2D.Size(), TargetAirSpeed);
-	FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * EffTarget, deltaTime, WishDir.IsZero() ? 0.f : (Config ? Config->AirAcceleration : 15.f));
-	Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
+	
+	if (!WishDir.IsZero()) {
+		float EffTarget = FMath::Max(Vel2D.Size(), TargetAirSpeed);
+		FVector NewVel2D = FMath::VInterpTo(Vel2D, WishDir * EffTarget, deltaTime, Config ? Config->AirAcceleration : 15.f);
+		Velocity.X = NewVel2D.X; Velocity.Y = NewVel2D.Y;
+	}
 	
 	FVector Saved = Acceleration; Acceleration = FVector::ZeroVector;
 	Super::PhysFalling(deltaTime, Iterations); Acceleration = Saved;
@@ -422,7 +456,21 @@ void UPcQPlayerMovementComponent::PhysFalling(float deltaTime, int32 Iterations)
 
 void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) {
 	
-	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
+	if (AirHangTimer > 0.f) {
+		AirHangTimer -= DeltaTime;
+		GravityScale = 0.f;
+		Velocity = SavedHangVelocity * 0.05f; 
+		
+		Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+		
+		if (AirHangTimer <= 0.f) {
+			Velocity = SavedHangVelocity; 
+		}
+		
+		return; 
+	}
+	
+	if (MovState == EPlayerMovementState::RecallLunging) {
 		GravityScale = 0.f; 
 	} else {
 		GravityScale = ComputeRhythmGravity() / FMath::Abs(GetWorld()->GetDefaultGravityZ());
@@ -432,17 +480,16 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	MaxWalkSpeed = ComputeCurrentMaxSpeed();
 	if (IsMovingOnGround() && MovState == EPlayerMovementState::InAir) MovState = EPlayerMovementState::Grounded;
 
-	// ── SWEEP FOR RECALL IMPULSE "HUMAN TORPEDO" ──
 	if (RecallImpulseSweepTimer > 0.f && MovState == EPlayerMovementState::InAir) {
 		RecallImpulseSweepTimer -= DeltaTime;
 		
 		FVector Start = CharacterOwner->GetActorLocation();
-		FVector End = Start + Velocity * DeltaTime * 2.f; 
+		FVector End = Start + Velocity * DeltaTime; 
 		if (Velocity.IsNearlyZero()) End = Start + CharacterOwner->GetActorForwardVector() * 50.f;
 		
 		TArray<FHitResult> Hits;
 		FCollisionQueryParams QP; QP.AddIgnoredActor(CharacterOwner);
-		FCollisionShape Shape = FCollisionShape::MakeSphere(120.f); 
+		FCollisionShape Shape = FCollisionShape::MakeSphere(100.f); 
 		
 		GetWorld()->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, ECC_Visibility, Shape, QP);
 		
@@ -451,6 +498,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 				OnSwordHitEnemy.Broadcast(Enemy);
 				DashDirection = Velocity.GetSafeNormal2D(); 
 				ExecuteEnemyStep(); 
+				ApplyAirHang(0.12f); 
 				RecallImpulseSweepTimer = 0.f; 
 				break; 
 			}
@@ -460,19 +508,54 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	if (MovState == EPlayerMovementState::Dashing || MovState == EPlayerMovementState::RecallLunging) {
 		DashBoostTimer -= DeltaTime;
 		if (DashBoostTimer <= 0.f) { 
+			
+			if (MovState == EPlayerMovementState::RecallLunging) {
+				if (ZipImpactNormal.Z < 0.7f) {
+					FVector WishDir = Acceleration.GetSafeNormal2D();
+					FVector BounceDir = ZipImpactNormal;
+					if (!WishDir.IsZero()) BounceDir = (ZipImpactNormal + WishDir * 1.5f).GetSafeNormal();
+					
+					Velocity = BounceDir * ComputeCurrentMaxSpeed() * 0.85f;
+					Velocity.Z = 600.f; 
+					
+					MovState = EPlayerMovementState::InAir;
+					SetMovementMode(MOVE_Falling);
+					CurrentDJCount = Config ? Config->MaxDoubleJumps : 2; 
+					ApplyAirHang(0.12f);
+					PushCombo(TEXT("WALL BOUNCE"), FLinearColor(1.f, 0.8f, 0.2f));
+				} else {
+					Velocity = DashDirection * ComputeCurrentMaxSpeed() * 1.55f;
+					Velocity.Z = 0.f;
+					
+					MovState = EPlayerMovementState::Dashing;
+					SetMovementMode(MOVE_Walking);
+					DashBoostTimer = 0.35f; 
+					DashBoostMaxTime = 0.35f;
+					ApplyAirHang(0.08f);
+					PushCombo(TEXT("ZIP SLIDE"), FLinearColor(0.2f, 1.f, 0.8f));
+					return; 
+				}
+			}
+
 			ExitDash(); 
 		} else {
-			if (MovState == EPlayerMovementState::Dashing) {
-				float BoostSpd = ComputeCurrentMaxSpeed() * (Config ? Config->DashBoostSpeedMult : 1.55f) * CurrentDashPower;
-				Velocity.X = DashDirection.X * BoostSpd; Velocity.Y = DashDirection.Y * BoostSpd; Velocity.Z = 0.f;
+			if (MovState == EPlayerMovementState::Dashing && IsMovingOnGround()) {
+				float BoostSpd = ComputeCurrentMaxSpeed() * (Config ? Config->DashBoostSpeedMult : 1.55f);
+				FVector WishDir = Acceleration.GetSafeNormal2D();
+				if (!WishDir.IsZero()) {
+					FVector Vel2D(Velocity.X, Velocity.Y, 0.f);
+					FVector New2D = FMath::VInterpTo(Vel2D, WishDir * BoostSpd, DeltaTime, Config ? Config->DashSteerAcceleration : 30.f);
+					Velocity.X = New2D.X; Velocity.Y = New2D.Y;
+					DashDirection = New2D.GetSafeNormal();
+				}
 			}
 
 			FVector Start = CharacterOwner->GetActorLocation();
-			FVector End = Start + Velocity * DeltaTime * 2.f; 
+			FVector End = Start + Velocity * DeltaTime; 
 			
 			TArray<FHitResult> Hits;
 			FCollisionQueryParams QP; QP.AddIgnoredActor(CharacterOwner);
-			FCollisionShape Shape = FCollisionShape::MakeSphere(120.f); 
+			FCollisionShape Shape = FCollisionShape::MakeSphere(100.f); 
 			
 			GetWorld()->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, ECC_Visibility, Shape, QP);
 			
@@ -481,6 +564,7 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 					OnSwordHitEnemy.Broadcast(Enemy);
 					DashDirection = Velocity.GetSafeNormal2D();
 					ExecuteEnemyStep(); 
+					ApplyAirHang(0.12f); 
 					break; 
 				}
 			}
@@ -504,7 +588,6 @@ void UPcQPlayerMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	if (bPulseBufferedForLanding) { PulseBufferTimer -= DeltaTime; if (PulseBufferTimer <= 0.f) bPulseBufferedForLanding = false; }
 	if (bJumpInputBuffered) { JumpInputBufferTimer -= DeltaTime; if (JumpInputBufferTimer <= 0.f) bJumpInputBuffered = false; }
 	if (bGPInputBuffered) { GPInputBufferTimer -= DeltaTime; if (GPInputBufferTimer <= 0.f) bGPInputBuffered = false; }
-	PreviousFrameSpeed = GetHorizontalSpeed();
 }
 
 bool UPcQPlayerMovementComponent::CanBufferLanding() const {

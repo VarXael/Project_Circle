@@ -45,7 +45,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float GPPulseImmunityBeats = 2.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|GroundPound") float IdealGroundPulseDurationSec = 0.6f;
 
-	// ── Ground Dash ───────────────────────────────────────────────────────────
+	// ── Dash ──────────────────────────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashBoostSpeedMult = 1.55f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float IdealDashDurationSec = 0.35f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Dash") float DashSteerAcceleration = 30.f;
@@ -57,13 +57,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float SwordMaxDistance = 5000.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float SwordStuckDurationSec = 2.0f; 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float SwordReturnSpeed = 12000.f; 
-	
-	// Speed of the rigid lock-on dash (for Enemies)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float SwordRecallBaseSpeed = 6000.f; 
-	
-	// NEW: Pure velocity added to your current momentum when recalling from walls!
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float SwordRecallImpulse = 2000.f; 
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword") float EnemyStepLift = 800.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|ThrownSword", meta = (ClampMin = "0.0", ClampMax = "1.0")) float EnemyStepHorizRetain = 0.4f;
 };

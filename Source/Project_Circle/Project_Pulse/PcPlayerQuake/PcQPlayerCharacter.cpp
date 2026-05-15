@@ -144,6 +144,7 @@ void APcQPlayerCharacter::Tick(float DeltaTime)
 	UpdateSwordPhysics(DeltaTime);
 	
 	if (PistolCooldown > 0.f) PistolCooldown = FMath::Max(0.f, PistolCooldown - DeltaTime);
+	if (SwordRecallBufferTimer > 0.f) SwordRecallBufferTimer -= DeltaTime;
 
 	if (bIsReloading) {
 		ReloadTimer -= DeltaTime;
@@ -214,7 +215,33 @@ void APcQPlayerCharacter::UpdateWeaponSway(float DeltaTime)
 	}
 }
 
-// ── FIX: TRACE FROM CAMERA CROSSHAIR FIRST ──
+void APcQPlayerCharacter::ExecuteSwordRecall()
+{
+	if (!MoveComp || !MoveComp->Config || !CameraComp || !SwordMesh) return;
+	
+	bool bStuckInEnemy = (SwordState == ESwordState::Stuck && SwordMesh->GetAttachParent() && Cast<APcQEnemyBase>(SwordMesh->GetAttachParent()->GetOwner()));
+		
+	if (SwordState == ESwordState::Stuck) {
+		FVector TargetDashPos = SwordMesh->GetComponentLocation();
+		
+		float CapRad = GetCapsuleComponent()->GetUnscaledCapsuleRadius();
+		if (!bStuckInEnemy) {
+			TargetDashPos = SwordTargetHit.ImpactPoint + SwordTargetHit.ImpactNormal * (CapRad + 10.f);
+		} else {
+			TargetDashPos = SwordMesh->GetAttachParent()->GetOwner()->GetActorLocation();
+		}
+
+		float Dist = FVector::Dist(GetActorLocation(), TargetDashPos);
+		FVector LungeDir = (TargetDashPos - CameraComp->GetComponentLocation()).GetSafeNormal();
+		
+		RetrieveSword(); 
+		MoveComp->ExecuteRecallDash(LungeDir, 1.0f, FMath::Max(0.1f, Dist), bStuckInEnemy ? FVector::UpVector : SwordTargetHit.ImpactNormal); 
+	} else {
+		RetrieveSword(); 
+		MoveComp->ExecuteRecallImpulse(1.0f); 
+	}
+}
+
 void APcQPlayerCharacter::TrySwordAction()
 {
 	if (!MoveComp || !MoveComp->Config || !CameraComp || !SwordMesh) return;
@@ -226,8 +253,6 @@ void APcQPlayerCharacter::TrySwordAction()
 		FVector End = CamLoc + CamForward * MoveComp->Config->SwordMaxDistance;
 
 		FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-		
-		// Pre-calculate where it should stick based on the Crosshair
 		GetWorld()->SweepSingleByChannel(SwordTargetHit, CamLoc, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(20.f), QP);
 
 		if (SwordTargetHit.bBlockingHit || SwordTargetHit.GetActor()) {
@@ -241,40 +266,29 @@ void APcQPlayerCharacter::TrySwordAction()
 		SwordState = ESwordState::Thrown;
 		SwordMesh->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 		ThrownStartPosition = SwordMesh->GetComponentLocation();
-		
-		// Set velocity towards the pre-calculated crosshair target
 		SwordVelocity = (SwordTargetLocation - ThrownStartPosition).GetSafeNormal() * MoveComp->Config->SwordThrowSpeed;
 		
-		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("KUNAI THROWN"), FLinearColor(0.2f, 0.8f, 1.f));
+		if (MoveComp) {
+			if (!MoveComp->IsMovingOnGround()) {
+				MoveComp->Velocity.Z = FMath::Max(MoveComp->Velocity.Z, 0.f); 
+				MoveComp->Velocity.X *= 0.3f;
+				MoveComp->Velocity.Y *= 0.3f;
+			}
+			MoveComp->OnComboEvent.Broadcast(TEXT("KUNAI THROWN"), FLinearColor(0.2f, 0.8f, 1.f));
+		}
+	}
+	else if (SwordState == ESwordState::Thrown)
+	{
+		// Buffer the Zip Strike input for half a second!
+		SwordRecallBufferTimer = 0.5f;
+		if (MoveComp) MoveComp->OnComboEvent.Broadcast(TEXT("ZIP BUFFERED"), FLinearColor(0.8f, 0.8f, 1.f));
 	}
 	else if (SwordState == ESwordState::Stuck || SwordState == ESwordState::Returning) 
 	{
-		bool bStuckInEnemy = (SwordState == ESwordState::Stuck && SwordMesh->GetAttachParent() && Cast<APcQEnemyBase>(SwordMesh->GetAttachParent()->GetOwner()));
-		
-		// Default: Aim where the sword currently is
-		FVector TargetDashPos = SwordMesh->GetComponentLocation();
-		
-		// FIX: If stuck in an enemy, dash to the ENEMY'S CORE instead of the sword mesh!
-		if (bStuckInEnemy) {
-			TargetDashPos = SwordMesh->GetAttachParent()->GetOwner()->GetActorLocation();
-		}
-
-		float Dist = FVector::Dist(GetActorLocation(), TargetDashPos);
-		float PowerPercent = bStuckInEnemy ? 1.0f : FMath::Clamp(Dist / MoveComp->Config->SwordMaxDistance, 0.5f, 1.0f);
-
-		RetrieveSword(); 
-
-		if (bStuckInEnemy) {
-			FVector LungeDir = (TargetDashPos - CameraComp->GetComponentLocation()).GetSafeNormal();
-			MoveComp->ExecuteRecallDash(LungeDir, PowerPercent, Dist); 
-		} else {
-			FVector ImpulseDir = CameraComp->GetForwardVector();
-			MoveComp->ExecuteRecallImpulse(ImpulseDir, PowerPercent); 
-		}
+		ExecuteSwordRecall();
 	}
 }
 
-// ── FLIES EXACTLY TO PRE-CALCULATED TARGET ──
 void APcQPlayerCharacter::UpdateSwordPhysics(float DeltaTime)
 {
 	if (!SwordMesh || SwordState == ESwordState::InHand || !MoveComp || !MoveComp->Config) return;
@@ -299,17 +313,31 @@ void APcQPlayerCharacter::UpdateSwordPhysics(float DeltaTime)
 				SwordState = ESwordState::Stuck;
 				SwordStuckTimer = MoveComp->Config->SwordStuckDurationSec;
 
+				MoveComp->ApplyAirHang(0.08f); 
+
 				if (APcQEnemyBase* Enemy = Cast<APcQEnemyBase>(SwordTargetHit.GetActor())) {
 					UGameplayStatics::ApplyDamage(Enemy, SwordDamage, GetController(), this, nullptr);
 					CurrentAmmo = MaxAmmo;
 					bIsReloading = false;
 					MoveComp->OnComboEvent.Broadcast(TEXT("KUNAI STICK + RELOAD"), FLinearColor(1.f, 0.2f, 0.2f));
 				}
+				
+				// Execute Buffer!
+				if (SwordRecallBufferTimer > 0.f) {
+					SwordRecallBufferTimer = 0.f;
+					ExecuteSwordRecall();
+				}
 			} 
 			else 
 			{
 				SwordMesh->SetWorldLocation(SwordTargetLocation);
 				SwordState = ESwordState::Returning; 
+				
+				// Execute Buffer!
+				if (SwordRecallBufferTimer > 0.f) {
+					SwordRecallBufferTimer = 0.f;
+					ExecuteSwordRecall();
+				}
 			}
 		} 
 		else 
@@ -386,14 +414,16 @@ void APcQPlayerCharacter::TryFire()
 	PistolCooldown = GunCooldownSec;
 	const FVector CamLoc = CameraComp->GetComponentLocation();
 	const FVector CamForward = CameraComp->GetForwardVector();
-	FVector End = CamLoc + CamForward * 5000.f;
 
 	FVector VisualMuzzleLoc = WeaponMesh->GetSocketLocation(FName("Muzzle"));
 	if (VisualMuzzleLoc == WeaponMesh->GetComponentLocation()) { VisualMuzzleLoc += WeaponMesh->GetForwardVector() * 45.f; }
 
 	TArray<FHitResult> Hits;
 	FCollisionQueryParams QP; QP.AddIgnoredActor(this);
-	GetWorld()->SweepMultiByChannel(Hits, CamLoc, End, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(GunBulletRadius), QP);
+	FVector End = CamLoc + CamForward * 5000.f;
+	FCollisionShape ThickBullet = FCollisionShape::MakeSphere(GunBulletRadius); 
+	
+	GetWorld()->SweepMultiByChannel(Hits, CamLoc, End, FQuat::Identity, ECC_Visibility, ThickBullet, QP);
 
 	FHitResult BestHit;
 	bool bHitEnemy = false;

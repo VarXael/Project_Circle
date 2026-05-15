@@ -91,6 +91,7 @@ private:
 
 	void TryFire();
 	void TrySwordAction(); 
+	void ExecuteSwordRecall();
 	void RetrieveSword();
 	void UpdateSwordPhysics(float DeltaTime);
 
@@ -111,13 +112,12 @@ private:
 	float ReloadTimer = 0.f;
 	bool  bIsReloading = false;
 
-	// Thrown Sword State
 	ESwordState SwordState = ESwordState::InHand;
 	FVector SwordVelocity;
 	FVector ThrownStartPosition;
 	float SwordStuckTimer = 0.f;
+	float SwordRecallBufferTimer = 0.f; // The Zip Strike Input Buffer
 
-	// Crosshair Tracking Data
 	FVector SwordTargetLocation;
 	FHitResult SwordTargetHit;
 	bool bSwordWillStick = false;

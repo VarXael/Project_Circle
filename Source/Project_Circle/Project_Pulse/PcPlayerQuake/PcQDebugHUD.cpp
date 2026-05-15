@@ -110,7 +110,6 @@ void APcQDebugHUD::DrawPlayerStatus(UPcQPlayerMovementComponent* MC, APcQPlayerC
 	DrawStatusBlock(CX - BarW - Gap, BY, DashLabel, bDashing ? 1.f : DashFill, DashCol, bDashing);
 
 	// ── RIGHT: Double Jump Status ──
-	// FIX: DJ no longer has a cooldown. It is either available (1.0) or not (0.0).
 	float DJFill = MC->HasDoubleJump() ? 1.f : 0.f; 
 	FString DJLabel = MC->HasDoubleJump() ? TEXT("DOUBLE JUMP READY") : TEXT("DOUBLE JUMP EMPTY");
 	FLinearColor DJCol = MC->HasDoubleJump() ? FLinearColor(0.2f, 0.6f, 1.f) : FLinearColor(0.4f, 0.4f, 0.55f);
@@ -158,7 +157,8 @@ void APcQDebugHUD::DrawMovementDebug(UPcQPlayerMovementComponent* MC)
 
 	EPlayerMovementState State = MC->GetMovementState();
 	FString StateStr;
-	if      (State == EPlayerMovementState::Dashing)        StateStr = TEXT("DASHING");
+	if      (State == EPlayerMovementState::RecallLunging)  StateStr = TEXT("RECALL LUNGING");
+	else if (State == EPlayerMovementState::Dashing)        StateStr = TEXT("DASHING");
 	else if (State == EPlayerMovementState::GroundPounding) StateStr = TEXT("GROUND POUND");
 	else if (State == EPlayerMovementState::InAir)          StateStr = TEXT("IN AIR");
 	else                                                    StateStr = TEXT("GROUNDED");
@@ -355,6 +355,7 @@ void APcQDebugHUD::OnComboEvent(const FString& Label, FLinearColor Color) {
 
 FLinearColor APcQDebugHUD::GetStateColor(EPlayerMovementState State) const {
 	if (State == EPlayerMovementState::GroundPounding) return FLinearColor::Red;
+	if (State == EPlayerMovementState::RecallLunging)  return FLinearColor(1.f,0.1f,0.1f);
 	if (State == EPlayerMovementState::Dashing)        return FLinearColor(1.f,0.55f,0.f);
 	if (State == EPlayerMovementState::InAir)          return FLinearColor(0.2f,0.6f,1.f);
 	return FLinearColor::Green;
