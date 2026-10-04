@@ -1,0 +1,4 @@
+# Godot
+.godot/
+# builds (published to the portfolio and GitHub Releases, never committed)
+export/
