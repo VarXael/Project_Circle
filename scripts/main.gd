@@ -86,7 +86,7 @@ func _build_world() -> void:
 	env.background_color = Color(0.02, 0.02, 0.035)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.35, 0.37, 0.45)
-	env.ambient_light_energy = 0.6
+	env.ambient_light_energy = 1.0
 	env.glow_enabled = true
 	env.glow_intensity = 0.9
 	env.glow_bloom = 0.15
@@ -105,7 +105,7 @@ func _build_world() -> void:
 	floor_mat = ShaderMaterial.new()
 	floor_mat.shader = load("res://shaders/floor.gdshader")
 	var wall_mat := StandardMaterial3D.new()
-	wall_mat.albedo_color = Color(0.09, 0.09, 0.12)
+	wall_mat.albedo_color = Color(0.2, 0.2, 0.25)
 
 	var s := ARENA_HALF * 2.0
 	_box(Vector3(0, -0.5, 0), Vector3(s, 1, s), floor_mat)

@@ -31,7 +31,7 @@ void fragment() {
 	float ring_r = (1.0 - pulse) * 40.0;
 	float ring = (1.0 - smoothstep(0.0, 1.2, abs(r - ring_r))) * pulse;
 	float glow = up * (line * (0.12 + anticip + 2.0 * pulse) + 0.12 * pulse + ring * 1.5);
-	ALBEDO = base_color;
+	ALBEDO = mix(vec3(0.16, 0.16, 0.2), base_color, up);
 	ROUGHNESS = 0.7;
 	EMISSION = pulse_color * glow + pulse_color * (1.0 - up) * pulse * 0.15;
 }
