@@ -168,6 +168,20 @@ func judge(t: float = NAN) -> Dictionary:
 	return {"beat": b, "err": err, "on": absf(err) <= window}
 
 
+func meter_at_beat(b: int) -> int:
+	return maxi(int(grid.section(grid.time_of_beat(b)).get("meter", 4)), 1)
+
+
+## 1 to meter: where a beat falls in its bar.
+func beat_in_bar(b: int) -> int:
+	return posmod(b, meter_at_beat(b)) + 1
+
+
+## The last beat of the bar (the 4th in 4/4): the DPW kill beat.
+func is_kill_beat(b: int) -> bool:
+	return beat_in_bar(b) == meter_at_beat(b)
+
+
 func beat_float(t: float = NAN) -> float:
 	return grid.beat_float(song_time if is_nan(t) else t)
 

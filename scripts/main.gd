@@ -1,9 +1,10 @@
 extends Node
-## Project Pulse, first slice: one arena. The floor pulses on the beat, the Pulse movement and pistol,
-## and DPW tied to the beat. Builds the whole scene in code.
+## Project Pulse, slice: one arena. The floor pulses on the beat; the player is a port of the Unreal
+## Pulse controller (player.gd); enemies use DPW on the bar (enemy.gd). Builds the whole scene in code.
 ## Autotest: `-- --autotest [--song]` plays the metronome (or the song, muted) with an autopilot, saves shots to test_shots/ and quits.
 
-const ARENA_HALF := 30.0
+const ARENA_HALF := 45.0
+const WALL_HEIGHT := 30.0
 
 var conductor: Conductor
 var player: Player
@@ -43,7 +44,7 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	layer.add_child(hud)
-	player.event.connect(hud.feed)
+	player.combo.connect(hud.feed)
 	player.shot.connect(hud.on_shot)
 	player.hit.connect(hud.on_hit)
 
@@ -57,7 +58,8 @@ func _ready() -> void:
 
 func _setup_input() -> void:
 	var keys := {"forward": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT],
-		"right": [KEY_D, KEY_RIGHT], "jump": [KEY_SPACE], "dash": [KEY_SHIFT], "reload": [KEY_R]}
+		"right": [KEY_D, KEY_RIGHT], "jump": [KEY_SPACE], "dash": [KEY_SHIFT], "reload": [KEY_R],
+		"ground_pound": [KEY_CTRL], "melee": [KEY_E]}
 	for action in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -65,11 +67,14 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = k
 			InputMap.action_add_event(action, ev)
-	if not InputMap.has_action("fire"):
-		InputMap.add_action("fire")
+	# The Unreal input context binds Space, LMB, RMB, Shift, Ctrl and Mouse 4; which key went to which
+	# action could not be read from the asset, so this pairing is a guess (RMB dash is from the commits).
+	for pair in [["fire", MOUSE_BUTTON_LEFT], ["dash", MOUSE_BUTTON_RIGHT], ["melee", MOUSE_BUTTON_XBUTTON1]]:
+		if not InputMap.has_action(pair[0]):
+			InputMap.add_action(pair[0])
 		var mb := InputEventMouseButton.new()
-		mb.button_index = MOUSE_BUTTON_LEFT
-		InputMap.action_add_event("fire", mb)
+		mb.button_index = pair[1]
+		InputMap.action_add_event(pair[0], mb)
 
 
 func _apply_settings() -> void:
@@ -112,26 +117,29 @@ func _build_world() -> void:
 	for i in 4:
 		var horizontal := i < 2
 		var sign := 1.0 if i % 2 == 0 else -1.0
-		var pos := Vector3(0, 4, sign * (ARENA_HALF + 0.5)) if horizontal else Vector3(sign * (ARENA_HALF + 0.5), 4, 0)
-		var size := Vector3(s + 2, 8, 1) if horizontal else Vector3(1, 8, s + 2)
+		var pos := Vector3(0, WALL_HEIGHT * 0.5, sign * (ARENA_HALF + 0.5)) if horizontal else Vector3(sign * (ARENA_HALF + 0.5), WALL_HEIGHT * 0.5, 0)
+		var size := Vector3(s + 2, WALL_HEIGHT, 1) if horizontal else Vector3(1, WALL_HEIGHT, s + 2)
 		_box(pos, size, wall_mat)
-	# platforms and pillars: something to super jump onto (they pulse too)
-	_box(Vector3(12, 1.0, 12), Vector3(6, 2, 6), floor_mat)
-	_box(Vector3(-12, 1.0, -12), Vector3(6, 2, 6), floor_mat)
-	_box(Vector3(-14, 2.0, 10), Vector3(4, 4, 4), floor_mat)
-	_box(Vector3(14, 2.0, -10), Vector3(4, 4, 4), floor_mat)
-	_box(Vector3(0, 3.0, 0), Vector3(3, 6, 3), wall_mat)
+	# platforms to jump onto (they pulse too) and walls to zip to and bounce off
+	_box(Vector3(16, 1.5, 16), Vector3(8, 3, 8), floor_mat)
+	_box(Vector3(-16, 1.5, -16), Vector3(8, 3, 8), floor_mat)
+	_box(Vector3(-20, 3.0, 14), Vector3(6, 6, 6), floor_mat)
+	_box(Vector3(20, 3.0, -14), Vector3(6, 6, 6), floor_mat)
+	_box(Vector3(0, 6.0, 0), Vector3(4, 12, 4), wall_mat)
+	_box(Vector3(-30, 8.0, -30), Vector3(3, 16, 3), wall_mat)
+	_box(Vector3(30, 8.0, 30), Vector3(3, 16, 3), wall_mat)
 
 	player = Player.new()
 	player.conductor = conductor
 	player.settings = settings
-	player.position = Vector3(0, 0.1, 18)
+	player.position = Vector3(0, 0.1, 25)
 	add_child(player)
+	player.enemies = enemies
 
 	for i in 6:
 		var e := Enemy.new()
 		add_child(e)
-		e.position = Vector3(randf_range(-20, 20), 0, randf_range(-20, 6))
+		e.position = Vector3(randf_range(-25, 25), 0, randf_range(-25, 10))
 		e.setup(i >= 4, conductor, ARENA_HALF)
 		e.died.connect(func(_en): kills += 1)
 		enemies.append(e)
@@ -167,7 +175,7 @@ func _start(choice: int) -> void:
 				return
 			var stream := song.load_stream()
 			if stream == null:
-				hud.feed("could not load the song", "kill")
+				hud.feed("could not load the song", Color(1, 0.3, 0.3))
 				return
 			conductor.setup_song(song.sections, stream, song.title)
 	kills = 0
@@ -192,9 +200,26 @@ func _on_beat(b: int) -> void:
 		_auto_fire()
 
 
-func _on_window_closed(_b: int) -> void:
+func _on_window_closed(b: int) -> void:
 	for e in enemies:
-		e.on_window_closed(settings.miss_rule)
+		e.on_window_closed(b, settings.miss_rule)
+
+
+## A shot's line, for a moment: cyan on the beat, red off it (as the Unreal debug lines).
+func tracer(from: Vector3, to: Vector3, on_beat: bool) -> void:
+	var mesh := ImmediateMesh.new()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(0.2, 1, 1) if on_beat else Color(1, 0.25, 0.2)
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES, mat)
+	mesh.surface_add_vertex(from)
+	mesh.surface_add_vertex(to)
+	mesh.surface_end()
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	get_tree().create_timer(0.4 if on_beat else 0.1).timeout.connect(mi.queue_free)
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -231,15 +256,15 @@ func _unhandled_input(e: InputEvent) -> void:
 			settings.window_ms = clampf(settings.window_ms + 10.0, 30.0, 250.0)
 		KEY_T:
 			settings.miss_rule = (settings.miss_rule + 1) % PulseSettings.MISS_RULE_NAMES.size()
-			hud.feed("miss rule: " + settings.miss_rule_name(), "info")
+			hud.feed("miss rule: " + settings.miss_rule_name(), Color(0.75, 0.9, 0.75))
 		KEY_O:
 			if hud.errors.size() >= 4:
 				settings.offset_ms = clampf(settings.offset_ms + hud.avg_error() * 1000.0, -300.0, 300.0)
 				hud.errors.clear()
-				hud.feed("offset set to %+d ms" % int(settings.offset_ms), "info")
+				hud.feed("offset set to %+d ms" % int(settings.offset_ms), Color(0.75, 0.9, 0.75))
 			else:
-				hud.feed("fire 4+ shots on the clicks first", "info")
-		KEY_C:
+				hud.feed("fire 4+ shots on the clicks first", Color(0.75, 0.9, 0.75))
+		KEY_K:
 			settings.song_click = not settings.song_click
 		KEY_H:
 			hud.show_help = not hud.show_help
@@ -295,36 +320,47 @@ func _nearest_enemy() -> Enemy:
 	return best
 
 
+func _aim_at(e: Enemy) -> void:
+	player.auto_aim(e.head_center() if randf() < 0.5 else e.center())
+
+
+## On every beat: fire at the nearest enemy (beats 1 to 3 store damage, beat 4 cashes it in),
+## sometimes jump, dash or throw the Kunai.
 func _auto_fire() -> void:
 	var e := _nearest_enemy()
 	if e:
-		player.auto_aim(e.global_position + Vector3.UP * (2.6 if e.big else 1.75))
+		_aim_at(e)
 		player.fire()
-	if player.is_on_floor() and randf() < 0.5:
+	var r := randf()
+	if r < 0.3:
 		player.jump_pressed()
+	elif r < 0.45:
+		player.enter_dash()
+	elif r < 0.55:
+		player.kunai_action()
 
 
 func _autotest(dt: float) -> void:
 	_auto_t += dt
 	player.set_auto_move(Vector2(sin(_auto_t * 0.7) * 0.6, 0.6))
 	var ph := conductor.phase()
-	# two off-beat head shots between beats store damage, then the on-beat shot cashes it in
-	if (_auto_phase < 0.35 and ph >= 0.35) or (_auto_phase < 0.65 and ph >= 0.65):
+	# one shot between beats stores more damage
+	if _auto_phase < 0.5 and ph >= 0.5:
 		var e := _nearest_enemy()
 		if e:
-			player.auto_aim(e.global_position + Vector3.UP * (2.6 if e.big else 1.75))
+			_aim_at(e)
 			player.fire()
 	_auto_phase = ph
 	_stat_t += dt
 	if _stat_t >= 1.0:
 		_stat_t = 0.0
-		print("[auto] t=%.1f song=%.2f bpm=%.0f kills=%d pulses=%d supers=%d ammo=%d speed=%.1f avg_err=%+.0fms fps=%d" % [
-			_auto_t, conductor.song_time, conductor.bpm(), kills, player.pulses, player.supers, player.ammo,
-			player.hspeed(), hud.avg_error() * 1000.0, Engine.get_frames_per_second()])
+		print("[auto] t=%.1f song=%.2f bpm=%.0f kills=%d pulses=%d state=%s dj=%d ammo=%d speed=%.1f max=%.1f y=%.1f kunai=%d fps=%d" % [
+			_auto_t, conductor.song_time, conductor.bpm(), kills, player.pulses, Player.State.keys()[player.state], player.dj,
+			player.ammo, player.hspeed(), player.max_speed(), player.global_position.y, player.kunai, Engine.get_frames_per_second()])
 	if _shot_i < _SHOTS.size() and _auto_t >= _SHOTS[_shot_i]:
 		_shot_i += 1
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://test_shots"))
 		get_viewport().get_texture().get_image().save_png("res://test_shots/shot_%02d.png" % _shot_i)
 	if _auto_t > 13.0:
-		print("[auto] done: kills=%d pulses=%d supers=%d song=%s" % [kills, player.pulses, player.supers, str(song.title if song else "none")])
+		print("[auto] done: kills=%d pulses=%d song=%s" % [kills, player.pulses, str(song.title if song else "none")])
 		get_tree().quit()

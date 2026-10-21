@@ -11,7 +11,7 @@ enum MissRule { HEAL, KEEP, HALVE }
 const MISS_RULE_NAMES := ["heal to full", "keep the damage", "lose half"]
 
 var offset_ms := 0.0        # audio latency: + means you hear the beat later than the game plays it
-var window_ms := 100.0      # half width of the on-beat window
+var window_ms := 160.0      # half width of the on-beat window (the Unreal OnBeatWindowMs)
 var miss_rule := MissRule.HEAL
 var sensitivity := 0.0022
 var song_click := false     # metronome click over the song
@@ -22,7 +22,7 @@ func load_cfg() -> void:
 	if c.load(PATH) != OK:
 		return
 	offset_ms = c.get_value("audio", "offset_ms", offset_ms)
-	window_ms = c.get_value("rhythm", "window_ms", window_ms)
+	window_ms = c.get_value("rhythm", "window", window_ms)
 	miss_rule = c.get_value("rhythm", "miss_rule", miss_rule)
 	sensitivity = c.get_value("input", "sensitivity", sensitivity)
 	song_click = c.get_value("audio", "song_click", song_click)
@@ -31,7 +31,7 @@ func load_cfg() -> void:
 func save_cfg() -> void:
 	var c := ConfigFile.new()
 	c.set_value("audio", "offset_ms", offset_ms)
-	c.set_value("rhythm", "window_ms", window_ms)
+	c.set_value("rhythm", "window", window_ms)
 	c.set_value("rhythm", "miss_rule", miss_rule)
 	c.set_value("input", "sensitivity", sensitivity)
 	c.set_value("audio", "song_click", song_click)
